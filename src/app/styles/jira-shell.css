@@ -1,0 +1,187 @@
+/* Project header (Jira-style): avatar + name + star + "…" on the left,
+   Share / Automation on the right, horizontal view tabs underneath. */
+/* Measured height of the sticky project header; sticky panels offset from it. */
+:root {
+  --project-header-h: 94px;
+}
+
+.project-shell-header {
+  position: sticky;
+  z-index: 20;
+  top: 0;
+  padding: 12px clamp(16px, 3vw, 40px) 0;
+  border-bottom: 2px solid var(--console-line);
+  background: color-mix(in srgb, var(--gray-50) 94%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+.project-shell-header.settings-route {
+  padding-bottom: 12px;
+}
+
+.project-head {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.project-head-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.project-head-name {
+  min-width: 0;
+  overflow: hidden;
+  margin: 0 2px 0 4px;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-head-icon {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--gray-500);
+  background: transparent;
+}
+
+.project-head-icon:hover,
+.project-head-icon[data-state="open"] {
+  border-color: var(--gray-300);
+  color: var(--ink);
+  background: var(--gray-100);
+}
+
+.project-head-icon.starred {
+  color: var(--amber-500);
+}
+
+.project-head-icon.starred svg {
+  fill: currentColor;
+}
+
+.project-head-type {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border: 1px solid var(--gray-300);
+  border-radius: 2px;
+  color: var(--gray-500);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.project-head-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.project-head-status {
+  color: var(--green-600);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.project-head-status:empty {
+  display: none;
+}
+
+.project-head-button {
+  display: inline-flex;
+  height: 32px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 11px;
+  border: 2px solid var(--console-line);
+  border-radius: 3px;
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: var(--console-shadow-small);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.project-head-button:hover {
+  background: var(--gray-100);
+  box-shadow: none;
+  transform: translate(2px, 2px);
+}
+
+.project-tabs {
+  display: flex;
+  gap: 2px;
+  margin-top: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.project-tab {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: -2px;
+  padding: 8px 12px 10px;
+  border-bottom: 3px solid transparent;
+  color: var(--gray-500);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.project-tab:hover {
+  color: var(--ink);
+  background: var(--gray-100);
+}
+
+.project-tab.active {
+  border-bottom-color: var(--console-lime-strong);
+  color: var(--ink);
+}
+
+@media (max-width: 760px) {
+  .project-shell-header {
+    padding: 10px 16px 0;
+  }
+
+  .project-head-name {
+    font-size: 17px;
+  }
+
+  .project-head-type,
+  .project-head-status,
+  .project-head-button-label {
+    display: none;
+  }
+
+  .project-head-button {
+    width: 32px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .project-head-actions {
+    gap: 6px;
+  }
+}

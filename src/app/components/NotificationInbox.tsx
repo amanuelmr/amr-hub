@@ -19,8 +19,11 @@ function formatRelativeTime(value: string) {
 
 export function NotificationInbox({
   openUpward = false,
+  align = "start",
 }: {
   openUpward?: boolean;
+  /** "end" anchors the dropdown to the bell's right edge (top-bar placement). */
+  align?: "start" | "end";
 }) {
   const { notifications, unreadCount, markAsRead, markAllAsRead } =
     useNotifications();
@@ -48,7 +51,9 @@ export function NotificationInbox({
 
       {isOpen && (
         <div
-          className={`notification-dropdown ${openUpward ? "opens-upward" : ""}`}
+          className={`notification-dropdown ${openUpward ? "opens-upward" : ""} ${
+            align === "end" ? "align-end" : ""
+          }`}
           role="dialog"
           aria-label="Notifications"
         >
