@@ -2,12 +2,24 @@
 
 import { FormEvent, useState } from "react";
 import Link from "next/link";
+import { CheckCircle2, KeyRound } from "lucide-react";
 import {
-  ArrowLeft,
-  CheckCircle2,
-  KeyRound,
-  LoaderCircle,
-} from "lucide-react";
+  AuthAlert,
+  AuthFooterLinks,
+  AuthHeading,
+  AuthPage,
+} from "../../components/auth/AuthCard";
+import {
+  AuthField,
+  PasswordChecklist,
+  PasswordField,
+  SubmitButton,
+} from "../../components/auth/AuthFields";
+import {
+  MAX_PASSWORD_LENGTH,
+  MIN_PASSWORD_LENGTH,
+  isPasswordAcceptable,
+} from "../../components/auth/passwordRules";
 
 export default function RecoveryCodeResetPage() {
   const [email, setEmail] = useState("");
@@ -22,12 +34,14 @@ export default function RecoveryCodeResetPage() {
     event.preventDefault();
     setError(null);
 
-    if (password.length < 12) {
-      setError("Use at least 12 characters for the new password.");
+    if (!isPasswordAcceptable(password)) {
+      setError(
+        `Use at least ${MIN_PASSWORD_LENGTH} characters for the new password.`,
+      );
       return;
     }
     if (password !== confirmation) {
-      setError("Password confirmation does not match.");
+      setError("Passwords don't match.");
       return;
     }
 
@@ -57,143 +71,95 @@ export default function RecoveryCodeResetPage() {
     setIsComplete(true);
   };
 
+  const footer = (
+    <AuthFooterLinks>
+      {[
+        <Link href="/login" key="login">
+          Return to log in
+        </Link>,
+        <Link href="/forgot-password" key="email">
+          Send a recovery link instead
+        </Link>,
+      ]}
+    </AuthFooterLinks>
+  );
+
+  if (isComplete) {
+    return (
+      <AuthPage footer={footer}>
+        <AuthHeading
+          icon={<CheckCircle2 size={22} aria-hidden="true" />}
+          title="Your password has been changed"
+          subtitle="Every existing session and recovery code was invalidated. Log in with your new password, then create a fresh set of recovery codes."
+        />
+        <Link className="primary-button acct-button" href="/login">
+          Log in
+        </Link>
+      </AuthPage>
+    );
+  }
+
   return (
-    <div className="auth-layout recovery-layout">
-      <section className="auth-form-pane">
-        <div className="auth-form-wrap">
-          <Link className="brand auth-brand" href="/forgot-password">
-            <span className="brand-mark">A</span>
-            <span>
-              <strong>AMR Hub</strong>
-              <small>Product workspace</small>
-            </span>
-          </Link>
+    <AuthPage footer={footer}>
+      <AuthHeading
+        icon={<KeyRound size={22} aria-hidden="true" />}
+        title="Use a recovery code"
+        subtitle="Enter one of the password recovery codes you saved earlier. Each code works once."
+      />
 
-          {isComplete ? (
-            <div className="recovery-complete">
-              <span className="auth-heading-icon">
-                <CheckCircle2 size={18} aria-hidden="true" />
-              </span>
-              <h1>Password updated</h1>
-              <p>
-                Every existing session and recovery code was invalidated. Sign
-                in with your new password and create a fresh recovery set.
-              </p>
-              <Link className="primary-button" href="/login">
-                <ArrowLeft size={16} aria-hidden="true" />
-                Return to sign in
-              </Link>
-            </div>
-          ) : (
-            <>
-              <div className="auth-heading">
-                <span className="auth-heading-icon">
-                  <KeyRound size={18} aria-hidden="true" />
-                </span>
-                <h1>Recover your account</h1>
-                <p>Use one of the password recovery codes you stored earlier.</p>
-              </div>
+      {error && <AuthAlert>{error}</AuthAlert>}
 
-              <form className="auth-form" onSubmit={resetPassword}>
-                <label className="form-field">
-                  <span>Email</span>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(event) => setEmail(event.target.value)}
-                    autoComplete="email"
-                    inputMode="email"
-                    required
-                    autoFocus
-                  />
-                </label>
-                <label className="form-field">
-                  <span>Recovery code</span>
-                  <input
-                    className="recovery-code-input"
-                    type="text"
-                    value={code}
-                    onChange={(event) => setCode(event.target.value)}
-                    autoComplete="one-time-code"
-                    spellCheck={false}
-                    maxLength={64}
-                    placeholder="AMR-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX"
-                    required
-                  />
-                </label>
-                <label className="form-field">
-                  <span>New password</span>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    autoComplete="new-password"
-                    minLength={12}
-                    maxLength={128}
-                    required
-                  />
-                </label>
-                <label className="form-field">
-                  <span>Confirm password</span>
-                  <input
-                    type="password"
-                    value={confirmation}
-                    onChange={(event) => setConfirmation(event.target.value)}
-                    autoComplete="new-password"
-                    minLength={12}
-                    maxLength={128}
-                    required
-                  />
-                </label>
-
-                {error && (
-                  <p className="auth-error" role="alert">
-                    {error}
-                  </p>
-                )}
-
-                <button
-                  className="primary-button auth-submit"
-                  type="submit"
-                  disabled={
-                    isSubmitting ||
-                    !email.trim() ||
-                    !code.trim() ||
-                    !password ||
-                    !confirmation
-                  }
-                >
-                  {isSubmitting && (
-                    <LoaderCircle
-                      className="spinning-icon"
-                      size={16}
-                      aria-hidden="true"
-                    />
-                  )}
-                  {isSubmitting ? "Resetting password" : "Reset password"}
-                </button>
-              </form>
-
-              <p className="auth-setup-link">
-                Have email access instead?{" "}
-                <Link href="/forgot-password">Send a reset link</Link>
-              </p>
-              <p className="auth-setup-link">
-                Remembered your password? <Link href="/login">Return to sign in</Link>
-              </p>
-            </>
-          )}
-        </div>
-      </section>
-
-      <aside className="auth-security-preview" aria-label="Recovery security">
-        <KeyRound size={28} aria-hidden="true" />
-        <strong>Offline recovery</strong>
-        <p>
-          Recovery codes remain under your control and are stored by AMR Hub
-          only as irreversible hashes.
-        </p>
-      </aside>
-    </div>
+      <form className="acct-form" onSubmit={resetPassword}>
+        <AuthField
+          label="Email"
+          type="email"
+          value={email}
+          onValueChange={setEmail}
+          autoComplete="email"
+          inputMode="email"
+          placeholder="Enter your email"
+          required
+          autoFocus
+        />
+        <AuthField
+          label="Recovery code"
+          className="acct-code-input"
+          type="text"
+          value={code}
+          onValueChange={setCode}
+          autoComplete="one-time-code"
+          spellCheck={false}
+          maxLength={64}
+          placeholder="AMR-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX"
+          required
+        />
+        <PasswordField
+          label="New password"
+          value={password}
+          onValueChange={setPassword}
+          autoComplete="new-password"
+          minLength={MIN_PASSWORD_LENGTH}
+          maxLength={MAX_PASSWORD_LENGTH}
+          required
+        />
+        <PasswordChecklist password={password} />
+        <PasswordField
+          label="Confirm new password"
+          value={confirmation}
+          onValueChange={setConfirmation}
+          autoComplete="new-password"
+          minLength={MIN_PASSWORD_LENGTH}
+          maxLength={MAX_PASSWORD_LENGTH}
+          required
+        />
+        <SubmitButton
+          busy={isSubmitting}
+          busyLabel="Resetting password"
+          disabled={!email.trim() || !code.trim() || !password || !confirmation}
+        >
+          Reset password
+        </SubmitButton>
+      </form>
+    </AuthPage>
   );
 }
