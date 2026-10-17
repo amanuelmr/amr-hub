@@ -9,7 +9,10 @@ import {
 } from "../app/data/issues";
 import { UnknownLabelError, type WorkspaceActor } from "./issues";
 
-function serializeSavedView(view: {
+/** A saved view plus ownership info the Filters directory needs. */
+export type SavedFilter = SavedView & { isMine: boolean };
+
+type StoredSavedView = {
   id: string;
   name: string;
   owner: string;
@@ -19,8 +22,14 @@ function serializeSavedView(view: {
   assignee: string;
   sort: string;
   labelId: string | null;
+  jql: string | null;
   userId: string | null;
-}): SavedView {
+};
+
+function serializeSavedView(
+  view: StoredSavedView,
+  currentUserId?: string,
+): SavedFilter {
   return {
     id: view.id,
     name: view.name,
@@ -31,26 +40,63 @@ function serializeSavedView(view: {
     assignee: view.assignee,
     sort: view.sort as SavedViewSort,
     labelId: view.labelId,
+    jql: view.jql,
     isSystem: view.userId === null,
+    isMine: !!currentUserId && view.userId === currentUserId,
   };
 }
 
-export async function listSavedViews(userId: string, organizationId: string) {
+/** Own + system views by default; `all` adds every member's filters (Jira "All filters"). */
+export async function listSavedViews(
+  userId: string,
+  organizationId: string,
+  options: { all?: boolean } = {},
+) {
   const views = await prisma.savedView.findMany({
-    where: {
-      organizationId,
-      OR: [{ userId }, { userId: null }],
-    },
+    where: options.all
+      ? { organizationId }
+      : { organizationId, OR: [{ userId }, { userId: null }] },
     orderBy: [{ owner: "asc" }, { name: "asc" }],
   });
 
-  return views.map(serializeSavedView);
+  return views.map((view) => serializeSavedView(view, userId));
+}
+
+export type CreateSavedViewInput =
+  | (SavedViewInput & { jql?: string | null })
+  | { name: string; jql: string };
+
+function withDefaults(input: CreateSavedViewInput): SavedViewInput & { jql: string | null } {
+  if ("status" in input) {
+    return { ...input, jql: input.jql ?? null };
+  }
+  return {
+    name: input.name,
+    query: "",
+    status: "ALL",
+    priority: "ALL",
+    assignee: "ALL",
+    sort: "NEWEST",
+    labelId: null,
+    jql: input.jql,
+  };
+}
+
+function rethrowDuplicate(error: unknown): never {
+  if (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === "P2002"
+  ) {
+    throw new DuplicateSavedViewError();
+  }
+  throw error;
 }
 
 export async function createSavedView(
-  input: SavedViewInput,
+  rawInput: CreateSavedViewInput,
   actor: WorkspaceActor,
 ) {
+  const input = withDefaults(rawInput);
   if (input.labelId) {
     const labelExists = await prisma.label.count({
       where: {
@@ -70,15 +116,35 @@ export async function createSavedView(
         organizationId: actor.organizationId,
       },
     });
-    return serializeSavedView(view);
+    return serializeSavedView(view, actor.id);
   } catch (error) {
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2002"
-    ) {
-      throw new DuplicateSavedViewError();
-    }
-    throw error;
+    rethrowDuplicate(error);
+  }
+}
+
+export async function updateSavedView(
+  id: string,
+  updates: { name?: string; jql?: string | null },
+  userId: string,
+  organizationId: string,
+) {
+  const existing = await prisma.savedView.findFirst({
+    where: { id, userId, organizationId },
+    select: { id: true },
+  });
+  if (!existing) return null;
+
+  try {
+    const view = await prisma.savedView.update({
+      where: { id },
+      data: {
+        ...(updates.name !== undefined ? { name: updates.name } : {}),
+        ...(updates.jql !== undefined ? { jql: updates.jql } : {}),
+      },
+    });
+    return serializeSavedView(view, userId);
+  } catch (error) {
+    rethrowDuplicate(error);
   }
 }
 

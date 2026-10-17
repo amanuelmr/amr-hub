@@ -1,14 +1,17 @@
 "use client";
 
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowDownUp,
   Bookmark,
   BookmarkPlus,
+  Download,
   Kanban,
   ListFilter,
-  LoaderCircle,
+  MoreHorizontal,
+  PanelRight,
   Plus,
   Rows3,
   Search,
@@ -17,28 +20,58 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import { apiRequest, useIssues, type IssueListResponse } from "../IssueProvider";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { useIssues } from "../IssueProvider";
 import { useProjects } from "../ProjectProvider";
 import { authClient } from "../../lib/auth-client";
 import {
   PRIORITY_LABELS,
-  STATUS_LABELS,
-  type Issue,
   type IssuePriority,
   type IssueStatus,
+  type SavedView,
 } from "../data/issues";
-import { KindIcon, PriorityBadge } from "../components/IssueVisuals";
+import {
+  DEFAULT_JQL_ORDER,
+  basicFiltersToJql,
+  searchIssuesWithJql,
+  setJqlOrderBy,
+  type JqlField,
+  type JqlOrderBy,
+  type JqlSuggestionSource,
+} from "../data/jql";
 import { IssueBoard } from "../components/IssueBoard";
 import { WorkspaceLoading } from "../components/WorkspaceLoading";
-import { IssueLabelChip } from "../components/IssueLabelChip";
+import { IssueResultsTable } from "../components/search/IssueResultsTable";
+import { ColumnChooser } from "../components/search/ColumnChooser";
+import { JqlEditor } from "../components/search/JqlEditor";
+import { IssueDetailContainer } from "../components/issue/IssueDetailView";
+import {
+  SELECTED_ISSUE_PARAM,
+  selectedIssueHref,
+  useSelectedIssue,
+} from "../components/issue/selectedIssue";
+import { KindIcon, StatusBadge } from "../components/IssueVisuals";
+import { BulkBar } from "../components/search/BulkBar";
+import {
+  COLUMNS_BY_ID,
+  DEFAULT_COLUMNS,
+  issuesCsv,
+  type ColumnId,
+} from "../components/search/columns";
+import { downloadCsv, toCsv } from "../components/search/csv";
+import { useColumnLookups, useJqlContext } from "../components/search/useJqlContext";
 
-type ViewMode = "list" | "board";
-
+type ViewMode = "list" | "detail" | "board";
+type SearchMode = "basic" | "jql";
 type StatusFilter = "ALL" | "ACTIVE" | IssueStatus;
 
 const UNASSIGNED_FILTER = "UNASSIGNED";
-const PAGE_SIZE = 30;
-const SEARCH_DEBOUNCE_MS = 300;
+/** `?view=detail` shows the split list + issue panel; `?view=board` the board. */
+const VIEW_PARAM = "view";
+const PAGE_SIZE = 50;
+const COLUMNS_STORAGE_KEY = "amr-hub:navigator-columns";
+const MODE_STORAGE_KEY = "amr-hub:navigator-mode";
+const DATE_FIELDS: JqlField[] = ["created", "updated", "resolved", "due", "startdate"];
 
 const statusFilters: { label: string; value: StatusFilter }[] = [
   { label: "All issues", value: "ALL" },
@@ -47,285 +80,300 @@ const statusFilters: { label: string; value: StatusFilter }[] = [
   { label: "Completed", value: "DONE" },
 ];
 
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-  }).format(new Date(value));
-}
-
-function dueDateState(value: string) {
-  const dueDate = new Date(value);
-  const today = new Date();
-  dueDate.setUTCHours(0, 0, 0, 0);
-  today.setUTCHours(0, 0, 0, 0);
-  const daysUntilDue = Math.round(
-    (dueDate.getTime() - today.getTime()) / 86_400_000,
-  );
-
-  if (daysUntilDue < 0) return "overdue";
-  if (daysUntilDue <= 2) return "due-soon";
-  return "scheduled";
-}
-
-function initials(name: string | undefined) {
-  if (!name) return "?";
-  return name
-    .split(" ")
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2);
-}
-
-function buildQueryParams(filters: {
-  query: string;
-  statusFilter: StatusFilter;
-  priorityFilter: IssuePriority | "ALL";
-  projectFilter: string;
-  labelFilter: string;
-  assigneeFilter: string;
-  sortNewestFirst: boolean;
-  cursor?: string;
-  limit?: number;
-}) {
-  const params = new URLSearchParams();
-  if (filters.statusFilter !== "ALL") params.set("status", filters.statusFilter);
-  if (filters.priorityFilter !== "ALL") {
-    params.set("priority", filters.priorityFilter);
+function readStorage<T>(key: string, fallback: T, validate: (value: unknown) => value is T): T {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return fallback;
+    const parsed: unknown = JSON.parse(raw);
+    return validate(parsed) ? parsed : fallback;
+  } catch {
+    return fallback;
   }
-  if (filters.projectFilter !== "ALL") {
-    params.set("projectId", filters.projectFilter);
-  }
-  if (filters.labelFilter !== "ALL") params.set("labelId", filters.labelFilter);
-  if (filters.assigneeFilter !== "ALL") {
-    params.set("assigneeId", filters.assigneeFilter);
-  }
-  if (filters.query) params.set("q", filters.query);
-  params.set("sort", filters.sortNewestFirst ? "NEWEST" : "OLDEST");
-  if (filters.limit) params.set("limit", String(filters.limit));
-  if (filters.cursor) params.set("cursor", filters.cursor);
-  return params;
 }
+
+function writeStorage(key: string, value: unknown) {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Storage can be unavailable (private mode); preferences are optional.
+  }
+}
+
+const isColumnList = (value: unknown): value is ColumnId[] =>
+  Array.isArray(value) &&
+  value.length > 0 &&
+  value.every((id) => COLUMNS_BY_ID.has(id as ColumnId));
+const isMode = (value: unknown): value is SearchMode => value === "basic" || value === "jql";
 
 export default function IssuesPage() {
+  return (
+    <Suspense fallback={<WorkspaceLoading label="issues" />}>
+      <NavigatorGate />
+    </Suspense>
+  );
+}
+
+function NavigatorGate() {
+  const { isLoading } = useIssues();
+  if (isLoading) return <WorkspaceLoading label="issues" />;
+  return <IssueNavigator />;
+}
+
+function IssueNavigator() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const {
     issues,
     labels,
     savedViews,
     members,
-    isLoading,
+    cycles,
     updateStatus,
     createSavedView,
     deleteSavedView,
   } = useIssues();
-  const { data: activeMember } = authClient.useActiveMember();
   const { projects } = useProjects();
+  const { data: activeMember } = authClient.useActiveMember();
   const isViewer = activeMember?.role === "viewer";
-  const [query, setQuery] = useState("");
-  const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
-  const [priorityFilter, setPriorityFilter] = useState<IssuePriority | "ALL">(
-    "ALL",
+  const isOwner = activeMember?.role === "owner";
+
+  const [mode, setMode] = useState<SearchMode>(() =>
+    searchParams.get("jql") !== null ? "jql" : readStorage(MODE_STORAGE_KEY, "basic", isMode),
   );
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
+  const [priorityFilter, setPriorityFilter] = useState<IssuePriority | "ALL">("ALL");
   const [projectFilter, setProjectFilter] = useState("ALL");
-  const [viewMode, setViewMode] = useState<ViewMode>("list");
-  const [sortNewestFirst, setSortNewestFirst] = useState(true);
   const [labelFilter, setLabelFilter] = useState("ALL");
   const [assigneeFilter, setAssigneeFilter] = useState("ALL");
+  const [sortNewestFirst, setSortNewestFirst] = useState(true);
+  const [basicOrder, setBasicOrder] = useState<JqlOrderBy[] | null>(null);
+
+  const [jqlDraft, setJqlDraft] = useState(() => searchParams.get("jql") ?? "");
+  const [appliedJql, setAppliedJql] = useState(() => searchParams.get("jql") ?? "");
+  const [searchedAt, setSearchedAt] = useState(() => new Date());
+
+  const [columns, setColumns] = useState<ColumnId[]>(() =>
+    readStorage(COLUMNS_STORAGE_KEY, DEFAULT_COLUMNS, isColumnList),
+  );
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+
   const [selectedViewId, setSelectedViewId] = useState("");
   const [isSaveViewOpen, setIsSaveViewOpen] = useState(false);
   const [viewName, setViewName] = useState("");
   const [viewError, setViewError] = useState<string | null>(null);
   const [isSavingView, setIsSavingView] = useState(false);
 
-  const [pageIssues, setPageIssues] = useState<Issue[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [isFetchingList, setIsFetchingList] = useState(true);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [listError, setListError] = useState<string | null>(null);
+  const viewParam = searchParams.get(VIEW_PARAM);
+  const viewMode: ViewMode = viewParam === "detail" || viewParam === "board" ? viewParam : "list";
+  const { selectedIssueId } = useSelectedIssue();
 
-  const [boardIssues, setBoardIssues] = useState<Issue[]>([]);
-  const [isFetchingBoard, setIsFetchingBoard] = useState(true);
-  const [boardError, setBoardError] = useState<string | null>(null);
+  const ctx = useJqlContext(searchedAt);
+  const lookups = useColumnLookups();
 
-  useEffect(() => {
-    const timeout = setTimeout(
-      () => setDebouncedQuery(query.trim()),
-      SEARCH_DEBOUNCE_MS,
-    );
-    return () => clearTimeout(timeout);
-  }, [query]);
-
-  useEffect(() => {
-    if (isLoading) return;
-
-    const controller = new AbortController();
-
-    const loadPage = async () => {
-      setIsFetchingList(true);
-      setListError(null);
-
-      const params = buildQueryParams({
-        query: debouncedQuery,
-        statusFilter,
-        priorityFilter,
-        projectFilter,
-        labelFilter,
-        assigneeFilter,
-        sortNewestFirst,
-        limit: PAGE_SIZE,
-      });
-
-      try {
-        const response = await apiRequest<IssueListResponse>(
-          `/api/issues?${params}`,
-          { signal: controller.signal },
-        );
-        setPageIssues(response.issues);
-        setNextCursor(response.nextCursor);
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          setListError(
-            error instanceof Error ? error.message : "Issues could not be loaded",
-          );
-        }
-      } finally {
-        if (!controller.signal.aborted) setIsFetchingList(false);
-      }
-    };
-
-    void loadPage();
-
-    return () => controller.abort();
-  }, [
-    isLoading,
-    debouncedQuery,
-    statusFilter,
-    priorityFilter,
-    projectFilter,
-    labelFilter,
-    assigneeFilter,
-    sortNewestFirst,
-  ]);
-
-  useEffect(() => {
-    if (isLoading || viewMode !== "board") return;
-
-    const controller = new AbortController();
-
-    const loadBoard = async () => {
-      setIsFetchingBoard(true);
-      setBoardError(null);
-
-      const params = buildQueryParams({
-        query: debouncedQuery,
-        statusFilter,
-        priorityFilter,
-        projectFilter,
-        labelFilter,
-        assigneeFilter,
-        sortNewestFirst,
-      });
-
-      try {
-        const response = await apiRequest<IssueListResponse>(
-          `/api/issues?${params}`,
-          { signal: controller.signal },
-        );
-        setBoardIssues(response.issues);
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          setBoardError(
-            error instanceof Error ? error.message : "Board could not be loaded",
-          );
-        }
-      } finally {
-        if (!controller.signal.aborted) setIsFetchingBoard(false);
-      }
-    };
-
-    void loadBoard();
-
-    return () => controller.abort();
-  }, [
-    isLoading,
-    viewMode,
-    debouncedQuery,
-    statusFilter,
-    priorityFilter,
-    projectFilter,
-    labelFilter,
-    assigneeFilter,
-    sortNewestFirst,
-  ]);
-
-  const loadMore = async () => {
-    if (!nextCursor) return;
-    setIsLoadingMore(true);
-    setListError(null);
-
-    const params = buildQueryParams({
-      query: debouncedQuery,
-      statusFilter,
-      priorityFilter,
-      projectFilter,
-      labelFilter,
-      assigneeFilter,
-      sortNewestFirst,
-      limit: PAGE_SIZE,
-      cursor: nextCursor,
-    });
-
-    try {
-      const response = await apiRequest<IssueListResponse>(
-        `/api/issues?${params}`,
-      );
-      setPageIssues((current) => [...current, ...response.issues]);
-      setNextCursor(response.nextCursor);
-    } catch (error) {
-      setListError(
-        error instanceof Error ? error.message : "More issues could not be loaded",
-      );
-    } finally {
-      setIsLoadingMore(false);
-    }
-  };
-
-  const handleUpdateStatus = async (issueId: string, status: IssueStatus) => {
-    const updated = await updateStatus(issueId, status);
-    if (updated) {
-      setPageIssues((current) =>
-        current.map((issue) =>
-          issue.id === issueId ? { ...issue, status } : issue,
-        ),
-      );
-      setBoardIssues((current) =>
-        current.map((issue) =>
-          issue.id === issueId ? { ...issue, status } : issue,
-        ),
-      );
-    }
-    return updated;
-  };
-
-  const markViewModified = () => setSelectedViewId("");
-  const selectedView = savedViews.find(
-    (view) => view.id === selectedViewId,
-  );
-
-  const applySavedView = (id: string) => {
-    const view = savedViews.find((candidate) => candidate.id === id);
+  const applySavedView = (view: SavedView | undefined, id: string) => {
     setSelectedViewId(id);
+    setVisibleCount(PAGE_SIZE);
+    setSelectedIds(new Set());
     if (!view) return;
-
+    if (view.jql) {
+      setMode("jql");
+      setJqlDraft(view.jql);
+      setAppliedJql(view.jql);
+      setSearchedAt(new Date());
+      return;
+    }
+    setMode("basic");
     setQuery(view.query);
-    setDebouncedQuery(view.query.trim());
     setStatusFilter(view.status);
     setPriorityFilter(view.priority);
     setAssigneeFilter(view.assignee);
     setLabelFilter(view.labelId ?? "ALL");
     setSortNewestFirst(view.sort === "NEWEST");
+    setBasicOrder(null);
   };
+
+  const filterParam = searchParams.get("filter");
+  const [appliedFilterParam, setAppliedFilterParam] = useState<string | null>(null);
+  if (filterParam !== appliedFilterParam) {
+    setAppliedFilterParam(filterParam);
+    if (filterParam) {
+      const view = savedViews.find((candidate) => candidate.id === filterParam);
+      const freshJql = searchParams.get("jql");
+      applySavedView(view && freshJql !== null ? { ...view, jql: freshJql } : view, filterParam);
+    }
+  }
+
+  const jqlParam = searchParams.get("jql");
+  const [seenJqlParam, setSeenJqlParam] = useState(jqlParam);
+  if (jqlParam !== seenJqlParam) {
+    setSeenJqlParam(jqlParam);
+    if (jqlParam !== null && jqlParam !== appliedJql) {
+      setMode("jql");
+      setJqlDraft(jqlParam);
+      setAppliedJql(jqlParam);
+    }
+  }
+
+  const markViewModified = () => {
+    setSelectedViewId("");
+    setVisibleCount(PAGE_SIZE);
+  };
+
+  const basicJql = useMemo(() => {
+    const base = basicFiltersToJql({
+      text: query,
+      status: statusFilter,
+      priority: priorityFilter,
+      projectKey: projects.find((project) => project.id === projectFilter)?.key ?? null,
+      labelName: labels.find((label) => label.id === labelFilter)?.name ?? null,
+      assignee:
+        assigneeFilter === UNASSIGNED_FILTER
+          ? UNASSIGNED_FILTER
+          : (members.find((member) => member.id === assigneeFilter)?.email ?? null),
+      sort: sortNewestFirst ? "NEWEST" : "OLDEST",
+    });
+    return basicOrder ? setJqlOrderBy(base, basicOrder) : base;
+  }, [
+    query,
+    statusFilter,
+    priorityFilter,
+    projects,
+    projectFilter,
+    labels,
+    labelFilter,
+    members,
+    assigneeFilter,
+    sortNewestFirst,
+    basicOrder,
+  ]);
+
+  const effectiveJql = mode === "jql" ? appliedJql : basicJql;
+  const search = useMemo(
+    () => searchIssuesWithJql(issues, effectiveJql, ctx),
+    [issues, effectiveJql, ctx],
+  );
+  const results = useMemo(() => (search.ok ? search.issues : []), [search]);
+  const orderBy = search.ok && search.query.orderBy.length ? search.query.orderBy : DEFAULT_JQL_ORDER;
+  const pageIssues = results.slice(0, visibleCount);
+  const selectedIssues = results.filter((issue) => selectedIds.has(issue.id));
+  const firstResultId = results[0]?.id ?? null;
+
+  // Jira's detail view always shows an issue: pick the first result when the
+  // URL doesn't name one yet.
+  useEffect(() => {
+    if (viewMode !== "detail" || selectedIssueId || !firstResultId) return;
+    router.replace(selectedIssueHref(pathname, searchParams, firstResultId), { scroll: false });
+  }, [viewMode, selectedIssueId, firstResultId, router, pathname, searchParams]);
+  const jqlError = mode === "jql" && !search.ok ? search.error : null;
+
+  const suggestionSource = useMemo<JqlSuggestionSource>(() => {
+    const versions = new Map<string, { name: string }>();
+    const components = new Map<string, { name: string }>();
+    for (const issue of issues) {
+      if (issue.fixVersion) versions.set(issue.fixVersion.name, issue.fixVersion);
+      for (const component of issue.components) components.set(component.name, component);
+    }
+    return {
+      projects,
+      members,
+      labels,
+      cycles,
+      versions: [...versions.values()],
+      components: [...components.values()],
+    };
+  }, [issues, projects, members, labels, cycles]);
+
+  const syncUrl = (jql: string | null) => {
+    // Rebuild the query but keep the view switcher and open issue.
+    const params = new URLSearchParams();
+    for (const key of [VIEW_PARAM, SELECTED_ISSUE_PARAM]) {
+      const value = searchParams.get(key);
+      if (value) params.set(key, value);
+    }
+    if (jql !== null) params.set("jql", jql);
+    const search = params.toString();
+    setSeenJqlParam(jql);
+    router.replace(search ? `${pathname}?${search}` : pathname, { scroll: false });
+  };
+
+  const runJql = (jql = jqlDraft) => {
+    setAppliedJql(jql);
+    setSearchedAt(new Date());
+    setVisibleCount(PAGE_SIZE);
+    setSelectedIds(new Set());
+    setSelectedViewId((current) => {
+      const view = savedViews.find((candidate) => candidate.id === current);
+      return view?.jql === jql ? current : "";
+    });
+    syncUrl(jql);
+  };
+
+  const switchMode = (next: SearchMode) => {
+    if (next === mode) return;
+    if (next === "jql") {
+      setJqlDraft(basicJql);
+      setAppliedJql(basicJql);
+    } else {
+      syncUrl(null);
+    }
+    setMode(next);
+    writeStorage(MODE_STORAGE_KEY, next);
+  };
+
+  const handleSort = (field: JqlField) => {
+    const primary = orderBy[0];
+    const direction =
+      primary?.field === field
+        ? primary.direction === "ASC"
+          ? "DESC"
+          : "ASC"
+        : DATE_FIELDS.includes(field)
+          ? "DESC"
+          : "ASC";
+    const nextOrder: JqlOrderBy[] = [{ field, direction }];
+    if (mode === "jql") {
+      const next = setJqlOrderBy(appliedJql, nextOrder);
+      setJqlDraft(next);
+      runJql(next);
+    } else {
+      setBasicOrder(nextOrder);
+      markViewModified();
+    }
+  };
+
+  const updateColumns = (next: ColumnId[]) => {
+    setColumns(next);
+    writeStorage(COLUMNS_STORAGE_KEY, next);
+  };
+
+  const toggleSelected = (id: string) =>
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const toggleAll = (select: boolean) =>
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      for (const issue of pageIssues) {
+        if (select) next.add(issue.id);
+        else next.delete(issue.id);
+      }
+      return next;
+    });
+
+  const exportCsv = () => {
+    const { header, rows } = issuesCsv(results, columns, lookups);
+    downloadCsv(`issues-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(header, rows));
+  };
+
+  const selectedView = savedViews.find((view) => view.id === selectedViewId);
 
   const handleSaveView = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -338,22 +386,19 @@ export default function IssuesPage() {
     try {
       const view = await createSavedView({
         name,
-        query: query.trim(),
-        status: statusFilter,
-        priority: priorityFilter,
-        assignee: assigneeFilter,
-        sort: sortNewestFirst ? "NEWEST" : "OLDEST",
-        labelId: labelFilter === "ALL" ? null : labelFilter,
+        query: mode === "basic" ? query.trim().slice(0, 100) : "",
+        status: mode === "basic" ? statusFilter : "ALL",
+        priority: mode === "basic" ? priorityFilter : "ALL",
+        assignee: mode === "basic" ? assigneeFilter : "ALL",
+        sort: mode === "basic" && !sortNewestFirst ? "OLDEST" : "NEWEST",
+        labelId: mode === "basic" && labelFilter !== "ALL" ? labelFilter : null,
+        jql: mode === "jql" ? appliedJql : null,
       });
       setSelectedViewId(view.id);
       setViewName("");
       setIsSaveViewOpen(false);
     } catch (error) {
-      setViewError(
-        error instanceof Error
-          ? error.message
-          : "Saved view could not be created",
-      );
+      setViewError(error instanceof Error ? error.message : "Filter could not be saved");
     } finally {
       setIsSavingView(false);
     }
@@ -365,354 +410,428 @@ export default function IssuesPage() {
   };
 
   const clearFilters = () => {
+    if (mode === "jql") {
+      setJqlDraft("");
+      runJql("");
+      return;
+    }
     setQuery("");
-    setDebouncedQuery("");
     setStatusFilter("ALL");
     setPriorityFilter("ALL");
     setLabelFilter("ALL");
     setAssigneeFilter("ALL");
-    setSelectedViewId("");
+    setProjectFilter("ALL");
+    setBasicOrder(null);
+    markViewModified();
   };
 
-  if (isLoading) {
-    return <WorkspaceLoading label="issues" />;
-  }
+  const handleUpdateStatus = (issueId: string, status: IssueStatus) =>
+    updateStatus(issueId, status);
+
+  const setViewMode = (next: ViewMode) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (next === "list") params.delete(VIEW_PARAM);
+    else params.set(VIEW_PARAM, next);
+    if (next !== "detail") params.delete(SELECTED_ISSUE_PARAM);
+    const search = params.toString();
+    router.replace(search ? `${pathname}?${search}` : pathname, { scroll: false });
+  };
+
+  const viewOptions: { value: ViewMode; label: string; icon: typeof Rows3 }[] = [
+    { value: "list", label: "List", icon: Rows3 },
+    { value: "detail", label: "Detail", icon: PanelRight },
+    { value: "board", label: "Board", icon: Kanban },
+  ];
+
+  const emptyState = (
+    <div className="empty-state">
+      <Search size={24} aria-hidden="true" />
+      <h2>{jqlError ? "Fix the query to see results" : "No matching work items"}</h2>
+      <p>
+        {jqlError ? "The JQL above has an error." : "Try changing the search or active filters."}
+      </p>
+      <button className="secondary-button" type="button" onClick={clearFilters}>
+        Clear search
+      </button>
+    </div>
+  );
+
+  const loadMore = visibleCount < results.length && (
+    <div className="load-more-row">
+      <button
+        className="secondary-button"
+        type="button"
+        onClick={() => setVisibleCount((current) => current + PAGE_SIZE)}
+      >
+        Load more ({results.length - visibleCount} remaining)
+      </button>
+    </div>
+  );
 
   return (
-    <div className="page issues-page">
-      <header className="page-header">
-        <div>
-          <p className="eyebrow">Workspace</p>
-          <h1>Issues</h1>
-          <p className="page-description">
-            Prioritize, assign, and move work through delivery.
-          </p>
+    <div className="page issues-page search-page">
+      <header className="jira-page-header">
+        <div className="search-page-heading">
+          <h1 className="jira-page-title">{selectedView ? selectedView.name : "Search"}</h1>
         </div>
-        {!isViewer && (
-          <Link className="primary-button" href="/issues/new">
-            <Plus size={16} aria-hidden="true" />
-            New issue
-          </Link>
-        )}
+        <div className="jira-page-actions">
+          <label className="select-button search-filter-picker">
+            <Bookmark size={15} aria-hidden="true" />
+            <span className="sr-only">Open a saved filter</span>
+            <select
+              value={selectedViewId}
+              onChange={(event) =>
+                applySavedView(
+                  savedViews.find((view) => view.id === event.target.value),
+                  event.target.value,
+                )
+              }
+            >
+              <option value="">Filters…</option>
+              {savedViews.map((view) => (
+                <option value={view.id} key={view.id}>
+                  {view.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            className="secondary-button search-header-button"
+            type="button"
+            disabled={mode === "jql" && !!jqlError}
+            onClick={() => {
+              setViewError(null);
+              setIsSaveViewOpen(true);
+            }}
+          >
+            <BookmarkPlus size={15} aria-hidden="true" />
+            {selectedView ? "Save as" : "Save filter"}
+          </button>
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <button
+                className="icon-button search-header-more"
+                type="button"
+                aria-label="More actions"
+                title="More actions"
+              >
+                <MoreHorizontal size={16} aria-hidden="true" />
+              </button>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content className="search-menu" align="end" sideOffset={6}>
+                <DropdownMenu.Item
+                  className="search-menu-item"
+                  disabled={results.length === 0}
+                  onSelect={exportCsv}
+                >
+                  <Download size={14} aria-hidden="true" />
+                  Export CSV
+                </DropdownMenu.Item>
+                {!isViewer && (
+                  <DropdownMenu.Item
+                    className="search-menu-item"
+                    onSelect={() => router.push("/issues/new")}
+                  >
+                    <Plus size={14} aria-hidden="true" />
+                    Create issue
+                  </DropdownMenu.Item>
+                )}
+                <DropdownMenu.Item
+                  className="search-menu-item"
+                  onSelect={() => router.push("/filters")}
+                >
+                  <ListFilter size={14} aria-hidden="true" />
+                  View all filters
+                </DropdownMenu.Item>
+                {selectedView && !selectedView.isSystem && (
+                  <>
+                    <DropdownMenu.Separator className="search-menu-separator" />
+                    <DropdownMenu.Item
+                      className="search-menu-item danger"
+                      onSelect={() => void handleDeleteView()}
+                    >
+                      <Trash2 size={14} aria-hidden="true" />
+                      Delete filter
+                    </DropdownMenu.Item>
+                  </>
+                )}
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
+        </div>
       </header>
 
-      <div className="saved-views-bar">
-        <label>
-          <Bookmark size={15} aria-hidden="true" />
-          <span className="sr-only">Open a saved view</span>
-          <select
-            value={selectedViewId}
-            onChange={(event) => applySavedView(event.target.value)}
-          >
-            <option value="">Current filters</option>
-            {savedViews.map((view) => (
-              <option value={view.id} key={view.id}>
-                {view.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button
-          className="secondary-button"
-          type="button"
-          aria-label="Save current issue view"
-          title="Save current view"
-          onClick={() => {
-            setViewError(null);
-            setIsSaveViewOpen(true);
-          }}
-        >
-          <BookmarkPlus size={15} aria-hidden="true" />
-          Save view
-        </button>
-        {selectedViewId && !selectedView?.isSystem && (
+      <div className="search-bar-row">
+        <div className="search-mode-toggle" role="tablist" aria-label="Search mode">
           <button
-            className="icon-button danger"
             type="button"
-            onClick={() => void handleDeleteView()}
-            aria-label="Delete selected saved view"
-            title="Delete saved view"
+            role="tab"
+            aria-selected={mode === "basic"}
+            className={mode === "basic" ? "active" : ""}
+            onClick={() => switchMode("basic")}
           >
-            <Trash2 size={15} aria-hidden="true" />
+            Basic
           </button>
-        )}
-      </div>
-
-      <div className="issue-toolbar">
-        <div className="filter-tabs" role="tablist" aria-label="Issue status">
-          {statusFilters.map((filter) => (
-            <button
-              type="button"
-              role="tab"
-              aria-selected={statusFilter === filter.value}
-              className={statusFilter === filter.value ? "active" : ""}
-              onClick={() => {
-                setStatusFilter(filter.value);
-                markViewModified();
-              }}
-              key={filter.value}
-            >
-              {filter.label}
-              {filter.value === "ALL" && <span>{issues.length}</span>}
-            </button>
-          ))}
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === "jql"}
+            className={mode === "jql" ? "active" : ""}
+            onClick={() => switchMode("jql")}
+          >
+            JQL
+          </button>
         </div>
-        <div className="toolbar-actions">
-          <label className="search-field">
-            <Search size={16} aria-hidden="true" />
-            <span className="sr-only">Search issues</span>
-            <input
-              type="search"
-              value={query}
-              onChange={(event) => {
-                setQuery(event.target.value);
-                markViewModified();
-              }}
-              placeholder="Search issues..."
+
+        <div className="search-bar-query">
+          {mode === "jql" ? (
+            <JqlEditor
+              value={jqlDraft}
+              onChange={setJqlDraft}
+              onSearch={() => runJql()}
+              source={suggestionSource}
+              error={jqlError}
             />
-          </label>
-          <label className="select-button">
-            <ListFilter size={16} aria-hidden="true" />
-            <span className="sr-only">Filter by project</span>
-            <select
-              value={projectFilter}
-              onChange={(event) => {
-                setProjectFilter(event.target.value);
-                markViewModified();
-              }}
-            >
-              <option value="ALL">All projects</option>
-              {projects.map((project) => (
-                <option value={project.id} key={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="select-button">
-            <ListFilter size={16} aria-hidden="true" />
-            <span className="sr-only">Filter by priority</span>
-            <select
-              value={priorityFilter}
-              onChange={(event) => {
-                setPriorityFilter(
-                  event.target.value as IssuePriority | "ALL",
-                );
-                markViewModified();
-              }}
-            >
-              <option value="ALL">All priorities</option>
-              {Object.entries(PRIORITY_LABELS).map(([value, label]) => (
-                <option value={value} key={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="select-button">
-            <Tag size={16} aria-hidden="true" />
-            <span className="sr-only">Filter by label</span>
-            <select
-              value={labelFilter}
-              onChange={(event) => {
-                setLabelFilter(event.target.value);
-                markViewModified();
-              }}
-            >
-              <option value="ALL">All labels</option>
-              {labels.map((label) => (
-                <option value={label.id} key={label.id}>
-                  {label.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="select-button">
-            <UserRound size={16} aria-hidden="true" />
-            <span className="sr-only">Filter by assignee</span>
-            <select
-              value={assigneeFilter}
-              onChange={(event) => {
-                setAssigneeFilter(event.target.value);
-                markViewModified();
-              }}
-            >
-              <option value="ALL">All assignees</option>
-              <option value={UNASSIGNED_FILTER}>Unassigned</option>
-              {members.map((member) => (
-                <option value={member.id} key={member.id}>
-                  {member.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="view-toggle" role="tablist" aria-label="Issue view">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={viewMode === "list"}
-              className={viewMode === "list" ? "active" : ""}
-              onClick={() => setViewMode("list")}
-              aria-label="List view"
-              title="List view"
-            >
-              <Rows3 size={16} aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={viewMode === "board"}
-              className={viewMode === "board" ? "active" : ""}
-              onClick={() => setViewMode("board")}
-              aria-label="Board view"
-              title="Board view"
-            >
-              <Kanban size={16} aria-hidden="true" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {viewMode === "board" ? (
-        <section className="issues-board-panel" aria-label="Issues board">
-          {isFetchingBoard ? (
-            <WorkspaceLoading label="board" />
           ) : (
-            <IssueBoard
-              issues={boardIssues}
-              isViewer={isViewer}
-              onStatusChange={handleUpdateStatus}
-            />
-          )}
-          {boardError && (
-            <p className="form-submit-error" role="alert">
-              {boardError}
-            </p>
-          )}
-        </section>
-      ) : (
-      <section className="issues-table-panel" aria-label="Issues list">
-        <div className="table-summary">
-          <span>
-            {pageIssues.length}
-            {nextCursor ? "+" : ""} issues
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              setSortNewestFirst((current) => !current);
-              markViewModified();
-            }}
-            aria-label={
-              sortNewestFirst
-                ? "Sort by oldest issues first"
-                : "Sort by newest issues first"
-            }
-          >
-            {sortNewestFirst ? "Newest" : "Oldest"}
-            <ArrowDownUp size={14} aria-hidden="true" />
-          </button>
-        </div>
-
-        <div className="issues-table-header" aria-hidden="true">
-          <span>Issue</span>
-          <span>Priority</span>
-          <span>Status</span>
-          <span>Assignee</span>
-          <span>Due</span>
-        </div>
-
-        <div className="issues-table-body">
-          {pageIssues.map((issue) => (
-            <article className="issue-table-row" key={issue.id}>
-              <div className="issue-main-cell">
-                <KindIcon kind={issue.kind} />
-                <div>
-                  <Link href={`/issues/${issue.id}`}>{issue.title}</Link>
-                  <div className="issue-row-meta">
-                    <span>{issue.id}</span>
-                    {issue.labels.slice(0, 2).map((label) => (
-                      <IssueLabelChip label={label} compact key={label.id} />
-                    ))}
-                  </div>
-                </div>
-              </div>
-              <PriorityBadge priority={issue.priority} />
-              <label className={`inline-status status-${issue.status.toLowerCase()}`}>
-                <span className="sr-only">Status for {issue.id}</span>
-                <i />
+            <div className="search-basic-filters">
+              <label className="search-field search-basic-text">
+                <Search size={15} aria-hidden="true" />
+                <span className="sr-only">Search work items</span>
+                <input
+                  type="search"
+                  value={query}
+                  onChange={(event) => {
+                    setQuery(event.target.value);
+                    markViewModified();
+                  }}
+                  placeholder="Search work"
+                />
+              </label>
+              <label className="select-button">
+                <span className="sr-only">Filter by project</span>
                 <select
-                  value={issue.status}
-                  disabled={isViewer}
-                  onChange={(event) =>
-                    void handleUpdateStatus(
-                      issue.id,
-                      event.target.value as IssueStatus,
-                    )
-                  }
+                  value={projectFilter}
+                  onChange={(event) => {
+                    setProjectFilter(event.target.value);
+                    markViewModified();
+                  }}
                 >
-                  {Object.entries(STATUS_LABELS).map(([value, label]) => (
+                  <option value="ALL">Project: All</option>
+                  {projects.map((project) => (
+                    <option value={project.id} key={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="select-button">
+                <span className="sr-only">Filter by status</span>
+                <select
+                  value={statusFilter}
+                  onChange={(event) => {
+                    setStatusFilter(event.target.value as StatusFilter);
+                    markViewModified();
+                  }}
+                >
+                  {statusFilters.map((filter) => (
+                    <option value={filter.value} key={filter.value}>
+                      {filter.value === "ALL" ? "Status: All" : filter.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="select-button">
+                <UserRound size={14} aria-hidden="true" />
+                <span className="sr-only">Filter by assignee</span>
+                <select
+                  value={assigneeFilter}
+                  onChange={(event) => {
+                    setAssigneeFilter(event.target.value);
+                    markViewModified();
+                  }}
+                >
+                  <option value="ALL">Assignee: All</option>
+                  <option value={UNASSIGNED_FILTER}>Unassigned</option>
+                  {members.map((member) => (
+                    <option value={member.id} key={member.id}>
+                      {member.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="select-button">
+                <span className="sr-only">Filter by priority</span>
+                <select
+                  value={priorityFilter}
+                  onChange={(event) => {
+                    setPriorityFilter(event.target.value as IssuePriority | "ALL");
+                    markViewModified();
+                  }}
+                >
+                  <option value="ALL">Priority: All</option>
+                  {Object.entries(PRIORITY_LABELS).map(([value, label]) => (
                     <option value={value} key={value}>
                       {label}
                     </option>
                   ))}
                 </select>
               </label>
-              <div className="assignee-cell">
-                <span className="avatar">{initials(issue.assignee?.name)}</span>
-                <span>{issue.assignee?.name ?? "Unassigned"}</span>
-              </div>
-              {issue.dueDate ? (
-                <time
-                  className={`issue-due-date ${dueDateState(issue.dueDate)}`}
-                  dateTime={issue.dueDate}
+              <label className="select-button">
+                <Tag size={14} aria-hidden="true" />
+                <span className="sr-only">Filter by label</span>
+                <select
+                  value={labelFilter}
+                  onChange={(event) => {
+                    setLabelFilter(event.target.value);
+                    markViewModified();
+                  }}
                 >
-                  {formatDate(issue.dueDate)}
-                </time>
-              ) : (
-                <span className="issue-no-due-date">No date</span>
-              )}
-            </article>
-          ))}
+                  <option value="ALL">Labels: All</option>
+                  {labels.map((label) => (
+                    <option value={label.id} key={label.id}>
+                      {label.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
         </div>
 
-        {!isFetchingList && pageIssues.length === 0 && (
-          <div className="empty-state">
-            <Search size={24} aria-hidden="true" />
-            <h2>No matching issues</h2>
-            <p>Try changing the search term or active filters.</p>
-            <button className="secondary-button" type="button" onClick={clearFilters}>
-              Clear filters
+        <div className="search-view-switcher" role="tablist" aria-label="Result view">
+          {viewOptions.map(({ value, label, icon: Icon }) => (
+            <button
+              type="button"
+              role="tab"
+              key={value}
+              aria-selected={viewMode === value}
+              className={viewMode === value ? "active" : ""}
+              onClick={() => setViewMode(value)}
+              title={`${label} view`}
+            >
+              <Icon size={14} aria-hidden="true" />
+              <span>{label}</span>
             </button>
-          </div>
-        )}
+          ))}
+        </div>
+      </div>
 
-        {listError && (
-          <p className="form-submit-error" role="alert">
-            {listError}
-          </p>
-        )}
-
-        {nextCursor && (
-          <div className="load-more-row">
+      <div className="search-results-toolbar">
+        <span className="search-result-count" aria-live="polite">
+          {results.length === 0
+            ? "No work items"
+            : `${Math.min(visibleCount, results.length)} of ${results.length} work item${
+                results.length === 1 ? "" : "s"
+              }`}
+        </span>
+        <div className="search-results-actions">
+          {mode === "basic" && (
             <button
               className="secondary-button"
               type="button"
-              onClick={() => void loadMore()}
-              disabled={isLoadingMore}
+              onClick={() => {
+                setSortNewestFirst((current) => !current);
+                setBasicOrder(null);
+                markViewModified();
+              }}
             >
-              {isLoadingMore ? (
-                <LoaderCircle
-                  className="spinning-icon"
-                  size={15}
-                  aria-hidden="true"
-                />
-              ) : null}
-              {isLoadingMore ? "Loading..." : "Load more issues"}
+              {sortNewestFirst ? "Newest" : "Oldest"}
+              <ArrowDownUp size={14} aria-hidden="true" />
             </button>
-          </div>
-        )}
-      </section>
+          )}
+          {viewMode === "list" && <ColumnChooser value={columns} onChange={updateColumns} />}
+        </div>
+      </div>
+
+      {!isViewer && viewMode === "list" && (
+        <BulkBar
+          selected={selectedIssues}
+          isOwner={isOwner}
+          currentMemberId={activeMember?.id ?? null}
+          onClear={() => setSelectedIds(new Set())}
+          onDeleted={(ids) =>
+            setSelectedIds((current) => {
+              const next = new Set(current);
+              ids.forEach((id) => next.delete(id));
+              return next;
+            })
+          }
+        />
+      )}
+
+      {viewMode === "board" ? (
+        <section className="issues-board-panel" aria-label="Issues board">
+          <IssueBoard
+            issues={results}
+            isViewer={isViewer}
+            onStatusChange={handleUpdateStatus}
+          />
+        </section>
+      ) : viewMode === "detail" ? (
+        <div className="search-detail">
+          <section className="search-detail-list" aria-label="Search results">
+            {results.length === 0 ? (
+              emptyState
+            ) : (
+              <ul className="search-detail-items">
+                {pageIssues.map((issue) => {
+                  const isActive = issue.id === selectedIssueId;
+                  return (
+                    <li key={issue.id}>
+                      <Link
+                        href={selectedIssueHref(pathname, searchParams, issue.id)}
+                        scroll={false}
+                        replace
+                        className={isActive ? "search-detail-item active" : "search-detail-item"}
+                        aria-current={isActive ? "true" : undefined}
+                      >
+                        <span className="search-detail-summary">{issue.title}</span>
+                        <span className="search-detail-meta">
+                          <KindIcon kind={issue.kind} projectId={issue.projectId} />
+                          <span className="search-key">{issue.id}</span>
+                          <StatusBadge status={issue.status} projectId={issue.projectId} />
+                        </span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            {loadMore}
+          </section>
+          <section className="search-detail-panel" aria-label="Work item details">
+            {selectedIssueId ? (
+              <IssueDetailContainer
+                issueId={selectedIssueId}
+                variant="panel"
+                onClose={() => setViewMode("list")}
+              />
+            ) : (
+              <div className="search-detail-empty">
+                <p>Select a work item to see its details.</p>
+              </div>
+            )}
+          </section>
+        </div>
+      ) : (
+        <section className="issues-table-panel search-results-panel" aria-label="Search results">
+          {results.length > 0 ? (
+            <IssueResultsTable
+              issues={pageIssues}
+              columns={columns}
+              lookups={lookups}
+              orderBy={orderBy}
+              onSort={handleSort}
+              selectedIds={!isViewer ? selectedIds : undefined}
+              onToggleSelected={!isViewer ? toggleSelected : undefined}
+              onToggleAll={toggleAll}
+            />
+          ) : (
+            emptyState
+          )}
+          {loadMore}
+        </section>
       )}
 
       {isSaveViewOpen && (
@@ -720,9 +839,7 @@ export default function IssuesPage() {
           className="dialog-backdrop"
           role="presentation"
           onMouseDown={(event) => {
-            if (event.currentTarget === event.target) {
-              setIsSaveViewOpen(false);
-            }
+            if (event.currentTarget === event.target) setIsSaveViewOpen(false);
           }}
         >
           <section
@@ -733,21 +850,25 @@ export default function IssuesPage() {
           >
             <header>
               <div>
-                <h2 id="save-view-title">Save current view</h2>
-                <p>Reuse this filter combination across the workspace.</p>
+                <h2 id="save-view-title">Save filter</h2>
+                <p>
+                  {mode === "jql"
+                    ? "Saves this JQL so you can rerun it from Filters."
+                    : "Reuse this filter combination across the workspace."}
+                </p>
               </div>
               <button
                 className="icon-button"
                 type="button"
                 onClick={() => setIsSaveViewOpen(false)}
-                aria-label="Close save view dialog"
+                aria-label="Close save filter dialog"
               >
                 <X size={16} aria-hidden="true" />
               </button>
             </header>
             <form onSubmit={handleSaveView}>
               <label className="form-field">
-                <span>View name</span>
+                <span>Filter name</span>
                 <input
                   value={viewName}
                   onChange={(event) => {
@@ -759,6 +880,7 @@ export default function IssuesPage() {
                   autoFocus
                 />
               </label>
+              {mode === "jql" && <code className="search-jql-preview">{appliedJql || "(all issues)"}</code>}
               {viewError && (
                 <p className="form-submit-error" role="alert">
                   {viewError}
@@ -778,7 +900,7 @@ export default function IssuesPage() {
                   disabled={viewName.trim().length < 2 || isSavingView}
                 >
                   <BookmarkPlus size={15} aria-hidden="true" />
-                  {isSavingView ? "Saving..." : "Save view"}
+                  {isSavingView ? "Saving..." : "Save filter"}
                 </button>
               </footer>
             </form>
