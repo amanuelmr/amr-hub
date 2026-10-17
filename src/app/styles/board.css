@@ -1,0 +1,780 @@
+/* board — Jira feature styles. Uses retro console tokens from globals.css/retro.css. */
+
+.board-page,
+.backlog-page {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  padding-top: 14px;
+}
+
+/* Board name (Jira shows it in the board selector) — small, not a hero. */
+.board-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.board-name {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 750;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+/* Shared planning toolbar (board + backlog): filters left, actions right. */
+.planning-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin: 0 0 14px;
+}
+
+.planning-toolbar-start,
+.planning-toolbar-end {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.planning-toolbar-start {
+  flex: 1 1 auto;
+}
+
+.planning-toolbar-end {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.planning-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  width: min(200px, 100%);
+  padding: 0 8px;
+  border: 2px solid var(--console-line);
+  border-radius: 2px;
+  color: var(--gray-500);
+  background: var(--surface);
+}
+
+.planning-search:focus-within {
+  border-color: var(--console-cyan);
+}
+
+.planning-search input {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  border: 0;
+  outline: none;
+  color: var(--ink);
+  background: transparent;
+  font-size: 13px;
+}
+
+.planning-search button {
+  display: grid;
+  place-items: center;
+  padding: 2px;
+  border: 0;
+  color: var(--gray-500);
+  background: transparent;
+  cursor: pointer;
+}
+
+.planning-assignees {
+  display: flex;
+  align-items: center;
+  padding-left: 4px;
+}
+
+.planning-assignee {
+  margin-left: -6px;
+  padding: 0;
+  border: 2px solid var(--surface);
+  cursor: pointer;
+  transition: transform 100ms ease;
+}
+
+.planning-assignee:first-child {
+  margin-left: 0;
+}
+
+.planning-assignee:hover {
+  z-index: 2;
+  transform: translateY(-2px);
+}
+
+.planning-assignee.active {
+  z-index: 1;
+  border-color: var(--console-line);
+  color: var(--console-ink);
+  background: var(--console-lime);
+}
+
+.planning-assignee-more {
+  color: var(--ink);
+  background: var(--gray-200);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+/* Toolbar dropdown buttons ("Epic ▾", "Type ▾", "Group: None ▾") */
+.planning-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 32px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--ink-secondary);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 750;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.planning-filter:hover,
+.planning-filter[data-state="open"] {
+  border-color: var(--gray-300);
+  color: var(--ink);
+  background: var(--gray-100);
+}
+
+.planning-filter.active {
+  border-color: var(--console-line);
+  color: var(--console-ink);
+  background: var(--console-cyan);
+}
+
+.planning-filter-count {
+  display: inline-grid;
+  min-width: 18px;
+  height: 18px;
+  place-items: center;
+  padding: 0 4px;
+  border-radius: 999px;
+  color: var(--surface);
+  background: var(--ink);
+  font-size: 10px;
+}
+
+.planning-clear {
+  font-size: 12px;
+}
+
+.planning-menu-label {
+  padding: 6px 9px 4px;
+  color: var(--gray-500);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.planning-menu-empty {
+  margin: 0;
+  padding: 8px 9px;
+  color: var(--gray-500);
+  font-size: 12px;
+}
+
+.planning-filter-menu {
+  max-height: min(420px, 70vh);
+  overflow-y: auto;
+}
+
+.planning-menu-text {
+  min-width: 0;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planning-check-box,
+.planning-radio {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 2px solid var(--console-line);
+  border-radius: 2px;
+  background: var(--surface);
+}
+
+.planning-radio {
+  border-radius: 999px;
+}
+
+.planning-radio-dot {
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--ink);
+}
+
+.planning-check-item[data-state="checked"] .planning-check-box {
+  color: var(--console-ink);
+  background: var(--console-lime);
+}
+
+.planning-epic-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border: 1px solid var(--console-line);
+  border-radius: 2px;
+}
+
+.planning-menu-end {
+  margin-left: auto;
+}
+
+/* Sprint chip + tooltip */
+.board-sprint-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 0 8px;
+  border-radius: 3px;
+  color: var(--ink-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.board-sprint-chip:hover,
+.board-sprint-chip:focus-visible {
+  background: var(--gray-100);
+  outline: none;
+}
+
+.planning-tooltip {
+  z-index: 130;
+  display: flex;
+  max-width: 280px;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 2px solid var(--console-line);
+  border-radius: 3px;
+  color: var(--surface);
+  background: var(--ink);
+  box-shadow: var(--console-shadow-small);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.planning-tooltip strong {
+  font-family: var(--font-mono);
+}
+
+/* Board grid: Jira columns are full-height, subtly tinted lanes. */
+.board-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+.board-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--board-columns, 4), minmax(250px, 1fr));
+  gap: 10px 8px;
+  min-width: min-content;
+}
+
+/* Without swimlanes the header and cell read as one column. */
+.board-grid.no-lanes {
+  row-gap: 0;
+}
+
+.board-column-head {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 10px 6px;
+  border-radius: var(--radius) var(--radius) 0 0;
+  color: var(--gray-500);
+  background: var(--gray-50);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.board-grid:not(.no-lanes) .board-column-head {
+  border-radius: var(--radius);
+  padding-bottom: 10px;
+}
+
+.board-column-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-column-count {
+  color: var(--gray-500);
+}
+
+.board-column-wip {
+  margin-left: auto;
+  color: var(--gray-500);
+  font-size: 10px;
+}
+
+.board-column-head.over-limit {
+  color: var(--red-700);
+  background: var(--red-50);
+}
+
+.board-column-head.over-limit .board-column-count,
+.board-column-head.over-limit .board-column-wip {
+  color: var(--red-600);
+}
+
+.board-lane {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  gap: 6px 8px;
+}
+
+.board-lane-header {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 2px 2px;
+  border: 0;
+  color: var(--ink);
+  background: transparent;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.board-lane-header span {
+  color: var(--gray-500);
+  font-size: 12px;
+}
+
+.board-cell {
+  display: flex;
+  min-height: 72px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 6px 6px;
+  border: 2px solid transparent;
+  border-radius: var(--radius);
+  background: var(--gray-50);
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.board-grid.no-lanes .board-cell {
+  min-height: calc(100dvh - var(--shell-topbar-h, 56px) - var(--project-header-h, 94px) - 240px);
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+
+.board-cell.drag-over {
+  border-color: var(--console-cyan);
+  border-style: dashed;
+  background: color-mix(in srgb, var(--console-cyan) 12%, var(--gray-50));
+}
+
+.board-no-match {
+  grid-column: 1 / -1;
+  padding: 24px;
+  color: var(--gray-500);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* Cards */
+.planning-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 10px 8px;
+  border: 2px solid var(--console-line);
+  border-radius: 3px;
+  background: var(--surface);
+  box-shadow: var(--console-shadow-small);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.planning-card:hover {
+  background: var(--gray-25);
+}
+
+.planning-card:active {
+  cursor: grabbing;
+}
+
+.planning-card:focus-visible {
+  outline: 3px solid var(--console-cyan);
+  outline-offset: 1px;
+}
+
+.planning-card.flagged {
+  background: color-mix(in srgb, var(--amber-500) 14%, var(--surface));
+}
+
+.planning-card.flagged:hover {
+  background: color-mix(in srgb, var(--amber-500) 20%, var(--surface));
+}
+
+.planning-card.dragging {
+  opacity: 0.35;
+}
+
+.planning-card.overlay {
+  cursor: grabbing;
+  box-shadow: var(--console-shadow);
+  transform: rotate(1.5deg);
+}
+
+.board-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.board-card-head .board-card-title {
+  margin: 0;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.board-card-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.board-card-menu-trigger {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  color: var(--gray-500);
+  background: transparent;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.planning-card:hover .board-card-menu-trigger,
+.backlog-row:hover .board-card-menu-trigger,
+.backlog-row.selected .board-card-menu-trigger,
+.board-card-menu-trigger:focus-visible,
+.board-card-menu-trigger[data-state="open"] {
+  opacity: 1;
+}
+
+.board-card-menu-trigger:hover {
+  border-color: var(--console-line);
+  color: var(--ink);
+  background: var(--gray-100);
+}
+
+@media (hover: none) {
+  .board-card-menu-trigger {
+    opacity: 1;
+  }
+}
+
+.board-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  color: var(--gray-500);
+  font-size: 12px;
+}
+
+.board-card-meta .board-card-id {
+  color: var(--gray-500);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.board-card-id.done,
+.backlog-row-key.done {
+  text-decoration: line-through;
+}
+
+.board-card-meta .board-card-id:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+.board-card-subtasks,
+.board-card-due {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.board-card-due.overdue {
+  color: var(--red-600);
+}
+
+.board-card-meta-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.board-card-priority .priority {
+  gap: 0;
+  padding: 2px;
+  font-size: 0;
+}
+
+.planning-epic-chip {
+  display: inline-flex;
+  max-width: 180px;
+  overflow: hidden;
+  padding: 1px 6px;
+  border: 1px solid var(--console-line);
+  border-radius: 2px;
+  color: var(--console-ink);
+  background: var(--epic-color, var(--console-violet));
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.planning-points {
+  display: inline-grid;
+  min-width: 20px;
+  height: 18px;
+  place-items: center;
+  padding: 0 5px;
+  border-radius: 999px;
+  color: var(--ink);
+  background: var(--gray-200);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.planning-points.empty {
+  color: var(--gray-400);
+  background: var(--gray-100);
+}
+
+.planning-flag {
+  display: inline-flex;
+  align-items: center;
+  color: var(--red-600);
+}
+
+/* Column "+ Create": appears on hover at the bottom of each column. */
+.board-column-create,
+.backlog-create-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 3px;
+  color: var(--ink-secondary);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 750;
+  text-align: left;
+  cursor: pointer;
+}
+
+.board-column-create {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.board-cell:hover .board-column-create,
+.board-column-create:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .board-column-create {
+    opacity: 1;
+  }
+}
+
+.board-column-create:hover,
+.backlog-create-trigger:hover {
+  color: var(--ink);
+  background: var(--gray-100);
+}
+
+.board-inline-create {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 2px solid var(--console-cyan);
+  border-radius: 3px;
+  background: var(--surface);
+  box-shadow: var(--console-shadow-small);
+}
+
+.board-inline-create textarea,
+.backlog-create input {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 0;
+  color: var(--ink);
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  resize: none;
+}
+
+.backlog-create input {
+  min-height: 32px;
+  border: 2px solid var(--console-line);
+  border-radius: 2px;
+  background: var(--surface);
+}
+
+.board-inline-create textarea:focus,
+.backlog-create input:focus {
+  outline: none;
+}
+
+.backlog-create input:focus {
+  border-color: var(--console-cyan);
+}
+
+.board-inline-create-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* Menus (Radix dropdown) */
+.planning-menu {
+  z-index: 120;
+  min-width: 200px;
+  padding: 4px;
+  border: 2px solid var(--console-line);
+  border-radius: 3px;
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: var(--console-shadow);
+}
+
+.planning-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  outline: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.planning-menu-item[data-highlighted] {
+  color: var(--console-ink);
+  background: var(--console-lime);
+}
+
+.planning-menu-item.danger {
+  color: var(--red-600);
+}
+
+.planning-menu-item.danger[data-highlighted] {
+  color: var(--red-50);
+  background: var(--red-500);
+}
+
+.planning-menu-separator {
+  height: 2px;
+  margin: 4px 2px;
+  background: var(--gray-200);
+}
+
+@media (max-width: 640px) {
+  .planning-toolbar-start,
+  .planning-toolbar-end {
+    width: 100%;
+  }
+
+  .planning-toolbar-end {
+    margin-left: 0;
+  }
+
+  .planning-search {
+    width: 100%;
+  }
+
+  .board-grid {
+    grid-template-columns: repeat(var(--board-columns, 4), minmax(240px, 80vw));
+  }
+
+  .board-grid.no-lanes .board-cell {
+    min-height: 50vh;
+  }
+}

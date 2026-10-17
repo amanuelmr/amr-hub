@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { STATUS_LABELS, type Issue, type IssueStatus } from "../data/issues";
+import { usePathname, useSearchParams } from "next/navigation";
+import { selectedIssueHref } from "./issue/selectedIssue";
+import type { Issue, IssueStatus } from "../data/issues";
+import { useWorkflows } from "../WorkflowProvider";
 import { IssueLabelChip } from "./IssueLabelChip";
 import { KindIcon, PriorityBadge } from "./IssueVisuals";
 
-const COLUMNS: IssueStatus[] = ["BACKLOG", "OPEN", "IN_PROGRESS", "DONE"];
 
 function initials(name: string | undefined) {
   if (!name) return "?";
@@ -29,6 +31,15 @@ export function IssueBoard({
   const [dragOverColumn, setDragOverColumn] = useState<IssueStatus | null>(
     null,
   );
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const { allStatuses } = useWorkflows();
+  // Every configured status that is in use or built in, in workflow order.
+  const columns = allStatuses.filter(
+    (status) =>
+      !status.key.includes(":") ||
+      issues.some((issue) => issue.status === status.key),
+  );
 
   const handleDrop = (status: IssueStatus, issueId: string) => {
     setDragOverColumn(null);
@@ -38,7 +49,7 @@ export function IssueBoard({
 
   return (
     <div className="issue-board">
-      {COLUMNS.map((status) => {
+      {columns.map(({ key: status, name }) => {
         const columnIssues = issues.filter((issue) => issue.status === status);
 
         return (
@@ -61,14 +72,15 @@ export function IssueBoard({
             }}
           >
             <header className="board-column-header">
-              <span>{STATUS_LABELS[status]}</span>
+              <span>{name}</span>
               <span className="board-column-count">{columnIssues.length}</span>
             </header>
 
             <div className="board-column-body">
               {columnIssues.map((issue) => (
                 <Link
-                  href={`/issues/${issue.id}`}
+                  href={selectedIssueHref(pathname, searchParams, issue.id)}
+                  scroll={false}
                   className="board-card"
                   key={issue.id}
                   draggable={!isViewer}
@@ -78,7 +90,7 @@ export function IssueBoard({
                   }}
                 >
                   <div className="board-card-top">
-                    <KindIcon kind={issue.kind} />
+                    <KindIcon kind={issue.kind} projectId={issue.projectId} />
                     <span className="board-card-id">{issue.id}</span>
                   </div>
                   <p className="board-card-title">{issue.title}</p>

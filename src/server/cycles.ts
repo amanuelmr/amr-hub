@@ -1,17 +1,25 @@
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
-import type { Cycle, NewCycleInput } from "../app/data/issues";
+import type { Cycle, NewCycleInput, SprintState } from "../app/data/issues";
 import prisma from "../../prisma/client";
 import type { WorkspaceActor } from "./issues";
 
-function serializeCycle(cycle: {
+export type StoredCycle = {
   id: string;
   name: string;
   startDate: Date;
   endDate: Date;
   capacity: number;
   projectId: string;
-}): Cycle {
+  goal?: string | null;
+  state?: string;
+  startedAt?: Date | null;
+  completedAt?: Date | null;
+  committedPoints?: number | null;
+  completedPoints?: number | null;
+};
+
+export function serializeCycle(cycle: StoredCycle): Cycle {
   return {
     id: cycle.id,
     name: cycle.name,
@@ -19,6 +27,12 @@ function serializeCycle(cycle: {
     endDate: cycle.endDate.toISOString(),
     capacity: cycle.capacity,
     projectId: cycle.projectId,
+    goal: cycle.goal ?? null,
+    state: (cycle.state ?? "FUTURE") as SprintState,
+    startedAt: cycle.startedAt?.toISOString() ?? null,
+    completedAt: cycle.completedAt?.toISOString() ?? null,
+    committedPoints: cycle.committedPoints ?? null,
+    completedPoints: cycle.completedPoints ?? null,
   };
 }
 
@@ -48,7 +62,7 @@ export class DuplicateCycleNameError extends Error {
   }
 }
 
-function parseCycleDate(value: string, endOfDay: boolean) {
+export function parseCycleDate(value: string, endOfDay: boolean) {
   return new Date(`${value}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}Z`);
 }
 
