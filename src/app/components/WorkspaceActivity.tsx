@@ -1,10 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   CalendarClock,
   CircleDot,
+  Clock3,
+  Flag,
+  Link2,
   ListRestart,
+  Paperclip,
+  Zap,
   MessageSquare,
   PencilLine,
   Plus,
@@ -16,6 +22,7 @@ import {
   formatActivityTime,
 } from "../data/activity";
 import type { Issue, IssueActivityType } from "../data/issues";
+import { selectedIssueHref } from "./issue/selectedIssue";
 
 const activityVisuals: Record<
   IssueActivityType,
@@ -32,6 +39,22 @@ const activityVisuals: Record<
   LABELS_CHANGED: { icon: Tag, tone: "blue" },
   CYCLE_CHANGED: { icon: ListRestart, tone: "blue" },
   ESTIMATE_CHANGED: { icon: CircleDot, tone: "amber" },
+  PARENT_CHANGED: { icon: Link2, tone: "blue" },
+  VERSION_CHANGED: { icon: Tag, tone: "green" },
+  COMPONENTS_CHANGED: { icon: Tag, tone: "blue" },
+  FLAG_CHANGED: { icon: Flag, tone: "red" },
+  START_DATE_CHANGED: { icon: CalendarClock, tone: "amber" },
+  TIME_TRACKING_CHANGED: { icon: Clock3, tone: "amber" },
+  WORK_LOGGED: { icon: Clock3, tone: "green" },
+  LINK_ADDED: { icon: Link2, tone: "blue" },
+  LINK_REMOVED: { icon: Link2, tone: "gray" },
+  ATTACHMENT_ADDED: { icon: Paperclip, tone: "blue" },
+  ATTACHMENT_REMOVED: { icon: Paperclip, tone: "gray" },
+  RESOLUTION_CHANGED: { icon: ListRestart, tone: "green" },
+  PROJECT_MOVED: { icon: ListRestart, tone: "amber" },
+  AUTOMATION: { icon: Zap, tone: "amber" },
+  TEAM_CHANGED: { icon: UserRound, tone: "blue" },
+  GOAL_CHANGED: { icon: CircleDot, tone: "green" },
 };
 
 export function WorkspaceActivity({
@@ -41,6 +64,7 @@ export function WorkspaceActivity({
   issues: Issue[];
   limit?: number;
 }) {
+  const pathname = usePathname();
   const activity = buildWorkspaceActivity(issues, limit);
 
   if (activity.length === 0) {
@@ -55,7 +79,8 @@ export function WorkspaceActivity({
         return (
           <Link
             className="activity-row"
-            href={`/issues/${event.issueId}`}
+            href={selectedIssueHref(pathname, "", event.issueId)}
+            scroll={false}
             key={event.id}
             role="listitem"
           >

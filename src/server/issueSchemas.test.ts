@@ -49,10 +49,19 @@ describe("createIssueSchema", () => {
   it("rejects fields outside the public API contract", () => {
     const result = createIssueSchema.safeParse({
       ...validIssue,
-      status: "DONE",
+      sequence: 7,
     });
 
     expect(result.success).toBe(false);
+  });
+
+  it("accepts an initial status for inline board creation", () => {
+    const result = createIssueSchema.safeParse({
+      ...validIssue,
+      status: "IN_PROGRESS",
+    });
+
+    expect(result.success).toBe(true);
   });
 });
 

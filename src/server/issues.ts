@@ -1,16 +1,20 @@
 import { Prisma } from "@prisma/client";
+import { dispatchWebhook } from "./webhooks";
 import prisma from "../../prisma/client";
 import { notifyRecipients } from "./notifications";
+import { runAutomations } from "./automation";
 import {
   extractCommentMentionIds,
   extractMentionedMemberIds,
 } from "./richText";
 import {
-  KIND_LABELS,
   PRIORITY_LABELS,
-  STATUS_LABELS,
+  RESOLUTION_LABELS,
   WORKSPACE_LABELS,
+  formatDuration,
   type Issue,
+  type IssueRef,
+  type IssueResolution,
   type IssueActivityType,
   type IssueKind,
   type IssuePriority,
@@ -20,6 +24,21 @@ import {
   type WorkspaceLabel,
   type WorkspaceMember,
 } from "../app/data/issues";
+import {
+  isDoneStatus,
+  isEpicLevel,
+  isSubtaskLevel,
+  statusName,
+  typeName,
+  type ProjectWorkflow,
+} from "../app/data/workflow";
+import {
+  defaultCreateStatus,
+  loadWorkflow,
+  notDoneStatusWhere,
+  validateIssueStatus,
+  validateIssueType,
+} from "./workflows";
 
 export type WorkspaceActor = {
   id: string;
@@ -28,7 +47,57 @@ export type WorkspaceActor = {
   organizationKey: string;
 };
 
-const issueInclude = {
+const memberWithUser = {
+  include: {
+    user: {
+      select: { id: true, name: true, email: true },
+    },
+  },
+} as const;
+
+export const issueRefSelect = {
+  id: true,
+  projectId: true,
+  title: true,
+  status: true,
+  kind: true,
+  priority: true,
+  estimate: true,
+  assignee: memberWithUser,
+} satisfies Prisma.IssueSelect;
+
+type StoredIssueRef = Prisma.IssueGetPayload<{ select: typeof issueRefSelect }>;
+
+export function serializeIssueRef(issue: StoredIssueRef): IssueRef {
+  return {
+    id: issue.id,
+    projectId: issue.projectId,
+    title: issue.title,
+    status: issue.status as IssueStatus,
+    kind: issue.kind as IssueKind,
+    priority: issue.priority as IssuePriority,
+    estimate: issue.estimate as IssueRef["estimate"],
+    assignee: issue.assignee
+      ? {
+          id: issue.assignee.id,
+          name: issue.assignee.user.name,
+          email: issue.assignee.user.email,
+        }
+      : null,
+  };
+}
+
+export const issueInclude = {
+  parent: { select: issueRefSelect },
+  children: { select: { status: true } },
+  fixVersion: { select: { id: true, name: true, status: true } },
+  team: { select: { id: true, name: true } },
+  goal: { select: { id: true, name: true, status: true } },
+  components: {
+    include: { component: { select: { id: true, name: true } } },
+    orderBy: { component: { name: "asc" } },
+  },
+  watchers: { select: { userId: true } },
   comments: {
     orderBy: { createdAt: "asc" },
   },
@@ -52,9 +121,76 @@ const issueInclude = {
   cycle: true,
 } satisfies Prisma.IssueInclude;
 
-type StoredIssue = Prisma.IssueGetPayload<{
+export type StoredIssue = Prisma.IssueGetPayload<{
   include: typeof issueInclude;
 }>;
+
+/** Extra relations loaded only for a single-issue read. */
+export const issueDetailInclude = {
+  ...issueInclude,
+  children: {
+    select: issueRefSelect,
+    orderBy: { rank: "asc" },
+  },
+  outgoingLinks: { include: { target: { select: issueRefSelect } } },
+  incomingLinks: { include: { source: { select: issueRefSelect } } },
+  votes: { select: { userId: true } },
+} satisfies Prisma.IssueInclude;
+
+type StoredIssueDetail = Prisma.IssueGetPayload<{
+  include: typeof issueDetailInclude;
+}>;
+
+/** Each stored link reads in both directions; the inverse names the other side. */
+const INVERSE_LINK_TYPE: Record<string, string> = {
+  BLOCKS: "IS_BLOCKED_BY",
+  IS_BLOCKED_BY: "BLOCKS",
+  RELATES_TO: "RELATES_TO",
+  DUPLICATES: "IS_DUPLICATED_BY",
+  IS_DUPLICATED_BY: "DUPLICATES",
+  CLONES: "IS_CLONED_BY",
+  IS_CLONED_BY: "CLONES",
+};
+
+export function inverseLinkType(type: string) {
+  return INVERSE_LINK_TYPE[type] ?? "RELATES_TO";
+}
+
+export function serializeIssueDetail(issue: StoredIssueDetail): Issue {
+  const base = serializeIssue({
+    ...issue,
+    children: issue.children.map((child) => ({ status: child.status })),
+  });
+
+  return {
+    ...base,
+    children: issue.children.map(serializeIssueRef),
+    links: [
+      ...issue.outgoingLinks.map((link) => ({
+        id: link.id,
+        type: link.type as NonNullable<Issue["links"]>[number]["type"],
+        issue: serializeIssueRef(link.target),
+      })),
+      ...issue.incomingLinks.map((link) => ({
+        id: link.id,
+        type: inverseLinkType(
+          link.type,
+        ) as NonNullable<Issue["links"]>[number]["type"],
+        issue: serializeIssueRef(link.source),
+      })),
+    ],
+    voterIds: issue.votes.map((vote) => vote.userId),
+  };
+}
+
+export async function getIssue(id: string, organizationId: string) {
+  const issue = await prisma.issue.findFirst({
+    where: { id, organizationId },
+    include: issueDetailInclude,
+  });
+
+  return issue ? serializeIssueDetail(issue) : null;
+}
 
 function serializeAssignee(
   assignee: StoredIssue["assignee"],
@@ -68,7 +204,7 @@ function serializeAssignee(
   };
 }
 
-function serializeIssue(issue: StoredIssue): Issue {
+export function serializeIssue(issue: StoredIssue): Issue {
   return {
     id: issue.id,
     title: issue.title,
@@ -88,11 +224,34 @@ function serializeIssue(issue: StoredIssue): Issue {
       color: label.color,
     })),
     createdAt: issue.createdAt.toISOString(),
+    updatedAt: issue.updatedAt.toISOString(),
+    parentId: issue.parentId,
+    parent: issue.parent ? serializeIssueRef(issue.parent) : null,
+    fixVersion: issue.fixVersion,
+    team: issue.team,
+    goal: issue.goal,
+    components: issue.components.map(({ component }) => component),
+    startDate: issue.startDate?.toISOString() ?? null,
+    rank: issue.rank,
+    flagged: issue.flagged,
+    resolution: issue.resolution as IssueResolution | null,
+    resolvedAt: issue.resolvedAt?.toISOString() ?? null,
+    environment: issue.environment,
+    originalEstimateMinutes: issue.originalEstimateMinutes,
+    remainingEstimateMinutes: issue.remainingEstimateMinutes,
+    timeSpentMinutes: issue.timeSpentMinutes,
+    childCount: issue.children.length,
+    doneChildCount: issue.children.filter((child) =>
+      isDoneStatus(child.status),
+    ).length,
+    watcherIds: issue.watchers.map((watcher) => watcher.userId),
     comments: issue.comments.map((comment) => ({
       id: comment.id,
       body: comment.body,
       author: comment.author,
+      authorId: comment.authorId,
       createdAt: comment.createdAt.toISOString(),
+      editedAt: comment.editedAt?.toISOString() ?? null,
     })),
     activity: issue.activity.map((event) => ({
       id: event.id,
@@ -104,8 +263,16 @@ function serializeIssue(issue: StoredIssue): Issue {
   };
 }
 
-function watcherUserIds(issue: Pick<StoredIssue, "creatorId" | "assignee">) {
-  return [issue.creatorId, issue.assignee?.userId];
+export function watcherUserIds(
+  issue: Pick<StoredIssue, "creatorId" | "assignee" | "watchers">,
+) {
+  return [
+    ...new Set([
+      issue.creatorId,
+      issue.assignee?.userId,
+      ...issue.watchers.map((watcher) => watcher.userId),
+    ]),
+  ];
 }
 
 async function resolveMemberUserIds(
@@ -164,10 +331,13 @@ export type IssueListFilters = {
   status?: "ALL" | "ACTIVE" | IssueStatus;
   priority?: "ALL" | IssuePriority;
   projectId?: string;
+  cycleId?: string;
+  parentId?: string;
+  kind?: IssueKind;
   labelId?: string;
   assigneeId?: string;
   q?: string;
-  sort?: "NEWEST" | "OLDEST";
+  sort?: "NEWEST" | "OLDEST" | "RANK";
   cursor?: string;
   limit?: number;
 };
@@ -182,8 +352,22 @@ export async function listIssues(
     where.projectId = filters.projectId;
   }
 
+  if (filters.cycleId === "NONE") {
+    where.cycleId = null;
+  } else if (filters.cycleId) {
+    where.cycleId = filters.cycleId;
+  }
+
+  if (filters.parentId) {
+    where.parentId = filters.parentId;
+  }
+
+  if (filters.kind) {
+    where.kind = filters.kind;
+  }
+
   if (filters.status === "ACTIVE") {
-    where.status = { not: "DONE" };
+    where.AND = [notDoneStatusWhere()];
   } else if (filters.status && filters.status !== "ALL") {
     where.status = filters.status;
   }
@@ -223,7 +407,10 @@ export async function listIssues(
   const issues = await prisma.issue.findMany({
     where,
     include: issueInclude,
-    orderBy: { sequence: filters.sort === "OLDEST" ? "asc" : "desc" },
+    orderBy:
+      filters.sort === "RANK"
+        ? [{ rank: "asc" }, { sequence: "asc" }]
+        : { sequence: filters.sort === "OLDEST" ? "asc" : "desc" },
     ...(limit ? { take: limit + 1 } : {}),
     ...(filters.cursor
       ? { cursor: { id: filters.cursor }, skip: 1 }
@@ -243,7 +430,7 @@ export async function listIssues(
   };
 }
 
-export async function createIssue(
+async function createIssueUnhooked(
   input: NewIssueInput,
   actor: WorkspaceActor,
 ) {
@@ -252,6 +439,14 @@ export async function createIssue(
   const project = await validateProjectId(input.projectId, actor.organizationId);
   await validateCycleId(input.cycleId, project.id);
   await validateAssigneeId(input.assigneeId, actor.organizationId);
+  await validateIssueType(project.id, input.kind);
+  if (input.status) await validateIssueStatus(project.id, null, input.status);
+  const initialStatus = input.status ?? (await defaultCreateStatus(project.id));
+  await validateParentId(input.parentId, null, input.kind, actor.organizationId);
+  await validateVersionId(input.fixVersionId, project.id);
+  await validateComponentIds(input.componentIds, project.id);
+  await validateTeamId(input.teamId, actor.organizationId);
+  await validateGoalId(input.goalId, actor.organizationId);
 
   const issue = await prisma.$transaction(async (transaction) => {
     const latestIssue = await transaction.issue.findFirst({
@@ -259,18 +454,56 @@ export async function createIssue(
       orderBy: { sequence: "desc" },
       select: { sequence: true },
     });
+    const lastRanked = await transaction.issue.findFirst({
+      where: { projectId: input.projectId },
+      orderBy: { rank: "desc" },
+      select: { rank: true },
+    });
     const sequence = (latestIssue?.sequence ?? 0) + 1;
-    const { dueDate, labelIds, ...fields } = input;
+    const {
+      dueDate,
+      startDate,
+      labelIds,
+      componentIds,
+      status,
+      originalEstimateMinutes,
+      ...fields
+    } = input;
+    const watcherIds = new Set([actor.id]);
+    if (input.assigneeId) {
+      const assignee = await transaction.member.findUnique({
+        where: { id: input.assigneeId },
+        select: { userId: true },
+      });
+      if (assignee) watcherIds.add(assignee.userId);
+    }
 
     return transaction.issue.create({
       data: {
         ...fields,
         id: `${project.key}-${sequence}`,
         sequence,
+        rank: (lastRanked?.rank ?? 0) + 1000,
         organizationId: actor.organizationId,
         creatorId: actor.id,
-        status: "OPEN",
+        status: status ?? initialStatus,
+        ...(isDoneStatus(status ?? initialStatus)
+          ? { resolution: "DONE", resolvedAt: new Date() }
+          : {}),
+        originalEstimateMinutes: originalEstimateMinutes ?? null,
+        remainingEstimateMinutes: originalEstimateMinutes ?? null,
         dueDate: dueDate ? parseDueDate(dueDate) : null,
+        startDate: startDate ? parseDueDate(startDate) : null,
+        components: {
+          create: (componentIds ?? []).map((componentId) => ({
+            component: { connect: { id: componentId } },
+          })),
+        },
+        watchers: {
+          create: [...watcherIds].map((userId) => ({
+            user: { connect: { id: userId } },
+          })),
+        },
         activity: {
           create: {
             type: "CREATED",
@@ -318,7 +551,19 @@ export async function createIssue(
     });
   }
 
-  return serializeIssue(issue);
+  await runAutomations({
+    trigger: "ISSUE_CREATED",
+    issueId: issue.id,
+    projectId: issue.projectId,
+    actor,
+  });
+
+  return serializeIssue(
+    (await prisma.issue.findUnique({
+      where: { id: issue.id },
+      include: issueInclude,
+    })) ?? issue,
+  );
 }
 
 export class UnknownProjectError extends Error {
@@ -339,6 +584,132 @@ async function validateProjectId(projectId: string, organizationId: string) {
   }
 
   return project;
+}
+
+export class InvalidParentError extends Error {
+  constructor(message = "The selected parent issue is not valid") {
+    super(message);
+    this.name = "InvalidParentError";
+  }
+}
+
+export class UnknownVersionError extends Error {
+  constructor() {
+    super("The selected release does not belong to this project");
+    this.name = "UnknownVersionError";
+  }
+}
+
+export class UnknownComponentError extends Error {
+  constructor() {
+    super("One or more components do not belong to this project");
+    this.name = "UnknownComponentError";
+  }
+}
+
+/**
+ * Jira hierarchy: epics sit at the top, subtasks sit at the bottom, and no
+ * issue may become its own ancestor.
+ */
+async function validateParentId(
+  parentId: string | null | undefined,
+  issueId: string | null,
+  kind: IssueKind | undefined,
+  organizationId: string,
+) {
+  if (!parentId) return null;
+  if (parentId === issueId) throw new InvalidParentError();
+  if (isEpicLevel(kind)) {
+    throw new InvalidParentError("Epics cannot have a parent issue");
+  }
+
+  const parent = await prisma.issue.findFirst({
+    where: { id: parentId, organizationId },
+    select: { id: true, kind: true, parentId: true },
+  });
+  if (!parent) throw new InvalidParentError();
+  if (isSubtaskLevel(parent.kind)) {
+    throw new InvalidParentError("Subtasks cannot have child issues");
+  }
+  if (isSubtaskLevel(kind) && isEpicLevel(parent.kind)) {
+    throw new InvalidParentError("Subtasks belong to a story, task, or bug");
+  }
+
+  let ancestorId = parent.parentId;
+  for (let depth = 0; ancestorId && depth < 10; depth += 1) {
+    if (ancestorId === issueId) throw new InvalidParentError();
+    const ancestor = await prisma.issue.findUnique({
+      where: { id: ancestorId },
+      select: { parentId: true },
+    });
+    ancestorId = ancestor?.parentId ?? null;
+  }
+
+  return parent.id;
+}
+
+export class UnknownTeamError extends Error {
+  constructor() {
+    super("The selected team does not exist in this workspace");
+    this.name = "UnknownTeamError";
+  }
+}
+
+export class UnknownGoalError extends Error {
+  constructor() {
+    super("The selected goal does not exist in this workspace");
+    this.name = "UnknownGoalError";
+  }
+}
+
+async function validateTeamId(
+  teamId: string | null | undefined,
+  organizationId: string,
+) {
+  if (!teamId) return null;
+  const team = await prisma.team.findFirst({
+    where: { id: teamId, organizationId },
+    select: { name: true },
+  });
+  if (!team) throw new UnknownTeamError();
+  return team.name;
+}
+
+async function validateGoalId(
+  goalId: string | null | undefined,
+  organizationId: string,
+) {
+  if (!goalId) return null;
+  const goal = await prisma.goal.findFirst({
+    where: { id: goalId, organizationId },
+    select: { name: true },
+  });
+  if (!goal) throw new UnknownGoalError();
+  return goal.name;
+}
+
+async function validateVersionId(
+  versionId: string | null | undefined,
+  projectId: string,
+) {
+  if (!versionId) return null;
+  const version = await prisma.version.findFirst({
+    where: { id: versionId, projectId },
+    select: { name: true },
+  });
+  if (!version) throw new UnknownVersionError();
+  return version.name;
+}
+
+async function validateComponentIds(
+  componentIds: string[] | undefined,
+  projectId: string,
+) {
+  if (!componentIds || componentIds.length === 0) return;
+  const count = await prisma.component.count({
+    where: { id: { in: componentIds }, projectId },
+  });
+  if (count !== componentIds.length) throw new UnknownComponentError();
 }
 
 function parseDueDate(value: string) {
@@ -442,16 +813,19 @@ function buildActivity(
   updates: IssueUpdates,
   nextCycleName: string | null,
   nextAssigneeName: string | null,
+  nextVersionName: string | null,
   actor: WorkspaceActor,
+  workflow: ProjectWorkflow | null = null,
 ): Prisma.ActivityCreateWithoutIssueInput[] {
   const events: Prisma.ActivityCreateWithoutIssueInput[] = [];
 
   if (updates.status && updates.status !== current.status) {
     events.push({
       type: "STATUS_CHANGED",
-      description: `changed status from ${
-        STATUS_LABELS[current.status as IssueStatus]
-      } to ${STATUS_LABELS[updates.status]}`,
+      description: `changed status from ${statusName(
+        current.status,
+        workflow?.statuses,
+      )} to ${statusName(updates.status, workflow?.statuses)}`,
       actor: actor.name,
       user: { connect: { id: actor.id } },
     });
@@ -485,9 +859,10 @@ function buildActivity(
   if (updates.kind && updates.kind !== current.kind) {
     events.push({
       type: "TYPE_CHANGED",
-      description: `changed type from ${
-        KIND_LABELS[current.kind as IssueKind]
-      } to ${KIND_LABELS[updates.kind]}`,
+      description: `changed type from ${typeName(
+        current.kind,
+        workflow?.types,
+      )} to ${typeName(updates.kind, workflow?.types)}`,
       actor: actor.name,
       user: { connect: { id: actor.id } },
     });
@@ -568,19 +943,166 @@ function buildActivity(
     });
   }
 
+  if (updates.parentId !== undefined && updates.parentId !== current.parentId) {
+    events.push({
+      type: "PARENT_CHANGED",
+      description: updates.parentId
+        ? `set the parent to ${updates.parentId}`
+        : "removed the parent issue",
+      actor: actor.name,
+      user: { connect: { id: actor.id } },
+    });
+  }
+
+  if (
+    updates.fixVersionId !== undefined &&
+    updates.fixVersionId !== current.fixVersionId
+  ) {
+    events.push({
+      type: "VERSION_CHANGED",
+      description: nextVersionName
+        ? `set the fix version to ${nextVersionName}`
+        : "removed the fix version",
+      actor: actor.name,
+      user: { connect: { id: actor.id } },
+    });
+  }
+
+  if (updates.componentIds) {
+    const currentIds = current.components
+      .map(({ component }) => component.id)
+      .sort();
+    if (currentIds.join(",") !== [...updates.componentIds].sort().join(",")) {
+      events.push({
+        type: "COMPONENTS_CHANGED",
+        description: "updated issue components",
+        actor: actor.name,
+        user: { connect: { id: actor.id } },
+      });
+    }
+  }
+
+  if (updates.flagged !== undefined && updates.flagged !== current.flagged) {
+    events.push({
+      type: "FLAG_CHANGED",
+      description: updates.flagged
+        ? "flagged the issue as an impediment"
+        : "removed the flag",
+      actor: actor.name,
+      user: { connect: { id: actor.id } },
+    });
+  }
+
+  if (
+    updates.startDate !== undefined &&
+    dueDateKey(updates.startDate) !== dueDateKey(current.startDate)
+  ) {
+    events.push({
+      type: "START_DATE_CHANGED",
+      description: updates.startDate
+        ? `set the start date to ${formatDueDate(updates.startDate)}`
+        : "removed the start date",
+      actor: actor.name,
+      user: { connect: { id: actor.id } },
+    });
+  }
+
+  if (
+    (updates.originalEstimateMinutes !== undefined &&
+      updates.originalEstimateMinutes !== current.originalEstimateMinutes) ||
+    (updates.remainingEstimateMinutes !== undefined &&
+      updates.remainingEstimateMinutes !== current.remainingEstimateMinutes)
+  ) {
+    const original =
+      updates.originalEstimateMinutes !== undefined
+        ? updates.originalEstimateMinutes
+        : current.originalEstimateMinutes;
+    events.push({
+      type: "TIME_TRACKING_CHANGED",
+      description: `updated time tracking (original ${formatDuration(
+        original,
+      )})`,
+      actor: actor.name,
+      user: { connect: { id: actor.id } },
+    });
+  }
+
+  if (
+    updates.resolution !== undefined &&
+    updates.resolution !== current.resolution
+  ) {
+    events.push({
+      type: "RESOLUTION_CHANGED",
+      description: updates.resolution
+        ? `resolved the issue as ${RESOLUTION_LABELS[updates.resolution]}`
+        : "cleared the resolution",
+      actor: actor.name,
+      user: { connect: { id: actor.id } },
+    });
+  }
+
+  const changedEnvironment =
+    updates.environment !== undefined &&
+    updates.environment !== current.environment;
+  const changedRank =
+    updates.rank !== undefined && updates.rank !== current.rank;
+  if ((changedEnvironment || changedRank) && events.length === 0) {
+    // Rank and environment changes are silent but still need to persist.
+    events.push({
+      type: "CONTENT_UPDATED",
+      description: changedRank ? "ranked the issue" : "updated the environment",
+      actor: actor.name,
+      user: { connect: { id: actor.id } },
+    });
+  }
+
   return events;
 }
 
-export async function updateIssue(
+async function updateIssueUnhooked(
   id: string,
   updates: IssueUpdates,
   actor: WorkspaceActor,
 ) {
   const existing = await prisma.issue.findFirst({
     where: { id, organizationId: actor.organizationId },
-    select: { projectId: true },
+    select: { projectId: true, kind: true, status: true },
   });
   if (!existing) return null;
+
+  const workflow = await loadWorkflow(prisma, existing.projectId);
+  if (updates.kind !== undefined && updates.kind !== existing.kind) {
+    await validateIssueType(existing.projectId, updates.kind);
+  }
+  if (updates.status !== undefined && updates.status !== existing.status) {
+    await validateIssueStatus(
+      existing.projectId,
+      existing.status,
+      updates.status,
+    );
+  }
+
+  if (updates.parentId !== undefined) {
+    await validateParentId(
+      updates.parentId,
+      id,
+      updates.kind ?? (existing.kind as IssueKind),
+      actor.organizationId,
+    );
+  }
+  const nextVersionName = await validateVersionId(
+    updates.fixVersionId,
+    existing.projectId,
+  );
+  await validateComponentIds(updates.componentIds, existing.projectId);
+  const nextTeamName = await validateTeamId(
+    updates.teamId,
+    actor.organizationId,
+  );
+  const nextGoalName = await validateGoalId(
+    updates.goalId,
+    actor.organizationId,
+  );
 
   if (updates.labelIds) {
     await ensureWorkspaceLabels(actor.organizationId);
@@ -611,19 +1133,78 @@ export async function updateIssue(
       updates,
       nextCycleName,
       nextAssigneeName,
+      nextVersionName,
       actor,
+      workflow,
     );
+    if (updates.teamId !== undefined && updates.teamId !== current.teamId) {
+      activity.push({
+        type: "TEAM_CHANGED",
+        description: nextTeamName
+          ? `changed the Team to ${nextTeamName}`
+          : "removed the Team",
+        actor: actor.name,
+        user: { connect: { id: actor.id } },
+      });
+    }
+    if (updates.goalId !== undefined && updates.goalId !== current.goalId) {
+      activity.push({
+        type: "GOAL_CHANGED",
+        description: nextGoalName
+          ? `linked the goal ${nextGoalName}`
+          : "removed the goal",
+        actor: actor.name,
+        user: { connect: { id: actor.id } },
+      });
+    }
     const activityTypes = activity.map((event) => event.type);
     const changed = activity.length > 0;
-    if (!changed) return { issue: current, activityTypes };
-    const { dueDate, labelIds, ...fields } = updates;
+    const previousStatus = current.status as IssueStatus;
+    if (!changed) return { issue: current, activityTypes, previousStatus };
+    const { dueDate, startDate, labelIds, componentIds, ...fields } = updates;
+    const isRankOnly =
+      activity.length === 1 && activity[0].description === "ranked the issue";
+    if (isRankOnly) {
+      // Re-ranking happens constantly on boards; keep it out of history.
+      activity.length = 0;
+      activityTypes.length = 0;
+    }
+
+    // Jira semantics: entering a done status resolves the issue, leaving it
+    // reopens it.
+    const resolutionFields: Prisma.IssueUncheckedUpdateInput = {};
+    if (updates.status && updates.status !== current.status) {
+      if (isDoneStatus(updates.status) && !isDoneStatus(current.status)) {
+        resolutionFields.resolution =
+          updates.resolution ?? current.resolution ?? "DONE";
+        resolutionFields.resolvedAt = new Date();
+        resolutionFields.remainingEstimateMinutes = 0;
+      } else if (!isDoneStatus(updates.status) && isDoneStatus(current.status)) {
+        resolutionFields.resolution = null;
+        resolutionFields.resolvedAt = null;
+      }
+    }
 
     const issue = await transaction.issue.update({
       where: { id },
       data: {
         ...fields,
+        ...resolutionFields,
         ...(dueDate !== undefined
           ? { dueDate: dueDate ? parseDueDate(dueDate) : null }
+          : {}),
+        ...(startDate !== undefined
+          ? { startDate: startDate ? parseDueDate(startDate) : null }
+          : {}),
+        ...(componentIds
+          ? {
+              components: {
+                deleteMany: {},
+                create: componentIds.map((componentId) => ({
+                  component: { connect: { id: componentId } },
+                })),
+              },
+            }
           : {}),
         ...(labelIds
           ? {
@@ -642,11 +1223,21 @@ export async function updateIssue(
       include: issueInclude,
     });
 
-    return { issue, activityTypes };
+    return { issue, activityTypes, previousStatus };
   });
 
   if (!result) return null;
   const { issue, activityTypes } = result;
+
+  if (activityTypes.includes("ASSIGNEE_CHANGED") && issue.assignee) {
+    await prisma.issueWatcher.upsert({
+      where: {
+        issueId_userId: { issueId: issue.id, userId: issue.assignee.userId },
+      },
+      create: { issueId: issue.id, userId: issue.assignee.userId },
+      update: {},
+    });
+  }
 
   if (activityTypes.includes("ASSIGNEE_CHANGED") && issue.assignee) {
     await notifyRecipients([issue.assignee.userId], {
@@ -664,9 +1255,10 @@ export async function updateIssue(
     await notifyRecipients(watcherUserIds(issue), {
       type: "ISSUE_STATUS_CHANGED",
       title: `${issue.id} status changed`,
-      body: `${actor.name} changed ${issue.id} to ${
-        STATUS_LABELS[issue.status as IssueStatus]
-      }`,
+      body: `${actor.name} changed ${issue.id} to ${statusName(
+        issue.status,
+        workflow.statuses,
+      )}`,
       organizationId: actor.organizationId,
       projectId: issue.projectId,
       issueId: issue.id,
@@ -693,10 +1285,30 @@ export async function updateIssue(
     }
   }
 
+  if (activityTypes.length > 0) {
+    await runAutomations({
+      trigger: activityTypes.includes("STATUS_CHANGED")
+        ? "STATUS_CHANGED"
+        : "ISSUE_UPDATED",
+      issueId: issue.id,
+      projectId: issue.projectId,
+      actor,
+      fromStatus: activityTypes.includes("STATUS_CHANGED")
+        ? result.previousStatus
+        : undefined,
+      toStatus: updates.status,
+    });
+    const refreshed = await prisma.issue.findUnique({
+      where: { id: issue.id },
+      include: issueInclude,
+    });
+    if (refreshed) return serializeIssue(refreshed);
+  }
+
   return serializeIssue(issue);
 }
 
-export async function addComment(
+async function addCommentUnhooked(
   id: string,
   body: string,
   actor: WorkspaceActor,
@@ -762,5 +1374,46 @@ export async function addComment(
     actorId: actor.id,
   });
 
+  await runAutomations({
+    trigger: "COMMENT_ADDED",
+    issueId: issue.id,
+    projectId: issue.projectId,
+    actor,
+  });
+
   return serializeIssue(issue);
+}
+
+export async function createIssue(
+  ...args: Parameters<typeof createIssueUnhooked>
+) {
+  const issue = await createIssueUnhooked(...args);
+  dispatchWebhook(args[1].organizationId, "issue_created", { issue });
+  return issue;
+}
+
+export async function updateIssue(
+  ...args: Parameters<typeof updateIssueUnhooked>
+) {
+  const issue = await updateIssueUnhooked(...args);
+  if (issue) {
+    dispatchWebhook(args[2].organizationId, "issue_updated", {
+      issue,
+      changes: Object.keys(args[1]),
+    });
+  }
+  return issue;
+}
+
+export async function addComment(
+  ...args: Parameters<typeof addCommentUnhooked>
+) {
+  const issue = await addCommentUnhooked(...args);
+  if (issue) {
+    dispatchWebhook(args[2].organizationId, "comment_created", {
+      issueId: issue.id,
+      comment: issue.comments?.at(-1) ?? null,
+    });
+  }
+  return issue;
 }

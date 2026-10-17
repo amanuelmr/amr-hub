@@ -1,12 +1,16 @@
 import { z } from "zod";
 import { sanitizeDescriptionHtml, stripHtml } from "./richText";
+import { isValidStatusKey, isValidTypeKey } from "../app/data/workflow";
 
-export const issueStatusSchema = z.enum([
-  "BACKLOG",
-  "OPEN",
-  "IN_PROGRESS",
-  "DONE",
-]);
+/**
+ * Status keys are built-ins or custom "<CATEGORY>:<slug>" keys. The server
+ * then checks the key against the project's configured workflow.
+ */
+export const issueStatusSchema = z
+  .string()
+  .trim()
+  .max(80)
+  .refine(isValidStatusKey, { message: "Unknown status" });
 
 export const issuePrioritySchema = z.enum([
   "NO_PRIORITY",
@@ -16,18 +20,48 @@ export const issuePrioritySchema = z.enum([
   "URGENT",
 ]);
 
-export const issueKindSchema = z.enum(["BUG", "FEATURE", "TASK"]);
+/** Work type keys are built-ins or custom "L<level>:<slug>" keys. */
+export const issueKindSchema = z
+  .string()
+  .trim()
+  .max(80)
+  .refine(isValidTypeKey, { message: "Unknown work type" });
 export const issueEstimateSchema = z.union([
+  z.literal(0),
   z.literal(1),
   z.literal(2),
   z.literal(3),
   z.literal(5),
   z.literal(8),
+  z.literal(13),
+  z.literal(21),
+]);
+export const issueResolutionSchema = z.enum([
+  "DONE",
+  "WONT_DO",
+  "DUPLICATE",
+  "CANNOT_REPRODUCE",
+]);
+export const issueLinkTypeSchema = z.enum([
+  "BLOCKS",
+  "IS_BLOCKED_BY",
+  "RELATES_TO",
+  "DUPLICATES",
+  "IS_DUPLICATED_BY",
+  "CLONES",
+  "IS_CLONED_BY",
 ]);
 
 const cycleIdSchema = z.string().trim().min(1).max(80).nullable();
 const assigneeIdSchema = z.string().trim().min(1).max(80).nullable();
 const projectIdSchema = z.string().trim().min(1).max(120);
+const optionalIdSchema = z.string().trim().min(1).max(120).nullable();
+const minutesSchema = z.number().int().min(0).max(1_000_000).nullable();
+const componentIdsSchema = z
+  .array(z.string().trim().min(1).max(120))
+  .max(20)
+  .transform((ids) => [...new Set(ids)]);
+const environmentSchema = z.string().trim().max(2000).nullable();
 
 const dueDateSchema = z
   .string()
@@ -55,14 +89,21 @@ const descriptionSchema = z
   .trim()
   .max(20000)
   .transform((value) => sanitizeDescriptionHtml(value))
-  .refine((value) => stripHtml(value).length >= 12, {
-    message: "Add enough detail for someone else to understand the issue.",
-  });
+  .refine(
+    (value) => {
+      // Jira allows an empty description; a written one must be meaningful.
+      const length = stripHtml(value).length;
+      return length === 0 || length >= 12;
+    },
+    {
+      message: "Add enough detail for someone else to understand the issue.",
+    },
+  );
 
 export const createIssueSchema = z
   .object({
     title: z.string().trim().min(4).max(255),
-    description: descriptionSchema,
+    description: descriptionSchema.default(""),
     priority: issuePrioritySchema,
     kind: issueKindSchema,
     assigneeId: assigneeIdSchema,
@@ -71,6 +112,15 @@ export const createIssueSchema = z
     projectId: projectIdSchema,
     cycleId: cycleIdSchema,
     labelIds: labelIdsSchema,
+    status: issueStatusSchema.optional(),
+    parentId: optionalIdSchema.optional(),
+    fixVersionId: optionalIdSchema.optional(),
+    teamId: optionalIdSchema.optional(),
+    goalId: optionalIdSchema.optional(),
+    componentIds: componentIdsSchema.optional(),
+    startDate: dueDateSchema.nullable().optional(),
+    originalEstimateMinutes: minutesSchema.optional(),
+    environment: environmentSchema.optional(),
   })
   .strict();
 
@@ -86,6 +136,18 @@ export const updateIssueSchema = z
     estimate: issueEstimateSchema.nullable().optional(),
     cycleId: cycleIdSchema.optional(),
     labelIds: labelIdsSchema.optional(),
+    parentId: optionalIdSchema.optional(),
+    fixVersionId: optionalIdSchema.optional(),
+    teamId: optionalIdSchema.optional(),
+    goalId: optionalIdSchema.optional(),
+    componentIds: componentIdsSchema.optional(),
+    startDate: dueDateSchema.nullable().optional(),
+    rank: z.number().finite().optional(),
+    flagged: z.boolean().optional(),
+    resolution: issueResolutionSchema.nullable().optional(),
+    environment: environmentSchema.optional(),
+    originalEstimateMinutes: minutesSchema.optional(),
+    remainingEstimateMinutes: minutesSchema.optional(),
   })
   .strict()
   .refine((updates) => Object.keys(updates).length > 0, {
@@ -104,12 +166,15 @@ export const listIssuesQuerySchema = z.object({
     .default("ALL"),
   priority: z.union([z.literal("ALL"), issuePrioritySchema]).default("ALL"),
   projectId: z.string().trim().min(1).max(120).optional(),
+  cycleId: z.string().trim().min(1).max(120).optional(),
+  parentId: z.string().trim().min(1).max(120).optional(),
+  kind: issueKindSchema.optional(),
   labelId: z.string().trim().min(1).max(80).optional(),
   assigneeId: z.string().trim().min(1).max(80).optional(),
   q: z.string().trim().max(100).optional(),
-  sort: z.enum(["NEWEST", "OLDEST"]).default("NEWEST"),
+  sort: z.enum(["NEWEST", "OLDEST", "RANK"]).default("NEWEST"),
   cursor: z.string().trim().min(1).max(120).optional(),
-  limit: z.coerce.number().int().min(1).max(100).optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
 });
 
 export type ListIssuesQuery = z.infer<typeof listIssuesQuerySchema>;

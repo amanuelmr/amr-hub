@@ -1,3 +1,4 @@
+import { isWorkflowValidationError } from "../../../server/workflows";
 import { NextRequest, NextResponse } from "next/server";
 import {
   createIssueSchema,
@@ -6,9 +7,14 @@ import {
 import {
   createIssue,
   listIssues,
+  InvalidParentError,
   UnknownAssigneeError,
+  UnknownComponentError,
   UnknownCycleError,
   UnknownLabelError,
+  UnknownVersionError,
+  UnknownTeamError,
+  UnknownGoalError,
 } from "../../../server/issues";
 import {
   actorFromSession,
@@ -82,7 +88,13 @@ export async function POST(request: NextRequest) {
     if (
       error instanceof UnknownLabelError ||
       error instanceof UnknownCycleError ||
-      error instanceof UnknownAssigneeError
+      error instanceof UnknownAssigneeError ||
+      error instanceof InvalidParentError ||
+      error instanceof UnknownVersionError ||
+      error instanceof UnknownComponentError ||
+      error instanceof UnknownTeamError ||
+      error instanceof UnknownGoalError ||
+      isWorkflowValidationError(error)
     ) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }

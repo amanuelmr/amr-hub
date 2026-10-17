@@ -1,10 +1,14 @@
 "use client";
 
 import { createContext, useCallback, useContext, useState } from "react";
-import { CreateIssueModal } from "./components/CreateIssueModal";
+import {
+  CreateIssueModal,
+  CreatedIssueToast,
+} from "./components/CreateIssueModal";
+import type { CreateIssueDefaults } from "./components/CreateIssueForm";
 
 type CreateIssueModalContextValue = {
-  open: (projectId?: string | null) => void;
+  open: (projectId?: string | null, defaults?: CreateIssueDefaults) => void;
   close: () => void;
 };
 
@@ -19,11 +23,18 @@ export function CreateIssueModalProvider({
   const [state, setState] = useState<{
     isOpen: boolean;
     projectId: string | null;
+    defaults?: CreateIssueDefaults;
   }>({ isOpen: false, projectId: null });
 
-  const open = useCallback((projectId?: string | null) => {
-    setState({ isOpen: true, projectId: projectId ?? null });
-  }, []);
+  const open = useCallback(
+    (projectId?: string | null, defaults?: CreateIssueDefaults) => {
+      setState({ isOpen: true, projectId: projectId ?? null, defaults });
+    },
+    [],
+  );
+
+  const [createdId, setCreatedId] = useState<string | null>(null);
+  const dismissToast = useCallback(() => setCreatedId(null), []);
 
   const close = useCallback(() => {
     setState((current) => ({ ...current, isOpen: false }));
@@ -33,8 +44,14 @@ export function CreateIssueModalProvider({
     <CreateIssueModalContext.Provider value={{ open, close }}>
       {children}
       {state.isOpen && (
-        <CreateIssueModal projectId={state.projectId} onClose={close} />
+        <CreateIssueModal
+          projectId={state.projectId}
+          defaults={state.defaults}
+          onClose={close}
+          onCreated={(issue) => setCreatedId(issue.id)}
+        />
       )}
+      <CreatedIssueToast issueId={createdId} onDismiss={dismissToast} />
     </CreateIssueModalContext.Provider>
   );
 }

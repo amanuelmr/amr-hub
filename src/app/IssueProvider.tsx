@@ -41,6 +41,13 @@ type IssueContextValue = {
   deleteSavedView: (id: string) => Promise<boolean>;
   createCycle: (cycle: NewCycleInput) => Promise<Cycle>;
   refreshIssues: () => Promise<void>;
+  /** Merge a server-returned issue into local state (insert if new). */
+  replaceIssue: (issue: Issue) => void;
+  removeIssue: (id: string) => void;
+  /** Reload sprints after lifecycle changes (start, complete, reorder). */
+  refreshCycles: () => Promise<void>;
+  /** Reload saved filters after they are edited elsewhere (e.g. /filters). */
+  refreshSavedViews: () => Promise<void>;
 };
 
 const IssueContext = createContext<IssueContextValue | null>(null);
@@ -174,7 +181,11 @@ export function IssueProvider({ children }: { children: React.ReactNode }) {
 
   const replaceIssue = useCallback((nextIssue: Issue) => {
     setIssues((current) =>
-      current.map((issue) => (issue.id === nextIssue.id ? nextIssue : issue)),
+      current.some((issue) => issue.id === nextIssue.id)
+        ? current.map((issue) =>
+            issue.id === nextIssue.id ? { ...issue, ...nextIssue } : issue,
+          )
+        : [nextIssue, ...current],
     );
   }, []);
 
@@ -300,6 +311,26 @@ export function IssueProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const removeIssue = useCallback((id: string) => {
+    setIssues((current) =>
+      current
+        .filter((issue) => issue.id !== id)
+        .map((issue) =>
+          issue.parentId === id
+            ? { ...issue, parentId: null, parent: null }
+            : issue,
+        ),
+    );
+  }, []);
+
+  const refreshCycles = useCallback(async () => {
+    setCycles(await apiRequest<Cycle[]>("/api/cycles"));
+  }, []);
+
+  const refreshSavedViews = useCallback(async () => {
+    setSavedViews(await apiRequest<SavedView[]>("/api/views"));
+  }, []);
+
   const value = useMemo(
     () => ({
       issues,
@@ -316,8 +347,16 @@ export function IssueProvider({ children }: { children: React.ReactNode }) {
       deleteSavedView,
       createCycle,
       refreshIssues,
+      replaceIssue,
+      removeIssue,
+      refreshCycles,
+      refreshSavedViews,
     }),
     [
+      refreshSavedViews,
+      replaceIssue,
+      removeIssue,
+      refreshCycles,
       issues,
       labels,
       savedViews,
