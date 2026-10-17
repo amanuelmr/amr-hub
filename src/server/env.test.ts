@@ -60,4 +60,33 @@ describe("loadServerEnvironment", () => {
       ),
     ).not.toThrow();
   });
+
+  it("uses the branch URL on a Vercel preview without a configured app URL", () => {
+    expect(
+      loadServerEnvironment(
+        asEnvironment({
+          ...validEnvironment,
+          NODE_ENV: "production",
+          NEXT_PUBLIC_APP_URL: undefined,
+          VERCEL_ENV: "preview",
+          VERCEL_BRANCH_URL: "amr-hub-git-jira-parity.vercel.app",
+          VERCEL_URL: "amr-hub-abc123.vercel.app",
+        }),
+      ).NEXT_PUBLIC_APP_URL,
+    ).toBe("https://amr-hub-git-jira-parity.vercel.app");
+  });
+
+  it("keeps requiring the app URL on Vercel production", () => {
+    expect(() =>
+      loadServerEnvironment(
+        asEnvironment({
+          ...validEnvironment,
+          NODE_ENV: "production",
+          NEXT_PUBLIC_APP_URL: undefined,
+          VERCEL_ENV: "production",
+          VERCEL_URL: "amr-hub-abc123.vercel.app",
+        }),
+      ),
+    ).toThrow("NEXT_PUBLIC_APP_URL is required in production");
+  });
 });
