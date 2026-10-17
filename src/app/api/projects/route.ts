@@ -11,6 +11,7 @@ import {
   requireWorkspaceRole,
   requireWorkspaceSession,
 } from "../../../server/session";
+import { errorResponse, validationFailed } from "./http";
 
 export const dynamic = "force-dynamic";
 
@@ -20,13 +21,11 @@ export async function GET(request: Request) {
   const { session } = result;
 
   try {
-    return NextResponse.json(await listProjects(session.workspace.id));
-  } catch (error) {
-    console.error("Failed to load projects", error);
     return NextResponse.json(
-      { error: "Projects could not be loaded" },
-      { status: 500 },
+      await listProjects(session.workspace.id, session.user.id),
     );
+  } catch (error) {
+    return errorResponse(error, "Projects could not be loaded");
   }
 }
 
@@ -37,40 +36,18 @@ export async function POST(request: Request) {
 
   try {
     const validation = createProjectSchema.safeParse(await request.json());
-
-    if (!validation.success) {
-      return NextResponse.json(
-        {
-          error: "Validation failed",
-          fields: validation.error.flatten().fieldErrors,
-        },
-        { status: 400 },
-      );
-    }
+    if (!validation.success) return validationFailed(validation.error);
 
     return NextResponse.json(
       await createProject(validation.data, actorFromSession(session)),
       { status: 201 },
     );
   } catch (error) {
-    if (error instanceof SyntaxError) {
-      return NextResponse.json(
-        { error: "Request body must be valid JSON" },
-        { status: 400 },
-      );
-    }
-
-    if (
-      error instanceof DuplicateProjectKeyError ||
-      error instanceof DuplicateProjectNameError
-    ) {
-      return NextResponse.json({ error: error.message }, { status: 409 });
-    }
-
-    console.error("Failed to create project", error);
-    return NextResponse.json(
-      { error: "Project could not be created" },
-      { status: 500 },
+    return errorResponse(
+      error,
+      "Project could not be created",
+      [],
+      [DuplicateProjectKeyError, DuplicateProjectNameError],
     );
   }
 }

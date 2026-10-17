@@ -3,10 +3,39 @@
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Check, CircleAlert, Sparkles } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  CircleAlert,
+  Columns3,
+  Rows3,
+  Sparkles,
+} from "lucide-react";
+
+const BOARD_TEMPLATES: {
+  value: BoardType;
+  name: string;
+  description: string;
+  icon: typeof Rows3;
+}[] = [
+  {
+    value: "SCRUM",
+    name: "Scrum",
+    description:
+      "Plan work in sprints from a prioritized backlog. Best for teams shipping on a regular cadence.",
+    icon: Rows3,
+  },
+  {
+    value: "KANBAN",
+    name: "Kanban",
+    description:
+      "Visualize a continuous flow of work on a board with WIP limits. Best for support and ops teams.",
+    icon: Columns3,
+  },
+];
 import { useProjects } from "../../ProjectProvider";
 import { authClient } from "../../../lib/auth-client";
-import { PROJECT_COLORS } from "../../data/projects";
+import { PROJECT_COLORS, type BoardType } from "../../data/projects";
 
 type FormErrors = {
   name?: string;
@@ -37,6 +66,7 @@ export default function NewProjectPage() {
   const [description, setDescription] = useState("");
   const [color, setColor] = useState<string>(PROJECT_COLORS[0]);
   const [targetDate, setTargetDate] = useState("");
+  const [boardType, setBoardType] = useState<BoardType>("SCRUM");
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -70,13 +100,12 @@ export default function NewProjectPage() {
         description: description.trim() || null,
         color,
         targetDate: targetDate || null,
+        boardType,
       });
       router.push(`/projects/${project.id}`);
     } catch (error) {
       setSubmitError(
-        error instanceof Error
-          ? error.message
-          : "Project could not be created",
+        error instanceof Error ? error.message : "Project could not be created",
       );
       setIsSubmitting(false);
     }
@@ -89,12 +118,11 @@ export default function NewProjectPage() {
         Back to projects
       </Link>
 
-      <header className="page-header create-header">
+      <header className="jira-page-header">
         <div>
-          <p className="eyebrow">Organize work</p>
-          <h1>Create a project</h1>
-          <p className="page-description">
-            Projects group issues and cycles so teams can plan independently.
+          <h1 className="jira-page-title">Create project</h1>
+          <p className="jira-page-subtitle">
+            Required fields are marked with an asterisk *
           </p>
         </div>
       </header>
@@ -104,6 +132,46 @@ export default function NewProjectPage() {
           <div className="form-section">
             <div className="form-section-heading">
               <span>1</span>
+              <div>
+                <h2>Template</h2>
+                <p>Choose how the team will plan and track work.</p>
+              </div>
+            </div>
+            <div
+              className="pa-template-cards"
+              role="radiogroup"
+              aria-label="Project template"
+            >
+              {BOARD_TEMPLATES.map((template) => {
+                const Icon = template.icon;
+                return (
+                  <label
+                    key={template.value}
+                    className={
+                      boardType === template.value
+                        ? "pa-template-card selected"
+                        : "pa-template-card"
+                    }
+                  >
+                    <input
+                      type="radio"
+                      name="board-type"
+                      value={template.value}
+                      checked={boardType === template.value}
+                      onChange={() => setBoardType(template.value)}
+                    />
+                    <Icon size={20} aria-hidden="true" />
+                    <strong>{template.name}</strong>
+                    <span>{template.description}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="form-section">
+            <div className="form-section-heading">
+              <span>2</span>
               <div>
                 <h2>Project details</h2>
                 <p>Give the project a clear name and short key.</p>
@@ -171,7 +239,7 @@ export default function NewProjectPage() {
 
           <div className="form-section">
             <div className="form-section-heading">
-              <span>2</span>
+              <span>3</span>
               <div>
                 <h2>Planning</h2>
                 <p>Optional details that show up on the project card.</p>
@@ -247,7 +315,7 @@ export default function NewProjectPage() {
             </li>
             <li>
               <Check size={15} aria-hidden="true" />
-              Cycles are planned separately per project.
+              Switch between Scrum and Kanban later in settings.
             </li>
           </ul>
         </aside>

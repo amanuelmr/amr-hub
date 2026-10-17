@@ -1,0 +1,59 @@
+import { NextRequest, NextResponse } from "next/server";
+import {
+  createComponent,
+  createComponentSchema,
+  DuplicateComponentNameError,
+  InvalidComponentInputError,
+  listComponents,
+} from "../../../../../server/components";
+import {
+  requireWorkspaceRole,
+  requireWorkspaceSession,
+} from "../../../../../server/session";
+import { errorResponse, notFound, validationFailed } from "../../http";
+
+type RouteContext = {
+  params: Promise<{ id: string }>;
+};
+
+export async function GET(request: NextRequest, context: RouteContext) {
+  const result = await requireWorkspaceSession(request);
+  if ("response" in result) return result.response;
+  const { session } = result;
+
+  try {
+    const { id } = await context.params;
+    const components = await listComponents(id, session.workspace.id);
+    return components ? NextResponse.json(components) : notFound("Project");
+  } catch (error) {
+    return errorResponse(error, "Components could not be loaded");
+  }
+}
+
+export async function POST(request: NextRequest, context: RouteContext) {
+  const result = await requireWorkspaceRole(request, ["owner", "member"]);
+  if ("response" in result) return result.response;
+  const { session } = result;
+
+  try {
+    const validation = createComponentSchema.safeParse(await request.json());
+    if (!validation.success) return validationFailed(validation.error);
+
+    const { id } = await context.params;
+    const component = await createComponent(
+      id,
+      validation.data,
+      session.workspace.id,
+    );
+    return component
+      ? NextResponse.json(component, { status: 201 })
+      : notFound("Project");
+  } catch (error) {
+    return errorResponse(
+      error,
+      "Component could not be created",
+      [InvalidComponentInputError],
+      [DuplicateComponentNameError],
+    );
+  }
+}

@@ -1,45 +1,87 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { CalendarClock, FolderKanban, Plus } from "lucide-react";
+import { FolderKanban, MoreHorizontal, Plus, Search, Star } from "lucide-react";
+import { apiRequest } from "../IssueProvider";
 import { useProjects } from "../ProjectProvider";
 import { authClient } from "../../lib/auth-client";
 import { WorkspaceLoading } from "../components/WorkspaceLoading";
-import { PROJECT_STATUS_LABELS } from "../data/projects";
+import { PROJECT_STATUS_LABELS, type Project } from "../data/projects";
 
-function formatTargetDate(value: string) {
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(value));
+type TypeFilter = "ALL" | "SCRUM" | "KANBAN";
+
+function sortProjects(projects: Project[], starred: Record<string, boolean>) {
+  return [...projects].sort((left, right) => {
+    const leftStar = starred[left.id] ?? left.starred ?? false;
+    const rightStar = starred[right.id] ?? right.starred ?? false;
+    if (leftStar !== rightStar) return leftStar ? -1 : 1;
+    return left.name.localeCompare(right.name);
+  });
 }
 
 export default function ProjectsPage() {
   const { projects, isLoading } = useProjects();
   const { data: activeMember } = authClient.useActiveMember();
   const isViewer = activeMember?.role === "viewer";
+  const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("ALL");
+  const [starOverrides, setStarOverrides] = useState<Record<string, boolean>>(
+    {},
+  );
+  const [error, setError] = useState<string | null>(null);
 
-  if (isLoading) {
+  const visible = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return sortProjects(
+      projects.filter(
+        (project) =>
+          (typeFilter === "ALL" || project.boardType === typeFilter) &&
+          (!needle ||
+          project.name.toLowerCase().includes(needle) ||
+          project.key.toLowerCase().includes(needle) ||
+          (project.leadName ?? "").toLowerCase().includes(needle)),
+      ),
+      starOverrides,
+    );
+  }, [projects, query, typeFilter, starOverrides]);
+
+  const toggleStar = async (project: Project) => {
+    const next = !(starOverrides[project.id] ?? project.starred ?? false);
+    setStarOverrides((current) => ({ ...current, [project.id]: next }));
+    setError(null);
+    try {
+      await apiRequest(`/api/projects/${encodeURIComponent(project.id)}/star`, {
+        method: next ? "POST" : "DELETE",
+      });
+    } catch (starError) {
+      setStarOverrides((current) => ({ ...current, [project.id]: !next }));
+      setError(
+        starError instanceof Error
+          ? starError.message
+          : "Star could not be saved",
+      );
+    }
+  };
+
+  if (isLoading && projects.length === 0) {
     return <WorkspaceLoading label="projects" />;
   }
 
   return (
     <div className="page projects-page">
-      <header className="page-header">
-        <div>
-          <p className="eyebrow">Workspace</p>
-          <h1>Projects</h1>
-          <p className="page-description">
-            Group related work, track delivery, and plan cycles per project.
-          </p>
-        </div>
+      <header className="jira-page-header">
+        <h1 className="jira-page-title">Projects</h1>
         {!isViewer && (
-          <Link className="primary-button" href="/projects/new">
-            <Plus size={16} aria-hidden="true" />
-            New project
-          </Link>
+          <div className="jira-page-actions">
+            <Link
+              className="primary-button jira-compact-button"
+              href="/projects/new"
+            >
+              <Plus size={16} aria-hidden="true" />
+              Create project
+            </Link>
+          </div>
         )}
       </header>
 
@@ -47,84 +89,169 @@ export default function ProjectsPage() {
         <div className="empty-state">
           <FolderKanban size={24} aria-hidden="true" />
           <h2>No projects yet</h2>
-          <p>Create a project to start organizing issues and cycles.</p>
+          <p>Create a project to start organizing issues and sprints.</p>
           {!isViewer && (
             <Link className="secondary-button" href="/projects/new">
               <Plus size={15} aria-hidden="true" />
-              New project
+              Create project
             </Link>
           )}
         </div>
       ) : (
-        <div className="project-grid">
-          {projects.map((project) => {
-            const progress =
-              project.issueCount === 0
-                ? 0
-                : Math.round(
-                    (project.doneIssueCount / project.issueCount) * 100,
-                  );
-
-            return (
-              <Link
-                href={`/projects/${project.id}`}
-                className="project-card"
-                key={project.id}
+        <>
+          <div className="jira-toolbar">
+            <label className="jira-toolbar-search">
+              <Search size={14} aria-hidden="true" />
+              <input
+                type="search"
+                placeholder="Search projects"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                aria-label="Search projects"
+              />
+            </label>
+            <label className="jira-toolbar-select">
+              <span className="sr-only">Project type</span>
+              <select
+                value={typeFilter}
+                onChange={(event) =>
+                  setTypeFilter(event.target.value as TypeFilter)
+                }
               >
-                <div className="project-card-header">
-                  <div className="project-card-title">
-                    <span
-                      className="project-color-dot"
-                      style={{ background: project.color ?? "var(--gray-300)" }}
-                    />
-                    <h3>{project.name}</h3>
-                  </div>
-                  <span
-                    className={`project-status-badge project-status-${project.status.toLowerCase()}`}
-                  >
-                    {PROJECT_STATUS_LABELS[project.status]}
-                  </span>
-                </div>
-
-                {project.description && (
-                  <p className="project-card-description">
-                    {project.description}
-                  </p>
-                )}
-
-                <div className="project-progress-track">
-                  <div
-                    className="project-progress-fill"
-                    style={{ width: `${progress}%` }}
-                  />
-                </div>
-
-                <div className="project-card-meta">
-                  <span className="project-card-key">{project.key}</span>
-                  <span>
-                    {project.doneIssueCount}/{project.issueCount} issues done
-                  </span>
-                </div>
-
-                {(project.activeCycleName || project.targetDate) && (
-                  <div className="project-card-meta">
-                    <span>
-                      {project.activeCycleName
-                        ? `In ${project.activeCycleName}`
-                        : ""}
-                    </span>
-                    {project.targetDate && (
-                      <span>
-                        <CalendarClock size={12} aria-hidden="true" />{" "}
-                        {formatTargetDate(project.targetDate)}
-                      </span>
-                    )}
-                  </div>
-                )}
-              </Link>
-            );
-          })}
-        </div>
+                <option value="ALL">All project types</option>
+                <option value="SCRUM">Scrum</option>
+                <option value="KANBAN">Kanban</option>
+              </select>
+            </label>
+          </div>
+          {error && (
+            <p className="form-submit-error" role="alert">
+              {error}
+            </p>
+          )}
+          <div className="jira-table-wrap">
+            <table className="jira-table">
+              <thead>
+                <tr>
+                  <th aria-label="Starred" />
+                  <th>Name</th>
+                  <th>Key</th>
+                  <th>Type</th>
+                  <th>Lead</th>
+                  <th>Progress</th>
+                  <th>Status</th>
+                  <th aria-label="Actions" />
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((project) => {
+                  const starred =
+                    starOverrides[project.id] ?? project.starred ?? false;
+                  const progress =
+                    project.issueCount === 0
+                      ? 0
+                      : Math.round(
+                          (project.doneIssueCount / project.issueCount) * 100,
+                        );
+                  return (
+                    <tr key={project.id}>
+                      <td>
+                        <button
+                          type="button"
+                          className={starred ? "jira-star active" : "jira-star"}
+                          aria-pressed={starred}
+                          aria-label={
+                            starred
+                              ? `Unstar ${project.name}`
+                              : `Star ${project.name}`
+                          }
+                          onClick={() => toggleStar(project)}
+                        >
+                          <Star size={15} aria-hidden="true" />
+                        </button>
+                      </td>
+                      <td>
+                        <Link
+                          className="jira-table-name"
+                          href={`/projects/${project.id}`}
+                        >
+                          <span
+                            className="project-shell-avatar"
+                            style={{
+                              background: project.color ?? "var(--gray-300)",
+                            }}
+                            aria-hidden="true"
+                          >
+                            {project.key.slice(0, 2)}
+                          </span>
+                          {project.name}
+                        </Link>
+                      </td>
+                      <td className="jira-table-key">{project.key}</td>
+                      <td>
+                        {project.boardType === "KANBAN" ? "Kanban" : "Scrum"}
+                      </td>
+                      <td>
+                        {project.leadName ?? (
+                          <span className="jira-table-meta">—</span>
+                        )}
+                      </td>
+                      <td className="jira-progress-cell">
+                        <span className="jira-progress-track">
+                          <span
+                            className="jira-progress-fill"
+                            style={{ width: `${progress}%` }}
+                          />
+                        </span>
+                        <span className="jira-table-meta">
+                          {project.doneIssueCount}/{project.issueCount}
+                        </span>
+                      </td>
+                      <td>
+                        <span
+                          className={`project-status-badge project-status-${project.status.toLowerCase()}`}
+                        >
+                          {PROJECT_STATUS_LABELS[project.status]}
+                        </span>
+                      </td>
+                      <td>
+                        <details className="jira-more-menu">
+                          <summary
+                            className="jira-row-menu-trigger"
+                            aria-label={`More actions for ${project.name}`}
+                          >
+                            <MoreHorizontal size={16} aria-hidden="true" />
+                          </summary>
+                          <div className="jira-more-menu-list" role="menu">
+                            <Link
+                              role="menuitem"
+                              href={`/projects/${project.id}/board`}
+                            >
+                              Open board
+                            </Link>
+                            {!isViewer && (
+                              <Link
+                                role="menuitem"
+                                href={`/projects/${project.id}/settings`}
+                              >
+                                Project settings
+                              </Link>
+                            )}
+                          </div>
+                        </details>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {visible.length === 0 && (
+              <p className="activity-empty">
+                No projects match your search.
+              </p>
+            )}
+          </div>
+        </>
       )}
     </div>
   );
