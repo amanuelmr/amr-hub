@@ -1,4 +1,5 @@
 import type { Cycle, Issue } from "./issues";
+import { isDoneStatus } from "./workflow";
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
@@ -49,12 +50,12 @@ export function getCycleMetrics(
     items.reduce((total, issue) => total + (issue.estimate ?? 0), 0);
   const plannedPoints = pointTotal(scopedIssues);
   const completedPoints = pointTotal(
-    scopedIssues.filter((issue) => issue.status === "DONE"),
+    scopedIssues.filter((issue) => isDoneStatus(issue.status)),
   );
   const remainingPoints = Math.max(plannedPoints - completedPoints, 0);
   const riskWindow = now.getTime() + 3 * DAY_IN_MS;
   const atRisk = scopedIssues.filter((issue) => {
-    if (issue.status === "DONE") return false;
+    if (isDoneStatus(issue.status)) return false;
     if (issue.priority === "URGENT") return true;
     if (!issue.dueDate) return false;
     return new Date(issue.dueDate).getTime() <= riskWindow;

@@ -1,6 +1,21 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import "./retro.css";
+import "./styles/jira-shell.css";
+import "./styles/shell.css";
+import "./styles/board.css";
+import "./styles/backlog.css";
+import "./styles/issue-detail.css";
+import "./styles/create-issue.css";
+import "./styles/project-admin.css";
+import "./styles/workflow-admin.css";
+import "./styles/reports.css";
+import "./styles/search.css";
+import "./styles/admin.css";
+import "./styles/goals-forms.css";
+import "./styles/people.css";
+import "./styles/auth.css";
+import "./styles/landing.css";
 import { AppShell } from "./AppShell";
 
 export const metadata: Metadata = {

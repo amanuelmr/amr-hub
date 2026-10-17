@@ -2085,9 +2085,19 @@ h2 {
   background: var(--red-50);
 }
 
-.kind-feature {
-  color: var(--amber-500);
-  background: var(--amber-50);
+.kind-story {
+  color: var(--green-600);
+  background: var(--green-50);
+}
+
+.kind-epic {
+  color: #6d4fd8;
+  background: color-mix(in srgb, #987dff 16%, transparent);
+}
+
+.kind-subtask {
+  color: var(--blue-600);
+  background: var(--blue-50);
 }
 
 .kind-task {
@@ -2142,6 +2152,10 @@ h2 {
 
 .status-in_progress {
   color: var(--blue-600);
+}
+
+.status-in_review {
+  color: #6d4fd8;
 }
 
 .status-open {

@@ -1,55 +1,68 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  ArrowLeft,
-  ArrowRight,
-  Eye,
-  EyeOff,
-  LoaderCircle,
-  Mail,
-  UserPlus,
-} from "lucide-react";
+import { MailCheck } from "lucide-react";
 import { authClient } from "../../lib/auth-client";
+import {
+  AuthAlert,
+  AuthHeading,
+  AuthPage,
+} from "../components/auth/AuthCard";
+import {
+  AuthField,
+  EmailChip,
+  PasswordChecklist,
+  PasswordField,
+  SubmitButton,
+} from "../components/auth/AuthFields";
+import {
+  MAX_PASSWORD_LENGTH,
+  MIN_PASSWORD_LENGTH,
+  isPasswordAcceptable,
+} from "../components/auth/passwordRules";
+
+type Step = "email" | "details" | "verify";
+
+const RESEND_COOLDOWN_SECONDS = 30;
 
 export default function SignupPage() {
   const router = useRouter();
   const { data: session } = authClient.useSession();
+  const [step, setStep] = useState<Step>("email");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [confirmation, setConfirmation] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isAwaitingVerification, setIsAwaitingVerification] = useState(false);
+  const [isResending, setIsResending] = useState(false);
+  const [resendStatus, setResendStatus] = useState<string | null>(null);
+  const [cooldown, setCooldown] = useState(0);
 
   useEffect(() => {
     if (session) router.replace("/onboarding");
   }, [router, session]);
 
-  const passwordScore = useMemo(() => {
-    let score = 0;
-    if (password.length >= 12) score += 1;
-    if (password.length >= 16) score += 1;
-    if (new Set(password).size >= 10) score += 1;
-    if (/\s/.test(password) || /[^a-zA-Z0-9]/.test(password)) score += 1;
-    return score;
-  }, [password]);
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = window.setTimeout(() => setCooldown((value) => value - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [cooldown]);
+
+  const continueWithEmail = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError(null);
+    if (!email.trim()) return;
+    setStep("details");
+  };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
 
-    if (password.length < 12) {
-      setError("Use at least 12 characters for your password.");
-      return;
-    }
-
-    if (password !== confirmation) {
-      setError("Password confirmation does not match.");
+    if (!isPasswordAcceptable(password)) {
+      setError(`Use at least ${MIN_PASSWORD_LENGTH} characters for your password.`);
       return;
     }
 
@@ -64,16 +77,19 @@ export default function SignupPage() {
     if (result.error) {
       setError(
         result.error.status === 429
-          ? "Too many signup attempts. Wait a minute and try again."
-          : "The account could not be created. Sign in if this email is already registered.",
+          ? "Too many sign-up attempts. Wait a minute and try again."
+          : "We couldn't create the account. If this email is already registered, log in instead.",
       );
       setIsSubmitting(false);
       return;
     }
 
+    setPassword("");
+    setIsSubmitting(false);
+
     if (!result.data.token) {
-      setIsAwaitingVerification(true);
-      setIsSubmitting(false);
+      setCooldown(RESEND_COOLDOWN_SECONDS);
+      setStep("verify");
       return;
     }
 
@@ -81,192 +97,157 @@ export default function SignupPage() {
     router.refresh();
   };
 
-  if (isAwaitingVerification) {
+  const resendEmail = async () => {
+    setResendStatus(null);
+    setIsResending(true);
+    const result = await authClient.sendVerificationEmail({
+      email: email.trim(),
+      callbackURL: "/onboarding",
+    });
+    setIsResending(false);
+    setCooldown(RESEND_COOLDOWN_SECONDS);
+    setResendStatus(
+      result.error
+        ? result.error.status === 429
+          ? "Too many requests. Wait a minute and try again."
+          : "We couldn't resend the email. Try again shortly."
+        : "Email sent. It can take a minute to arrive.",
+    );
+  };
+
+  const legal = "By signing up, I accept the AMR Hub terms of service and acknowledge the privacy policy.";
+
+  if (step === "verify") {
     return (
-      <div className="auth-layout">
-        <section className="auth-form-pane">
-          <div className="auth-form-wrap signup-form-wrap">
-            <div className="recovery-complete">
-              <span className="auth-heading-icon">
-                <Mail size={18} aria-hidden="true" />
-              </span>
-              <h1>Check your email</h1>
-              <p>
-                If {email.trim()} isn&apos;t already registered, we just sent
-                a verification link to confirm it. Open it to finish setting
-                up your account.
-              </p>
-              <Link className="primary-button" href="/login">
-                <ArrowLeft size={16} aria-hidden="true" />
-                Return to sign in
-              </Link>
-            </div>
-          </div>
-        </section>
-      </div>
+      <AuthPage
+        footer={
+          <Link href="/login">Already verified? Log in</Link>
+        }
+      >
+        <AuthHeading
+          icon={<MailCheck size={22} aria-hidden="true" />}
+          title="Check your inbox to verify your email"
+          subtitle="To complete sign up, open the link we sent to:"
+        />
+        <EmailChip email={email.trim()} />
+        <p className="acct-body">
+          The link expires in 24 hours. If you don&apos;t see the email, check
+          your spam folder. If {email.trim()} already has an account, log in
+          instead.
+        </p>
+        {resendStatus && (
+          <AuthAlert
+            tone={resendStatus.startsWith("Email sent") ? "success" : "error"}
+          >
+            {resendStatus}
+          </AuthAlert>
+        )}
+        <div className="acct-stack">
+          <SubmitButton
+            type="button"
+            variant="secondary"
+            onClick={() => void resendEmail()}
+            busy={isResending}
+            busyLabel="Sending"
+            disabled={cooldown > 0}
+          >
+            {cooldown > 0 ? `Resend email (${cooldown}s)` : "Resend email"}
+          </SubmitButton>
+          <Link className="primary-button acct-button" href="/login">
+            Back to log in
+          </Link>
+        </div>
+        <p className="acct-body acct-muted">
+          Wrong email?{" "}
+          <button
+            type="button"
+            className="acct-link-button"
+            onClick={() => {
+              setStep("email");
+              setResendStatus(null);
+            }}
+          >
+            Sign up with a different email
+          </button>
+        </p>
+      </AuthPage>
     );
   }
 
   return (
-    <div className="auth-layout">
-      <section className="auth-form-pane">
-        <div className="auth-form-wrap signup-form-wrap">
-          <Link className="back-link auth-back-link" href="/login">
-            <ArrowLeft size={16} aria-hidden="true" />
-            Back to sign in
-          </Link>
+    <AuthPage
+      footer={<Link href="/login">Already have an account? Log in</Link>}
+    >
+      <AuthHeading
+        title="Sign up to continue"
+        subtitle={
+          step === "email"
+            ? "Create your AMR Hub account. You'll set up your workspace next."
+            : "Tell us a little about yourself."
+        }
+      />
 
-          <div className="auth-heading">
-            <span className="auth-heading-icon">
-              <UserPlus size={18} aria-hidden="true" />
-            </span>
-            <p className="eyebrow">Step 1 of 2</p>
-            <h1>Create your account</h1>
-            <p>Your organization workspace is created in the next step.</p>
-          </div>
+      {error && <AuthAlert>{error}</AuthAlert>}
 
-          <form className="auth-form" onSubmit={handleSubmit}>
-            <label className="form-field">
-              <span>Full name</span>
-              <input
-                type="text"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                autoComplete="name"
-                minLength={2}
-                maxLength={80}
-                required
-                autoFocus
-              />
-            </label>
-
-            <label className="form-field">
-              <span>Work email</span>
-              <input
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                autoComplete="email"
-                inputMode="email"
-                required
-              />
-            </label>
-
-            <label className="form-field">
-              <span>Password</span>
-              <span className="password-input">
-                <input
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  autoComplete="new-password"
-                  minLength={12}
-                  maxLength={128}
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((current) => !current)}
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                  title={showPassword ? "Hide password" : "Show password"}
-                >
-                  {showPassword ? (
-                    <EyeOff size={16} aria-hidden="true" />
-                  ) : (
-                    <Eye size={16} aria-hidden="true" />
-                  )}
-                </button>
-              </span>
-              <span className="password-strength">
-                <span>
-                  {Array.from({ length: 4 }, (_, index) => (
-                    <i
-                      className={index < passwordScore ? "active" : ""}
-                      key={index}
-                    />
-                  ))}
-                </span>
-                {password.length < 12
-                  ? "12 characters minimum"
-                  : passwordScore >= 3
-                    ? "Strong password"
-                    : "Add length or variety"}
-              </span>
-            </label>
-
-            <label className="form-field">
-              <span>Confirm password</span>
-              <input
-                type="password"
-                value={confirmation}
-                onChange={(event) => setConfirmation(event.target.value)}
-                autoComplete="new-password"
-                required
-              />
-            </label>
-
-            {error && (
-              <p className="auth-error" role="alert">
-                {error}
-              </p>
-            )}
-
-            <button
-              className="primary-button auth-submit"
-              type="submit"
-              disabled={
-                isSubmitting ||
-                !name.trim() ||
-                !email.trim() ||
-                !password ||
-                !confirmation
-              }
-            >
-              {isSubmitting ? (
-                <LoaderCircle
-                  className="spinning-icon"
-                  size={16}
-                  aria-hidden="true"
-                />
-              ) : (
-                <ArrowRight size={16} aria-hidden="true" />
-              )}
-              {isSubmitting ? "Creating account" : "Continue"}
-            </button>
-          </form>
-
-          <p className="auth-setup-link">
-            Already have an account? <Link href="/login">Sign in</Link>
-          </p>
-        </div>
-      </section>
-
-      <aside className="auth-workspace-preview" aria-label="Workspace preview">
-        <div className="preview-topbar">
-          <span className="brand-mark">A</span>
-          <span>Your organization</span>
-          <span className="preview-status">Private by default</span>
-        </div>
-        <div className="preview-summary">
-          <p>Organization workspace</p>
-          <strong>One place for product delivery</strong>
-          <span>Issues, planning, members, and account security stay together.</span>
-        </div>
-        <div className="signup-preview-steps">
-          <span className="active">
-            <b>1</b>
-            Account credentials
-          </span>
-          <span>
-            <b>2</b>
-            Organization details
-          </span>
-          <span>
-            <b>3</b>
-            Your first issue
-          </span>
-        </div>
-      </aside>
-    </div>
+      {step === "email" ? (
+        <form className="acct-form" onSubmit={continueWithEmail}>
+          <AuthField
+            label="Email"
+            type="email"
+            value={email}
+            onValueChange={setEmail}
+            autoComplete="email"
+            inputMode="email"
+            placeholder="Enter your email"
+            required
+            autoFocus
+          />
+          <p className="acct-fine-print">{legal}</p>
+          <SubmitButton disabled={!email.trim()}>Sign up</SubmitButton>
+        </form>
+      ) : (
+        <form className="acct-form" onSubmit={handleSubmit}>
+          <EmailChip
+            email={email.trim()}
+            onChange={() => {
+              setStep("email");
+              setError(null);
+            }}
+          />
+          <AuthField
+            label="Full name"
+            type="text"
+            value={name}
+            onValueChange={setName}
+            autoComplete="name"
+            placeholder="Enter full name"
+            minLength={2}
+            maxLength={80}
+            required
+            autoFocus
+          />
+          <PasswordField
+            label="Password"
+            value={password}
+            onValueChange={setPassword}
+            autoComplete="new-password"
+            placeholder="Create password"
+            minLength={MIN_PASSWORD_LENGTH}
+            maxLength={MAX_PASSWORD_LENGTH}
+            required
+          />
+          <PasswordChecklist password={password} />
+          <SubmitButton
+            busy={isSubmitting}
+            busyLabel="Creating account"
+            disabled={
+              name.trim().length < 2 || !isPasswordAcceptable(password)
+            }
+          >
+            Continue
+          </SubmitButton>
+        </form>
+      )}
+    </AuthPage>
   );
 }

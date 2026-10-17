@@ -53,11 +53,28 @@ export function loadServerEnvironment(
     throw new Error(`Invalid server environment - ${fields}`);
   }
 
-  if (environment.NODE_ENV === "production" && !result.data.NEXT_PUBLIC_APP_URL) {
+  const data = {
+    ...result.data,
+    NEXT_PUBLIC_APP_URL:
+      result.data.NEXT_PUBLIC_APP_URL ?? vercelPreviewOrigin(environment),
+  };
+
+  if (environment.NODE_ENV === "production" && !data.NEXT_PUBLIC_APP_URL) {
     throw new Error(
       "Invalid server environment - NEXT_PUBLIC_APP_URL is required in production",
     );
   }
 
-  return result.data;
+  return data;
+}
+
+/**
+ * Vercel preview deployments get a unique URL per branch, so a fixed
+ * NEXT_PUBLIC_APP_URL cannot be configured for them. Production never
+ * falls back and still requires the variable.
+ */
+function vercelPreviewOrigin(environment: NodeJS.ProcessEnv) {
+  if (environment.VERCEL_ENV !== "preview") return undefined;
+  const host = environment.VERCEL_BRANCH_URL || environment.VERCEL_URL;
+  return host ? `https://${host}` : undefined;
 }

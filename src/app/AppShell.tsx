@@ -1,11 +1,15 @@
 "use client";
 
+import { Suspense } from "react";
 import { usePathname } from "next/navigation";
 import { IssueProvider } from "./IssueProvider";
 import { ProjectProvider } from "./ProjectProvider";
+import { WorkflowProvider } from "./WorkflowProvider";
 import { NotificationProvider } from "./NotificationProvider";
 import { CreateIssueModalProvider } from "./CreateIssueModalProvider";
 import { CommandPalette } from "./components/CommandPalette";
+import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
+import { IssueOverlay } from "./components/issue/IssueOverlay";
 import NavBar from "./NavBar";
 
 const AUTH_ROUTES = [
@@ -40,17 +44,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <ProjectProvider>
-      <NotificationProvider>
-        <IssueProvider>
-          <CreateIssueModalProvider>
-            <div className="app-shell">
-              <NavBar />
-              <main className="app-content">{children}</main>
-              <CommandPalette />
-            </div>
-          </CreateIssueModalProvider>
-        </IssueProvider>
-      </NotificationProvider>
+      <WorkflowProvider>
+        <NotificationProvider>
+          <IssueProvider>
+            <CreateIssueModalProvider>
+              <div className="app-shell shell-frame">
+                <NavBar />
+                <main className="app-content">{children}</main>
+                <CommandPalette />
+                <KeyboardShortcuts />
+                <Suspense fallback={null}>
+                  <IssueOverlay />
+                </Suspense>
+              </div>
+            </CreateIssueModalProvider>
+          </IssueProvider>
+        </NotificationProvider>
+      </WorkflowProvider>
     </ProjectProvider>
   );
 }

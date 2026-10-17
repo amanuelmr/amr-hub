@@ -3,13 +3,23 @@
 import { FormEvent, Suspense, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import {
-  ArrowLeft,
-  CheckCircle2,
-  KeyRound,
-  LoaderCircle,
-} from "lucide-react";
+import { CheckCircle2, KeyRound, LinkIcon } from "lucide-react";
 import { authClient } from "../../lib/auth-client";
+import {
+  AuthAlert,
+  AuthHeading,
+  AuthPage,
+} from "../components/auth/AuthCard";
+import {
+  PasswordChecklist,
+  PasswordField,
+  SubmitButton,
+} from "../components/auth/AuthFields";
+import {
+  MAX_PASSWORD_LENGTH,
+  MIN_PASSWORD_LENGTH,
+  isPasswordAcceptable,
+} from "../components/auth/passwordRules";
 
 export default function ResetPasswordPage() {
   return (
@@ -35,12 +45,14 @@ function ResetPasswordForm() {
 
     if (!token) return;
 
-    if (password.length < 12) {
-      setError("Use at least 12 characters for the new password.");
+    if (!isPasswordAcceptable(password)) {
+      setError(
+        `Use at least ${MIN_PASSWORD_LENGTH} characters for the new password.`,
+      );
       return;
     }
     if (password !== confirmation) {
-      setError("Password confirmation does not match.");
+      setError("Passwords don't match.");
       return;
     }
 
@@ -65,109 +77,77 @@ function ResetPasswordForm() {
     setIsComplete(true);
   };
 
+  const footer = <Link href="/login">Return to log in</Link>;
+
+  if (isComplete) {
+    return (
+      <AuthPage footer={footer}>
+        <AuthHeading
+          icon={<CheckCircle2 size={22} aria-hidden="true" />}
+          title="Your password has been changed"
+          subtitle="Every other session was logged out. Log in with your new password to continue."
+        />
+        <Link className="primary-button acct-button" href="/login">
+          Log in
+        </Link>
+      </AuthPage>
+    );
+  }
+
+  if (!token || linkError) {
+    return (
+      <AuthPage footer={footer}>
+        <AuthHeading
+          icon={<LinkIcon size={22} aria-hidden="true" />}
+          title="This link has expired"
+          subtitle="Recovery links work once and expire after 1 hour. Request a new one to reset your password."
+        />
+        <Link className="primary-button acct-button" href="/forgot-password">
+          Send a new recovery link
+        </Link>
+      </AuthPage>
+    );
+  }
+
   return (
-    <div className="auth-layout recovery-layout">
-      <section className="auth-form-pane">
-        <div className="auth-form-wrap">
-          <Link className="brand auth-brand" href="/login">
-            <span className="brand-mark">A</span>
-            <span>
-              <strong>AMR Hub</strong>
-              <small>Product workspace</small>
-            </span>
-          </Link>
+    <AuthPage footer={footer}>
+      <AuthHeading
+        icon={<KeyRound size={22} aria-hidden="true" />}
+        title="Choose a new password"
+        subtitle="Changing your password logs you out of every other session."
+      />
 
-          {isComplete ? (
-            <div className="recovery-complete">
-              <span className="auth-heading-icon">
-                <CheckCircle2 size={18} aria-hidden="true" />
-              </span>
-              <h1>Password updated</h1>
-              <p>Every existing session was signed out. Sign in with your new password.</p>
-              <Link className="primary-button" href="/login">
-                <ArrowLeft size={16} aria-hidden="true" />
-                Return to sign in
-              </Link>
-            </div>
-          ) : !token || linkError ? (
-            <div className="recovery-complete">
-              <span className="auth-heading-icon">
-                <KeyRound size={18} aria-hidden="true" />
-              </span>
-              <h1>Link invalid or expired</h1>
-              <p>Request a new password reset link and try again.</p>
-              <Link className="primary-button" href="/forgot-password">
-                Request a new link
-              </Link>
-            </div>
-          ) : (
-            <>
-              <div className="auth-heading">
-                <span className="auth-heading-icon">
-                  <KeyRound size={18} aria-hidden="true" />
-                </span>
-                <h1>Set a new password</h1>
-                <p>Choose a new password for your account.</p>
-              </div>
+      {error && <AuthAlert>{error}</AuthAlert>}
 
-              <form className="auth-form" onSubmit={resetPassword}>
-                <label className="form-field">
-                  <span>New password</span>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    autoComplete="new-password"
-                    minLength={12}
-                    maxLength={128}
-                    required
-                    autoFocus
-                  />
-                </label>
-                <label className="form-field">
-                  <span>Confirm password</span>
-                  <input
-                    type="password"
-                    value={confirmation}
-                    onChange={(event) => setConfirmation(event.target.value)}
-                    autoComplete="new-password"
-                    minLength={12}
-                    maxLength={128}
-                    required
-                  />
-                </label>
-
-                {error && (
-                  <p className="auth-error" role="alert">
-                    {error}
-                  </p>
-                )}
-
-                <button
-                  className="primary-button auth-submit"
-                  type="submit"
-                  disabled={isSubmitting || !password || !confirmation}
-                >
-                  {isSubmitting && (
-                    <LoaderCircle
-                      className="spinning-icon"
-                      size={16}
-                      aria-hidden="true"
-                    />
-                  )}
-                  {isSubmitting ? "Resetting password" : "Reset password"}
-                </button>
-              </form>
-            </>
-          )}
-        </div>
-      </section>
-
-      <aside className="auth-security-preview" aria-label="Reset security">
-        <KeyRound size={28} aria-hidden="true" />
-        <strong>Single-use reset link</strong>
-        <p>Resetting your password signs you out of every other session.</p>
-      </aside>
-    </div>
+      <form className="acct-form" onSubmit={resetPassword}>
+        <PasswordField
+          label="New password"
+          value={password}
+          onValueChange={setPassword}
+          autoComplete="new-password"
+          minLength={MIN_PASSWORD_LENGTH}
+          maxLength={MAX_PASSWORD_LENGTH}
+          required
+          autoFocus
+        />
+        <PasswordChecklist password={password} />
+        <PasswordField
+          label="Confirm new password"
+          value={confirmation}
+          onValueChange={setConfirmation}
+          autoComplete="new-password"
+          minLength={MIN_PASSWORD_LENGTH}
+          maxLength={MAX_PASSWORD_LENGTH}
+          required
+        />
+        <SubmitButton
+          busy={isSubmitting}
+          busyLabel="Saving password"
+          disabled={!password || !confirmation}
+        >
+          Continue
+        </SubmitButton>
+      </form>
+    </AuthPage>
   );
 }

@@ -6,6 +6,7 @@ import {
   listWorkspaceAccess,
 } from "../../../server/invitations";
 import { requireWorkspaceRole } from "../../../server/session";
+import { recordAudit } from "../../../server/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -70,6 +71,14 @@ export async function POST(request: NextRequest) {
         organizationName: session.workspace.name,
       },
     );
+    await recordAudit({
+      organizationId: session.workspace.id,
+      actor: { id: session.user.id, name: session.user.name },
+      action: "invitation.created",
+      targetType: "invitation",
+      targetId: null,
+      details: { email: validation.data.email, role: validation.data.role },
+    });
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     if (error instanceof InvitationError) {

@@ -11,7 +11,11 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { useIssues } from "../IssueProvider";
+import { useCreateIssueModal } from "../CreateIssueModalProvider";
 import { useProjects } from "../ProjectProvider";
+import { useWorkflows } from "../WorkflowProvider";
+import { parseStatusChange, type StatusList } from "../data/reports";
+import { isDoneStatus, isInProgressStatus } from "../data/workflow";
 import { authClient } from "../../lib/auth-client";
 import { WorkspaceActivity } from "../components/WorkspaceActivity";
 import { WorkspaceLoading } from "../components/WorkspaceLoading";
@@ -28,7 +32,7 @@ function dateKey(value: Date | string) {
   return new Date(value).toISOString().slice(0, 10);
 }
 
-function buildThroughput(issues: Issue[], now: Date) {
+function buildThroughput(issues: Issue[], now: Date, statuses: StatusList) {
   const today = Date.UTC(
     now.getUTCFullYear(),
     now.getUTCMonth(),
@@ -55,7 +59,7 @@ function buildThroughput(issues: Issue[], now: Date) {
     const completionEvents = (issue.activity ?? []).filter(
       (event) =>
         event.type === "STATUS_CHANGED" &&
-        event.description.toLowerCase().endsWith("to done"),
+        isDoneStatus(parseStatusChange(event.description, statuses)?.to),
     );
 
     if (completionEvents.length > 0) {
@@ -63,7 +67,7 @@ function buildThroughput(issues: Issue[], now: Date) {
         const closedPoint = byDate.get(dateKey(event.createdAt));
         if (closedPoint) closedPoint.closed += 1;
       }
-    } else if (issue.status === "DONE") {
+    } else if (isDoneStatus(issue.status)) {
       const closedPoint = byDate.get(dateKey(issue.createdAt));
       if (closedPoint) closedPoint.closed += 1;
     }
@@ -77,22 +81,24 @@ export default function Home() {
   const { projects } = useProjects();
   const { data: activeMember } = authClient.useActiveMember();
   const isViewer = activeMember?.role === "viewer";
+  const { open: openCreateIssue } = useCreateIssueModal();
+  const { allStatuses } = useWorkflows();
 
   if (isLoading) {
     return <WorkspaceLoading label="overview" />;
   }
 
-  const active = issues.filter((issue) => issue.status !== "DONE").length;
-  const inProgress = issues.filter(
-    (issue) => issue.status === "IN_PROGRESS",
+  const active = issues.filter((issue) => !isDoneStatus(issue.status)).length;
+  const inProgress = issues.filter((issue) =>
+    isInProgressStatus(issue.status),
   ).length;
-  const completed = issues.filter((issue) => issue.status === "DONE").length;
+  const completed = issues.filter((issue) => isDoneStatus(issue.status)).length;
   const urgent = issues.filter(
-    (issue) => issue.priority === "URGENT" && issue.status !== "DONE",
+    (issue) => issue.priority === "URGENT" && !isDoneStatus(issue.status),
   ).length;
   const completionRate = Math.round((completed / Math.max(issues.length, 1)) * 100);
   const now = new Date();
-  const throughput = buildThroughput(issues, now);
+  const throughput = buildThroughput(issues, now, allStatuses);
   const largestThroughput = Math.max(
     1,
     ...throughput.flatMap((point) => [point.opened, point.closed]),
@@ -103,7 +109,7 @@ export default function Home() {
   );
   const activeOwners = new Set(
     issues
-      .filter((issue) => issue.status !== "DONE" && issue.assignee !== null)
+      .filter((issue) => !isDoneStatus(issue.status) && issue.assignee !== null)
       .map((issue) => issue.assignee?.id),
   ).size;
   const currentCycle = findCurrentCycle(cycles, now);
@@ -139,19 +145,19 @@ export default function Home() {
 
   return (
     <div className="page">
-      <header className="page-header">
-        <div>
-          <p className="eyebrow">Workspace status // Live</p>
-          <h1>Mission control</h1>
-          <p className="page-description">
-            Clear the queue, protect the cycle, and ship what matters.
-          </p>
-        </div>
+      <header className="jira-page-header">
+        <h1 className="jira-page-title">Overview</h1>
         {!isViewer && (
-          <Link className="primary-button" href="/issues/new">
-            <Plus size={16} aria-hidden="true" />
-            New issue
-          </Link>
+          <div className="jira-page-actions">
+            <button
+              type="button"
+              className="primary-button jira-compact-button"
+              onClick={() => openCreateIssue()}
+            >
+              <Plus size={16} aria-hidden="true" />
+              Create
+            </button>
+          </div>
         )}
       </header>
 
@@ -245,8 +251,8 @@ export default function Home() {
             <>
               <div className="panel-header">
                 <div>
-                  <p className="eyebrow">{currentCycle.name}</p>
-                  <h2>{formatCycleDateRange(currentCycle)}</h2>
+                  <h2>{currentCycle.name}</h2>
+                  <p>{formatCycleDateRange(currentCycle)}</p>
                 </div>
                 <span className="cycle-day">
                   Day {cycleMetrics.elapsedDays} of {cycleMetrics.totalDays}

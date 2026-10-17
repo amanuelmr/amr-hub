@@ -1,477 +1,368 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
 import {
-  Activity,
   ArrowRight,
-  CalendarRange,
-  Check,
-  CircleCheck,
-  Clock3,
-  Fingerprint,
-  Flame,
-  FolderKanban,
-  Gauge,
-  Inbox,
-  KeyRound,
+  Bot,
+  ClipboardList,
+  Columns3,
   LayoutDashboard,
-  ListFilter,
-  ListTodo,
-  LockKeyhole,
-  MessageSquareText,
+  Package,
+  Paperclip,
+  Rows3,
+  Search,
   ShieldCheck,
-  Tag,
+  Target,
+  Timer,
   UsersRound,
+  Webhook,
+  Workflow,
 } from "lucide-react";
+import { ThemeToggle } from "./components/ThemeToggle";
+import { FeatureTabs } from "./components/landing/FeatureTabs";
+import { AppWindow, BoardMock } from "./components/landing/mocks";
 
 export const metadata: Metadata = {
   title: {
-    absolute: "AMR Hub | Product delivery without the noise",
+    absolute: "AMR Hub | Plan, track and ship work as a team",
   },
   description:
-    "Triage issues, plan delivery cycles, and keep product work accountable in a secure organization workspace.",
+    "AMR Hub is a Jira-style work management app: boards, backlogs and sprints, timelines, JQL search, automation, dashboards and reports for software teams.",
 };
 
-const heroMetrics = [
+const FEATURES = [
   {
-    label: "Active issues",
-    value: "24",
-    note: "6 added this week",
-    icon: Inbox,
-    tone: "blue",
+    icon: Workflow,
+    title: "Custom workflows & work types",
+    body: "Define statuses, transitions and your own work types alongside epics, stories, tasks, bugs and subtasks.",
   },
   {
-    label: "In progress",
-    value: "9",
-    note: "Across 4 owners",
-    icon: Clock3,
-    tone: "amber",
+    icon: Search,
+    title: "JQL search, saved filters & bulk change",
+    body: "Find anything with a query language you already know, save it as a filter, and update many items at once.",
   },
   {
-    label: "Completion rate",
-    value: "68%",
-    note: "34 of 50 issues",
-    icon: CircleCheck,
-    tone: "green",
+    icon: Bot,
+    title: "Automation rules",
+    body: "Trigger actions when work is created, updated, commented on or changes status, so routine updates happen on their own.",
   },
   {
-    label: "Urgent",
-    value: "3",
-    note: "Needs attention today",
-    icon: Flame,
-    tone: "red",
+    icon: LayoutDashboard,
+    title: "Dashboards with gadgets",
+    body: "Assigned to me, filter results, pie charts, created vs resolved, sprint health, activity streams and more.",
+  },
+  {
+    icon: Target,
+    title: "Goals",
+    body: "Set goals, link the work that delivers them and post progress updates so everyone sees where things stand.",
+  },
+  {
+    icon: ClipboardList,
+    title: "Forms",
+    body: "Collect requests through forms that create work items in the right project with the right fields.",
+  },
+  {
+    icon: Package,
+    title: "Releases & components",
+    body: "Group work into versions, track what ships in each release, and organise a project by component.",
+  },
+  {
+    icon: Timer,
+    title: "Time tracking & work logs",
+    body: "Estimate, log time against work items and compare original estimates with time spent.",
+  },
+  {
+    icon: Paperclip,
+    title: "Subtasks, links, attachments, watchers & votes",
+    body: "Break work down, link related items, attach files, and follow or vote on what matters to you.",
+  },
+  {
+    icon: UsersRound,
+    title: "Teams & people",
+    body: "Organise members into teams, see who is working on what, and assign work to the right people.",
+  },
+  {
+    icon: Webhook,
+    title: "API, webhooks, import/export & audit log",
+    body: "REST API v1 with personal tokens, outbound webhooks, CSV import and export, and a workspace audit log.",
+  },
+  {
+    icon: ShieldCheck,
+    title: "Security built in",
+    body: "Two-factor (TOTP), passkeys, recovery codes, session management, and owner, member and viewer roles.",
   },
 ];
 
-const triageIssues = [
+const STEPS = [
   {
-    id: "AMR-128",
-    title: "Checkout stalls after applying a promo code",
-    label: "Bug",
-    labelClass: "bug",
-    priority: "Urgent",
-    priorityClass: "urgent",
-    status: "In progress",
-    statusClass: "progress",
-    owner: "Maya",
-    due: "Today",
+    title: "Create your workspace",
+    body: "Sign up and invite teammates by email. Each workspace keeps its projects, members and data separate.",
   },
   {
-    id: "AMR-127",
-    title: "Add saved views for support triage",
-    label: "Product",
-    labelClass: "product",
-    priority: "High",
-    priorityClass: "high",
-    status: "Backlog",
-    statusClass: "backlog",
-    owner: "Amanuel",
-    due: "Aug 2",
+    title: "Create a project",
+    body: "Pick the Scrum or Kanban template, give the project a key, and your board and workflow are ready.",
   },
   {
-    id: "AMR-125",
-    title: "Record status changes in issue activity",
-    label: "Platform",
-    labelClass: "platform",
-    priority: "Medium",
-    priorityClass: "medium",
-    status: "Done",
-    statusClass: "done",
-    owner: "Jon",
-    due: "Aug 4",
+    title: "Plan in the backlog & run sprints",
+    body: "Rank and estimate work, pull it into a sprint, and move it across the board as the team delivers.",
+  },
+  {
+    title: "Track with reports and dashboards",
+    body: "Follow burndown and velocity, build dashboards from gadgets, and keep stakeholders up to date.",
   },
 ];
+
+const TEMPLATES = [
+  {
+    icon: Rows3,
+    name: "Scrum",
+    body: "Plan work in sprints from a prioritized backlog. Best for teams shipping on a regular cadence.",
+    includes: ["Backlog with sprint planning", "Burndown, burnup and velocity", "Sprint start and completion"],
+  },
+  {
+    icon: Columns3,
+    name: "Kanban",
+    body: "Visualize a continuous flow of work on a board with WIP limits. Best for support and ops teams.",
+    includes: ["Continuous-flow board", "WIP limits per column", "Cumulative flow and control chart"],
+  },
+];
+
+const FAQS = [
+  {
+    q: "Is AMR Hub free to start?",
+    a: "Yes. Create a workspace from the sign-up page and start a project straight away.",
+  },
+  {
+    q: "Does AMR Hub include AI features?",
+    a: "No. There is no AI assistant or generated content. Automation is rule-based: you choose the trigger, conditions and actions.",
+  },
+  {
+    q: "Can I import my work from Jira?",
+    a: "Yes. Export a CSV from Jira, then go to Workspace settings → Import. Common Jira export headers are mapped to fields automatically. You can export to CSV the same way.",
+  },
+  {
+    q: "Is there an API?",
+    a: "Yes. A REST API (v1) covers projects and work items, authenticated with API tokens you create in Workspace settings. Webhooks notify your systems when work changes.",
+  },
+  {
+    q: "What roles are available?",
+    a: "Workspace members are owners, members or viewers. Owners manage the workspace and its settings, members create and edit work, and viewers have read-only access.",
+  },
+  {
+    q: "How is my account protected?",
+    a: "Sign in with a password or a passkey, add two-factor authentication with an authenticator app, keep recovery codes, and review or revoke active sessions at any time.",
+  },
+];
+
+function Brand() {
+  return (
+    <Link className="lp-brand" href="/" aria-label="AMR Hub home">
+      <span className="lp-brand-mark" aria-hidden="true">
+        A
+      </span>
+      <span>AMR Hub</span>
+    </Link>
+  );
+}
 
 export default function LandingPage() {
   return (
-    <div className="landing-page">
-      <header className="landing-header">
-        <div className="landing-header-inner">
-          <Link className="brand landing-brand" href="/" aria-label="AMR Hub home">
-            <span className="brand-mark">A</span>
-            <span>
-              <strong>AMR Hub</strong>
-              <small>Product delivery</small>
-            </span>
-          </Link>
-
-          <nav className="landing-nav" aria-label="Landing page navigation">
-            <a href="#triage">Triage</a>
-            <a href="#cycles">Cycles</a>
-            <a href="#security">Security</a>
+    <div className="lp">
+      <a className="lp-skip" href="#main">
+        Skip to content
+      </a>
+      <header className="lp-nav">
+        <div className="lp-container lp-nav-inner">
+          <Brand />
+          <nav className="lp-nav-links" aria-label="Page sections">
+            <a href="#features">Features</a>
+            <a href="#how-it-works">How it works</a>
+            <a href="#templates">Templates</a>
+            <a href="#faq">FAQ</a>
           </nav>
-
-          <div className="landing-header-actions">
-            <Link className="landing-signin" href="/login">
-              Sign in
+          <div className="lp-nav-actions">
+            <ThemeToggle />
+            <Link className="lp-nav-login" href="/login">
+              Log in
             </Link>
-            <Link className="landing-header-cta" href="/signup">
-              Create workspace
-              <ArrowRight size={15} aria-hidden="true" />
+            <Link className="primary-button lp-btn" href="/signup">
+              Get it free
             </Link>
           </div>
         </div>
       </header>
 
-      <main>
-        <section className="landing-hero">
-          <div className="landing-hero-copy">
-            <p className="landing-kicker">
-              <Activity size={14} aria-hidden="true" />
-              Mission control // Product operations
-            </p>
-            <h1>Clear the queue.<br />Ship the mission.</h1>
-            <p className="landing-hero-statement">
-              One focused command center for triage, delivery cycles, and every
-              handoff between idea and shipped.
-            </p>
-            <div className="landing-hero-actions">
-              <Link className="landing-primary-cta" href="/signup">
-                Start a workspace
-                <ArrowRight size={17} aria-hidden="true" />
-              </Link>
-              <Link className="landing-secondary-cta" href="/dashboard">
-                Open your workspace
-              </Link>
-            </div>
-            <p className="landing-trust-line">
-              <ShieldCheck size={15} aria-hidden="true" />
-              Tenant-isolated data, revocable sessions, and two-factor protection
-            </p>
-          </div>
-
-          <div className="landing-hero-scene" aria-hidden="true">
-            <div className="landing-scene-topbar">
-              <span className="landing-scene-mark">A</span>
-              <strong>AMR Product</strong>
-              <span className="landing-scene-search">Search workspace</span>
-              <span className="landing-scene-avatar">AR</span>
-            </div>
-            <div className="landing-scene-body">
-              <aside className="landing-scene-sidebar">
-                <span className="active">
-                  <LayoutDashboard size={13} />
-                  Overview
-                </span>
-                <span>
-                  <FolderKanban size={13} />
-                  Projects
-                </span>
-                <span>
-                  <ListTodo size={13} />
-                  Issues
-                </span>
-              </aside>
-              <div className="landing-scene-main">
-                <div className="landing-scene-heading">
-                  <div>
-                    <small>Workspace status // Live</small>
-                    <strong>Mission control</strong>
-                  </div>
-                  <span>Live</span>
-                </div>
-                <div className="landing-scene-metrics">
-                  {heroMetrics.map((metric) => (
-                    <div
-                      className={`landing-scene-metric tone-${metric.tone}`}
-                      key={metric.label}
-                    >
-                      <metric.icon size={13} aria-hidden="true" />
-                      <strong>{metric.value}</strong>
-                      <small>{metric.label}</small>
-                    </div>
-                  ))}
-                </div>
-                <div className="landing-scene-pulse">
-                  <div>
-                    <small>Cycle 30</small>
-                    <strong>18 / 26 points</strong>
-                  </div>
-                  <span>
-                    <i style={{ height: "42%" }} />
-                    <i style={{ height: "58%" }} />
-                    <i style={{ height: "48%" }} />
-                    <i style={{ height: "76%" }} />
-                    <i style={{ height: "64%" }} />
-                    <i style={{ height: "88%" }} />
-                    <i style={{ height: "72%" }} />
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="landing-capability-strip" aria-label="Core capabilities">
-          <div className="landing-section-inner">
-            <div>
-              <Inbox size={17} aria-hidden="true" />
-              <span>
-                <strong>Decide from one queue</strong>
-                <small>Priority, owner, due date, and status stay visible.</small>
-              </span>
-            </div>
-            <div>
-              <Gauge size={17} aria-hidden="true" />
-              <span>
-                <strong>Commit with capacity</strong>
-                <small>Plan cycle scope before it becomes a promise.</small>
-              </span>
-            </div>
-            <div>
-              <LockKeyhole size={17} aria-hidden="true" />
-              <span>
-                <strong>Control every session</strong>
-                <small>Protect accounts and revoke access by device.</small>
-              </span>
-            </div>
-          </div>
-        </section>
-
-        <section className="landing-feature-section" id="triage">
-          <div className="landing-section-inner landing-feature-grid">
-            <div className="landing-feature-copy">
-              <span className="landing-section-number">01 / Triage</span>
-              <h2>A decision surface, not a backlog graveyard.</h2>
-              <p>
-                Scan urgency, ownership, workflow state, labels, and due dates
-                without opening every issue. Save the exact view that support,
-                product, or engineering needs next.
+      <main id="main">
+        <section className="lp-hero">
+          <div className="lp-container lp-hero-inner">
+            <div className="lp-hero-copy">
+              <p className="lp-eyebrow">Work management for software teams</p>
+              <h1>Plan, track and ship great work together</h1>
+              <p className="lp-lede">
+                AMR Hub brings your backlog, sprints, boards and reports into one workspace,
+                so the whole team can see what is planned, what is moving and what has shipped.
               </p>
-              <ul className="landing-check-list">
-                <li>
-                  <Check size={15} aria-hidden="true" />
-                  Filter and search without losing delivery context
-                </li>
-                <li>
-                  <Check size={15} aria-hidden="true" />
-                  Update status directly from the issue queue
-                </li>
-                <li>
-                  <Check size={15} aria-hidden="true" />
-                  Reuse personal views for recurring triage
-                </li>
-              </ul>
+              <div className="lp-cta-row">
+                <Link className="primary-button lp-btn lp-btn-lg" href="/signup">
+                  Get it free <ArrowRight size={16} aria-hidden="true" />
+                </Link>
+                <Link className="secondary-button lp-btn lp-btn-lg" href="/login">
+                  Log in
+                </Link>
+              </div>
+              <p className="lp-hero-note">Scrum and Kanban templates · JQL search · REST API</p>
             </div>
+            <div className="lp-hero-visual">
+              <AppWindow label="Illustration of an AMR Hub board with To do, In progress, In review and Done columns">
+                <BoardMock compact />
+              </AppWindow>
+            </div>
+          </div>
+        </section>
 
-            <div className="landing-triage-demo" aria-label="Issue triage preview">
-              <div className="landing-demo-toolbar">
-                <span>
-                  <ListFilter size={14} aria-hidden="true" />
-                  Support triage
-                </span>
-                <span>
-                  <Tag size={14} aria-hidden="true" />
-                  All labels
-                </span>
-              </div>
-              <div className="landing-demo-summary">
-                <strong>Active issues</strong>
-                <span>12 in this view</span>
-              </div>
-              <div className="landing-demo-head" aria-hidden="true">
-                <span>Issue</span>
-                <span>Priority</span>
-                <span>Status</span>
-                <span>Owner</span>
-                <span>Due</span>
-              </div>
-              {triageIssues.map((issue) => (
-                <div className="landing-demo-row" key={issue.id}>
-                  <span className="landing-demo-issue">
-                    <small>{issue.id}</small>
-                    <strong>{issue.title}</strong>
-                    <i className={issue.labelClass}>{issue.label}</i>
+        <section className="lp-section" id="views" aria-labelledby="views-title">
+          <div className="lp-container">
+            <div className="lp-section-head">
+              <p className="lp-eyebrow">One project, every view</p>
+              <h2 id="views-title">Move work forward in the view that fits</h2>
+              <p>
+                Every project comes with a board, backlog, timeline, list, calendar and reports,
+                all working from the same work items.
+              </p>
+            </div>
+            <FeatureTabs />
+          </div>
+        </section>
+
+        <section className="lp-section lp-section-alt" id="features" aria-labelledby="features-title">
+          <div className="lp-container">
+            <div className="lp-section-head">
+              <p className="lp-eyebrow">Features</p>
+              <h2 id="features-title">Everything a team needs to run its work</h2>
+              <p>From the first idea in the backlog to the release notes, without bolting on extra tools.</p>
+            </div>
+            <ul className="lp-feature-grid">
+              {FEATURES.map(({ icon: Icon, title, body }) => (
+                <li className="lp-feature" key={title}>
+                  <span className="lp-feature-icon" aria-hidden="true">
+                    <Icon size={18} />
                   </span>
-                  <span className={`landing-demo-priority ${issue.priorityClass}`}>
-                    {issue.priority}
+                  <h3>{title}</h3>
+                  <p>{body}</p>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+
+        <section className="lp-section" id="how-it-works" aria-labelledby="how-title">
+          <div className="lp-container">
+            <div className="lp-section-head">
+              <p className="lp-eyebrow">How it works</p>
+              <h2 id="how-title">From sign-up to your first sprint</h2>
+            </div>
+            <ol className="lp-steps">
+              {STEPS.map((step, index) => (
+                <li className="lp-step" key={step.title}>
+                  <span className="lp-step-num" aria-hidden="true">
+                    {String(index + 1).padStart(2, "0")}
                   </span>
-                  <span className={`landing-demo-status ${issue.statusClass}`}>
-                    {issue.status}
-                  </span>
-                  <span>{issue.owner}</span>
-                  <time className={issue.due === "Today" ? "due" : ""}>
-                    {issue.due}
-                  </time>
-                </div>
+                  <h3>{step.title}</h3>
+                  <p>{step.body}</p>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </section>
+
+        <section className="lp-section lp-section-alt" id="templates" aria-labelledby="templates-title">
+          <div className="lp-container">
+            <div className="lp-section-head">
+              <p className="lp-eyebrow">Templates</p>
+              <h2 id="templates-title">Start with a template</h2>
+              <p>Choose how your team works. You can switch between Scrum and Kanban later in project settings.</p>
+            </div>
+            <div className="lp-templates">
+              {TEMPLATES.map(({ icon: Icon, name, body, includes }) => (
+                <article className="lp-template" key={name}>
+                  <div className="lp-template-head">
+                    <span className="lp-feature-icon" aria-hidden="true">
+                      <Icon size={18} />
+                    </span>
+                    <h3>{name}</h3>
+                  </div>
+                  <p>{body}</p>
+                  <ul className="lp-checks">
+                    {includes.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                  <Link
+                    className="secondary-button lp-btn"
+                    href="/signup"
+                    aria-label={`Use the ${name} template`}
+                  >
+                    Use template <ArrowRight size={14} aria-hidden="true" />
+                  </Link>
+                </article>
               ))}
             </div>
           </div>
         </section>
 
-        <section className="landing-cycle-section" id="cycles">
-          <div className="landing-section-inner landing-cycle-grid">
-            <div className="landing-cycle-visual" aria-label="Cycle capacity preview">
-              <div className="landing-cycle-visual-head">
-                <span>
-                  <small>Current cycle</small>
-                  <strong>Cycle 30</strong>
-                </span>
-                <span>Day 6 of 10</span>
-              </div>
-              <div className="landing-cycle-meter">
-                <span>
-                  <strong>69%</strong>
-                  <small>complete</small>
-                </span>
-              </div>
-              <div className="landing-cycle-stats">
-                <span>
-                  <strong>18</strong>
-                  <small>Completed</small>
-                </span>
-                <span>
-                  <strong>8</strong>
-                  <small>Remaining</small>
-                </span>
-                <span>
-                  <strong>2</strong>
-                  <small>At risk</small>
-                </span>
-              </div>
-              <div className="landing-capacity-track">
-                <span />
-              </div>
-              <small className="landing-capacity-note">
-                26 of 32 available points planned
-              </small>
+        <section className="lp-section" id="faq" aria-labelledby="faq-title">
+          <div className="lp-container lp-faq-wrap">
+            <div className="lp-section-head">
+              <p className="lp-eyebrow">FAQ</p>
+              <h2 id="faq-title">Frequently asked questions</h2>
             </div>
-
-            <div className="landing-feature-copy landing-cycle-copy">
-              <span className="landing-section-number">02 / Delivery</span>
-              <h2>Capacity is visible before scope becomes a promise.</h2>
-              <p>
-                Cycles connect issue estimates to a delivery window, expose
-                unplanned work, and keep rollover risk visible while there is
-                still time to act.
-              </p>
-              <div className="landing-inline-points">
-                <span>
-                  <CalendarRange size={16} aria-hidden="true" />
-                  Time-boxed planning
-                </span>
-                <span>
-                  <Gauge size={16} aria-hidden="true" />
-                  Scope versus capacity
-                </span>
-                <span>
-                  <Clock3 size={16} aria-hidden="true" />
-                  At-risk due dates
-                </span>
-              </div>
+            <div className="lp-faq">
+              {FAQS.map((item) => (
+                <details className="lp-faq-item" key={item.q}>
+                  <summary>{item.q}</summary>
+                  <p>{item.a}</p>
+                </details>
+              ))}
             </div>
           </div>
         </section>
 
-        <section className="landing-security-section" id="security">
-          <div className="landing-section-inner landing-security-grid">
-            <div className="landing-brand-visual">
-              <Image
-                src="/og.png"
-                width={1731}
-                height={909}
-                sizes="(max-width: 800px) 100vw, 48vw"
-                alt="AMR Hub workspace overview with delivery chart and issue list"
-              />
-            </div>
-
-            <div className="landing-feature-copy">
-              <span className="landing-section-number">03 / Access</span>
-              <h2>The workspace boundary is part of the product.</h2>
-              <p>
-                Every organization gets isolated issues, cycles, labels, and
-                views. Owners control invitations and member access, while each
-                person can inspect and revoke signed-in devices.
-              </p>
-              <div className="landing-security-list">
-                <div>
-                  <UsersRound size={17} aria-hidden="true" />
-                  <span>
-                    <strong>Organization isolation</strong>
-                    <small>Workspace data follows active membership.</small>
-                  </span>
-                </div>
-                <div>
-                  <Fingerprint size={17} aria-hidden="true" />
-                  <span>
-                    <strong>Passkey sign-in</strong>
-                    <small>Passwordless, device-bound authentication.</small>
-                  </span>
-                </div>
-                <div>
-                  <KeyRound size={17} aria-hidden="true" />
-                  <span>
-                    <strong>Layered account recovery</strong>
-                    <small>TOTP, backup codes, and offline recovery codes.</small>
-                  </span>
-                </div>
-                <div>
-                  <MessageSquareText size={17} aria-hidden="true" />
-                  <span>
-                    <strong>Accountable activity</strong>
-                    <small>Issue discussions and changes stay with the work.</small>
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="landing-final-cta">
-          <div className="landing-section-inner">
-            <span>
-              <CircleCheck size={19} aria-hidden="true" />
-              Ready for the next product decision
-            </span>
-            <h2>Give important work a clear next move.</h2>
-            <p>
-              Create the organization, invite the team, and start with an empty
-              workspace that belongs only to you.
-            </p>
-            <div className="landing-final-actions">
-              <Link className="landing-primary-cta" href="/signup">
-                Create your workspace
-                <ArrowRight size={17} aria-hidden="true" />
+        <section className="lp-final" aria-labelledby="final-title">
+          <div className="lp-container lp-final-inner">
+            <h2 id="final-title">Get your team on the same board</h2>
+            <p>Create a workspace, pick a template and plan your first sprint today.</p>
+            <div className="lp-cta-row">
+              <Link className="primary-button lp-btn lp-btn-lg" href="/signup">
+                Get it free <ArrowRight size={16} aria-hidden="true" />
               </Link>
-              <Link className="landing-secondary-light" href="/login">
-                Sign in
+              <Link className="secondary-button lp-btn lp-btn-lg" href="/login">
+                Log in
               </Link>
             </div>
           </div>
         </section>
       </main>
 
-      <footer className="landing-footer">
-        <div className="landing-section-inner">
-          <Link className="brand" href="/">
-            <span className="brand-mark">A</span>
-            <strong>AMR Hub</strong>
-          </Link>
-          <p>Issue triage and delivery planning for focused software teams.</p>
-          <div>
-            <Link href="/login">Sign in</Link>
-            <Link href="/signup">Create workspace</Link>
+      <footer className="lp-footer">
+        <div className="lp-container lp-footer-inner">
+          <div className="lp-footer-brand">
+            <Brand />
+            <p>Plan, track and ship work as a team.</p>
           </div>
+          <nav className="lp-footer-col" aria-label="Product">
+            <strong>Product</strong>
+            <a href="#views">Views</a>
+            <a href="#features">Features</a>
+            <a href="#templates">Templates</a>
+            <a href="#faq">FAQ</a>
+          </nav>
+          <nav className="lp-footer-col" aria-label="Account">
+            <strong>Account</strong>
+            <Link href="/login">Log in</Link>
+            <Link href="/signup">Sign up</Link>
+          </nav>
+        </div>
+        <div className="lp-container lp-footer-base">
+          <span>© {new Date().getFullYear()} AMR Hub</span>
         </div>
       </footer>
     </div>

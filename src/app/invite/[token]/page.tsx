@@ -1,19 +1,28 @@
 "use client";
 
-import { FormEvent, use, useEffect, useMemo, useState } from "react";
+import { FormEvent, use, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  ArrowLeft,
-  Check,
-  Eye,
-  EyeOff,
-  LoaderCircle,
-  LogOut,
-  MailCheck,
-  ShieldAlert,
-} from "lucide-react";
+import { LogOut, ShieldAlert } from "lucide-react";
 import { authClient } from "../../../lib/auth-client";
+import {
+  AuthAlert,
+  AuthHeading,
+  AuthLoading,
+  AuthPage,
+} from "../../components/auth/AuthCard";
+import {
+  AuthField,
+  EmailChip,
+  PasswordChecklist,
+  PasswordField,
+  SubmitButton,
+} from "../../components/auth/AuthFields";
+import {
+  MAX_PASSWORD_LENGTH,
+  MIN_PASSWORD_LENGTH,
+  isPasswordAcceptable,
+} from "../../components/auth/passwordRules";
 
 type InvitationDetails = {
   email: string;
@@ -22,6 +31,17 @@ type InvitationDetails = {
   role: "member" | "viewer";
   expiresAt: string;
 };
+
+function initials(value: string) {
+  return (
+    value
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((word) => word[0]?.toUpperCase())
+      .join("") || "?"
+  );
+}
 
 export default function InvitationPage({
   params,
@@ -33,10 +53,9 @@ export default function InvitationPage({
   const { data: session, isPending: isSessionPending } =
     authClient.useSession();
   const [invitation, setInvitation] = useState<InvitationDetails | null>(null);
+  const [isAccepting, setIsAccepting] = useState(false);
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
-  const [confirmation, setConfirmation] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -55,15 +74,6 @@ export default function InvitationPage({
       .finally(() => setIsChecking(false));
   }, [token]);
 
-  const passwordScore = useMemo(() => {
-    let score = 0;
-    if (password.length >= 12) score += 1;
-    if (password.length >= 16) score += 1;
-    if (new Set(password).size >= 10) score += 1;
-    if (/\s/.test(password) || /[^a-zA-Z0-9]/.test(password)) score += 1;
-    return score;
-  }, [password]);
-
   const signOut = async () => {
     setIsSigningOut(true);
     await authClient.signOut();
@@ -75,12 +85,8 @@ export default function InvitationPage({
     event.preventDefault();
     setError(null);
 
-    if (password.length < 12) {
-      setError("Use at least 12 characters for your password.");
-      return;
-    }
-    if (password !== confirmation) {
-      setError("Password confirmation does not match.");
+    if (!isPasswordAcceptable(password)) {
+      setError(`Use at least ${MIN_PASSWORD_LENGTH} characters for your password.`);
       return;
     }
 
@@ -120,195 +126,157 @@ export default function InvitationPage({
   };
 
   if (isChecking || isSessionPending) {
-    return (
-      <div className="auth-loading">
-        <LoaderCircle
-          className="spinning-icon"
-          size={18}
-          aria-hidden="true"
-        />
-        Checking invitation
-      </div>
-    );
+    return <AuthLoading label="Checking invitation" />;
   }
+
+  const loginFooter = <Link href="/login">Already have an account? Log in</Link>;
 
   if (!invitation) {
     return (
-      <div className="invite-page">
-        <div className="invite-wrap invite-state">
-          <span className="invite-state-icon invite-state-error">
-            <ShieldAlert size={22} aria-hidden="true" />
-          </span>
-          <p className="eyebrow">Invitation unavailable</p>
-          <h1>This link cannot be used</h1>
-          <p>
-            It may have expired, been revoked, or already been accepted. Ask
-            the workspace owner for a new link.
-          </p>
-          <Link className="secondary-button" href="/login">
-            <ArrowLeft size={15} aria-hidden="true" />
-            Back to sign in
-          </Link>
-        </div>
-      </div>
+      <AuthPage footer={loginFooter}>
+        <AuthHeading
+          icon={<ShieldAlert size={22} aria-hidden="true" />}
+          title="This invitation can't be used"
+          subtitle="It may have expired, been revoked, or already been accepted. Ask a workspace admin to send you a new invitation."
+        />
+        <Link className="primary-button acct-button" href="/login">
+          Go to log in
+        </Link>
+      </AuthPage>
     );
   }
 
+  const roleLabel = invitation.role === "viewer" ? "viewer" : "member";
+  const expiresAt = new Date(invitation.expiresAt);
+  const expiresLabel = Number.isNaN(expiresAt.getTime())
+    ? null
+    : expiresAt.toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+
+  const inviteSummary = (
+    <div className="acct-invite">
+      <div className="acct-invite-avatars" aria-hidden="true">
+        <span className="acct-avatar">{initials(invitation.invitedBy)}</span>
+        <span className="acct-avatar acct-avatar-org">
+          {initials(invitation.organizationName)}
+        </span>
+      </div>
+      <dl className="acct-invite-meta">
+        <div>
+          <dt>Workspace</dt>
+          <dd>{invitation.organizationName}</dd>
+        </div>
+        <div>
+          <dt>Role</dt>
+          <dd>{roleLabel}</dd>
+        </div>
+        {expiresLabel && (
+          <div>
+            <dt>Expires</dt>
+            <dd>{expiresLabel}</dd>
+          </div>
+        )}
+      </dl>
+    </div>
+  );
+
   if (session) {
     return (
-      <div className="invite-page">
-        <div className="invite-wrap invite-state">
-          <span className="invite-state-icon">
-            <MailCheck size={22} aria-hidden="true" />
-          </span>
-          <p className="eyebrow">Team invitation</p>
-          <h1>Switch accounts to continue</h1>
-          <p>
-            This invitation is for <strong>{invitation.email}</strong>. You are
-            currently signed in as {session.user.email}.
-          </p>
-          <button
-            className="primary-button"
-            type="button"
-            onClick={() => void signOut()}
-            disabled={isSigningOut}
-          >
-            {isSigningOut ? (
-              <LoaderCircle
-                className="spinning-icon"
-                size={15}
-                aria-hidden="true"
-              />
-            ) : (
-              <LogOut size={15} aria-hidden="true" />
-            )}
-            Sign out to accept
-          </button>
-        </div>
-      </div>
+      <AuthPage>
+        <AuthHeading
+          title="Switch accounts to accept"
+          subtitle={
+            <>
+              This invitation is for <strong>{invitation.email}</strong>, but
+              you&apos;re logged in as <strong>{session.user.email}</strong>.
+            </>
+          }
+        />
+        {inviteSummary}
+        <SubmitButton
+          type="button"
+          onClick={() => void signOut()}
+          busy={isSigningOut}
+          busyLabel="Logging out"
+          icon={<LogOut size={15} aria-hidden="true" />}
+        >
+          Log out to accept
+        </SubmitButton>
+      </AuthPage>
+    );
+  }
+
+  const title = (
+    <>
+      {invitation.invitedBy} invited you to join {invitation.organizationName}{" "}
+      on AMR Hub
+    </>
+  );
+
+  if (!isAccepting) {
+    return (
+      <AuthPage footer={loginFooter}>
+        <AuthHeading
+          title={title}
+          subtitle={`Join as a workspace ${roleLabel} to collaborate on issues, boards and projects.`}
+        />
+        {inviteSummary}
+        <EmailChip email={invitation.email} />
+        <SubmitButton type="button" onClick={() => setIsAccepting(true)}>
+          Accept invitation
+        </SubmitButton>
+      </AuthPage>
     );
   }
 
   return (
-    <div className="invite-page">
-      <div className="invite-wrap">
-        <Link className="back-link" href="/login">
-          <ArrowLeft size={16} aria-hidden="true" />
-          Back to sign in
-        </Link>
+    <AuthPage
+      footer={loginFooter}
+      legal="By signing up, I accept the AMR Hub terms of service and acknowledge the privacy policy."
+    >
+      <AuthHeading
+        eyebrow={`Joining ${invitation.organizationName}`}
+        title="Sign up to continue"
+        subtitle="Create your account to accept the invitation."
+      />
 
-        <div className="setup-heading invite-heading">
-          <span className="auth-heading-icon">
-            <MailCheck size={19} aria-hidden="true" />
-          </span>
-          <div>
-            <p className="eyebrow">Team invitation</p>
-            <h1>Join {invitation.organizationName}</h1>
-            <p>
-              {invitation.invitedBy} invited{" "}
-              <strong>{invitation.email}</strong> as a workspace{" "}
-              {invitation.role === "viewer" ? "viewer" : "member"}.
-            </p>
-          </div>
-        </div>
+      {error && <AuthAlert>{error}</AuthAlert>}
 
-        <form className="setup-form" onSubmit={handleSubmit}>
-          <label className="form-field">
-            <span>Name</span>
-            <input
-              type="text"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              autoComplete="name"
-              minLength={2}
-              maxLength={80}
-              required
-              autoFocus
-            />
-          </label>
-
-          <label className="form-field">
-            <span>Password</span>
-            <span className="password-input">
-              <input
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                autoComplete="new-password"
-                minLength={12}
-                maxLength={128}
-                required
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((current) => !current)}
-                aria-label={showPassword ? "Hide password" : "Show password"}
-                title={showPassword ? "Hide password" : "Show password"}
-              >
-                {showPassword ? (
-                  <EyeOff size={16} aria-hidden="true" />
-                ) : (
-                  <Eye size={16} aria-hidden="true" />
-                )}
-              </button>
-            </span>
-            <span className="password-strength">
-              <span>
-                {Array.from({ length: 4 }, (_, index) => (
-                  <i
-                    className={index < passwordScore ? "active" : ""}
-                    key={index}
-                  />
-                ))}
-              </span>
-              {password.length < 12
-                ? "12 characters minimum"
-                : passwordScore >= 3
-                  ? "Strong password"
-                  : "Add length or variety"}
-            </span>
-          </label>
-
-          <label className="form-field">
-            <span>Confirm password</span>
-            <input
-              type="password"
-              value={confirmation}
-              onChange={(event) => setConfirmation(event.target.value)}
-              autoComplete="new-password"
-              required
-            />
-          </label>
-
-          {error && (
-            <p className="auth-error" role="alert">
-              {error}
-            </p>
-          )}
-
-          <button
-            className="primary-button auth-submit"
-            type="submit"
-            disabled={
-              isSubmitting ||
-              !name.trim() ||
-              !password ||
-              !confirmation
-            }
-          >
-            {isSubmitting ? (
-              <LoaderCircle
-                className="spinning-icon"
-                size={16}
-                aria-hidden="true"
-              />
-            ) : (
-              <Check size={16} aria-hidden="true" />
-            )}
-            {isSubmitting ? "Creating account" : "Accept invitation"}
-          </button>
-        </form>
-      </div>
-    </div>
+      <form className="acct-form" onSubmit={handleSubmit}>
+        <EmailChip email={invitation.email} />
+        <AuthField
+          label="Full name"
+          type="text"
+          value={name}
+          onValueChange={setName}
+          autoComplete="name"
+          placeholder="Enter full name"
+          minLength={2}
+          maxLength={80}
+          required
+          autoFocus
+        />
+        <PasswordField
+          value={password}
+          onValueChange={setPassword}
+          autoComplete="new-password"
+          placeholder="Create password"
+          minLength={MIN_PASSWORD_LENGTH}
+          maxLength={MAX_PASSWORD_LENGTH}
+          required
+        />
+        <PasswordChecklist password={password} />
+        <SubmitButton
+          busy={isSubmitting}
+          busyLabel="Joining workspace"
+          disabled={name.trim().length < 2 || !isPasswordAcceptable(password)}
+        >
+          Join {invitation.organizationName}
+        </SubmitButton>
+      </form>
+    </AuthPage>
   );
 }

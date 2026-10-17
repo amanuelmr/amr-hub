@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createCycleSchema, createProjectSchema } from "./projectSchemas";
+import {
+  boardConfigSchema,
+  createCycleSchema,
+  createProjectSchema,
+} from "./projectSchemas";
 
 describe("createProjectSchema", () => {
   it("accepts a minimal project", () => {
@@ -61,5 +65,34 @@ describe("createCycleSchema", () => {
     });
 
     expect(result.success).toBe(false);
+  });
+});
+
+describe("boardConfigSchema", () => {
+  const base = {
+    swimlanes: "NONE",
+    showBacklogColumn: false,
+    estimation: "STORY_POINTS",
+  };
+
+  it("accepts empty columns and rejects a status mapped twice", () => {
+    expect(
+      boardConfigSchema.safeParse({
+        ...base,
+        columns: [
+          { id: "a", name: "To do", statuses: ["OPEN"], wipLimit: null },
+          { id: "b", name: "Parking", statuses: [], wipLimit: 3 },
+        ],
+      }).success,
+    ).toBe(true);
+    expect(
+      boardConfigSchema.safeParse({
+        ...base,
+        columns: [
+          { id: "a", name: "To do", statuses: ["OPEN"], wipLimit: null },
+          { id: "b", name: "Also", statuses: ["OPEN"], wipLimit: null },
+        ],
+      }).success,
+    ).toBe(false);
   });
 });

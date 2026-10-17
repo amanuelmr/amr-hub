@@ -3,8 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  Bookmark,
   CornerDownLeft,
+  Filter,
   FolderKanban,
+  Gauge,
+  House,
+  Keyboard,
   LayoutDashboard,
   ListTodo,
   Plus,
@@ -12,6 +17,8 @@ import {
   UserRound,
 } from "lucide-react";
 import { useIssues } from "../IssueProvider";
+import { useProjects } from "../ProjectProvider";
+import { quoteJqlValue } from "../data/jql";
 import { useCreateIssueModal } from "../CreateIssueModalProvider";
 import { authClient } from "../../lib/auth-client";
 
@@ -24,18 +31,31 @@ type PaletteResult = {
   icon: typeof Search;
 };
 
+export const OPEN_COMMAND_PALETTE_EVENT = "amr:open-command-palette";
+export const OPEN_SHORTCUTS_EVENT = "amr:open-shortcuts";
+
+export function openCommandPalette() {
+  window.dispatchEvent(new Event(OPEN_COMMAND_PALETTE_EVENT));
+}
+
 const STATIC_COMMANDS: PaletteResult[] = [
   { id: "new-issue", label: "Create new issue", href: "/issues/new", group: "Actions", icon: Plus },
   { id: "new-project", label: "Create new project", href: "/projects/new", group: "Actions", icon: Plus },
+  { id: "nav-your-work", label: "Go to Your work", href: "/your-work", group: "Navigate", icon: House },
   { id: "nav-overview", label: "Go to Overview", href: "/dashboard", group: "Navigate", icon: LayoutDashboard },
   { id: "nav-projects", label: "Go to Projects", href: "/projects", group: "Navigate", icon: FolderKanban },
   { id: "nav-issues", label: "Go to Issues", href: "/issues", group: "Navigate", icon: ListTodo },
+  { id: "nav-filters", label: "Go to Filters", href: "/filters", group: "Navigate", icon: Filter },
+  { id: "nav-dashboards", label: "Go to Dashboards", href: "/dashboards", group: "Navigate", icon: Gauge },
+  { id: "nav-jql", label: "Advanced issue search (JQL)", href: "/issues?jql=", group: "Navigate", icon: Search },
   { id: "nav-account", label: "Go to Account", href: "/account", group: "Navigate", icon: UserRound },
+  { id: "shortcuts", label: "Show keyboard shortcuts", href: "#", group: "Help", icon: Keyboard },
 ];
 
 export function CommandPalette() {
   const router = useRouter();
-  const { issues } = useIssues();
+  const { issues, savedViews } = useIssues();
+  const { projects } = useProjects();
   const { open: openCreateIssueModal } = useCreateIssueModal();
   const { data: activeMember } = authClient.useActiveMember();
   const isViewer = activeMember?.role === "viewer";
@@ -60,8 +80,14 @@ export function CommandPalette() {
       }
     };
 
+    const handleOpen = () => setIsOpen(true);
+
     window.addEventListener("keydown", handleKeydown);
-    return () => window.removeEventListener("keydown", handleKeydown);
+    window.addEventListener(OPEN_COMMAND_PALETTE_EVENT, handleOpen);
+    return () => {
+      window.removeEventListener("keydown", handleKeydown);
+      window.removeEventListener(OPEN_COMMAND_PALETTE_EVENT, handleOpen);
+    };
   }, []);
 
   useEffect(() => {
@@ -88,15 +114,63 @@ export function CommandPalette() {
       (command) => !normalized || command.label.toLowerCase().includes(normalized),
     );
 
+    const projectResults: PaletteResult[] = normalized
+      ? projects
+          .filter(
+            (project) =>
+              project.name.toLowerCase().includes(normalized) ||
+              project.key.toLowerCase().includes(normalized),
+          )
+          .slice(0, 4)
+          .flatMap((project) => [
+            {
+              id: `project-${project.id}`,
+              label: project.name,
+              meta: project.key,
+              href: `/projects/${project.id}`,
+              group: "Projects",
+              icon: FolderKanban,
+            },
+            {
+              id: `project-board-${project.id}`,
+              label: `${project.name} board`,
+              meta: project.key,
+              href: `/projects/${project.id}/board`,
+              group: "Projects",
+              icon: FolderKanban,
+            },
+          ])
+      : [];
+
+    const filterResults: PaletteResult[] = normalized
+      ? savedViews
+          .filter((view) => view.name.toLowerCase().includes(normalized))
+          .slice(0, 4)
+          .map((view) => ({
+            id: `filter-${view.id}`,
+            label: `Run filter: ${view.name}`,
+            href: `/issues?filter=${encodeURIComponent(view.id)}`,
+            group: "Filters",
+            icon: Bookmark,
+          }))
+      : [];
+
+    const scoreIssue = (id: string, title: string) => {
+      const key = id.toLowerCase();
+      if (key === normalized) return 0;
+      if (key.startsWith(normalized)) return 1;
+      if (title.toLowerCase().startsWith(normalized)) return 2;
+      if (title.toLowerCase().includes(normalized) || key.includes(normalized)) return 3;
+      return -1;
+    };
+
     const issueResults: PaletteResult[] = normalized
       ? issues
-          .filter(
-            (issue) =>
-              issue.title.toLowerCase().includes(normalized) ||
-              issue.id.toLowerCase().includes(normalized),
-          )
+          .map((issue) => ({ issue, score: scoreIssue(issue.id, issue.title) }))
+          .filter(({ score }) => score >= 0)
+          .sort((left, right) => left.score - right.score)
           .slice(0, 8)
-          .map((issue) => ({
+          .map(({ issue }) => ({
             id: issue.id,
             label: issue.title,
             meta: issue.id,
@@ -106,8 +180,26 @@ export function CommandPalette() {
           }))
       : [];
 
-    return [...commandResults, ...issueResults];
-  }, [issues, query, isViewer]);
+    const searchAll: PaletteResult[] = normalized
+      ? [
+          {
+            id: "search-all",
+            label: `Search all issues for “${query.trim()}”`,
+            href: `/issues?jql=${encodeURIComponent(`text ~ ${quoteJqlValue(query.trim())}`)}`,
+            group: "Issues",
+            icon: Search,
+          },
+        ]
+      : [];
+
+    return [
+      ...issueResults,
+      ...searchAll,
+      ...commandResults,
+      ...projectResults,
+      ...filterResults,
+    ];
+  }, [issues, projects, savedViews, query, isViewer]);
 
   useEffect(() => {
     const resetActiveIndex = () => setActiveIndex(0);
@@ -123,6 +215,11 @@ export function CommandPalette() {
 
     if (result.id === "new-issue") {
       openCreateIssueModal();
+      return;
+    }
+
+    if (result.id === "shortcuts") {
+      window.dispatchEvent(new Event(OPEN_SHORTCUTS_EVENT));
       return;
     }
 
@@ -229,9 +326,7 @@ export function CommandPaletteHint() {
     <button
       className="palette-trigger"
       type="button"
-      onClick={() =>
-        window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }))
-      }
+      onClick={openCommandPalette}
       aria-label="Open command palette"
     >
       <Search size={15} aria-hidden="true" />

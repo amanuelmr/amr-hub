@@ -1,0 +1,732 @@
+/* People directory, profiles and Teams (Jira "People" app).
+   Theme tokens only; console borders/shadows; works at 375px. */
+
+.people-page {
+  min-width: 0;
+}
+
+.people-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 10px;
+  color: var(--gray-500);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.people-back:hover {
+  color: var(--ink);
+}
+
+/* ---------- Avatars ---------- */
+
+.people-avatar {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 2px solid var(--console-line);
+  border-radius: 50%;
+  color: var(--console-ink);
+  font-family: var(--font-mono);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  object-fit: cover;
+  line-height: 1;
+}
+
+.people-avatar-stack {
+  display: inline-flex;
+  align-items: center;
+}
+
+.people-avatar-stack > * + * {
+  margin-left: -6px;
+}
+
+.people-avatar-more {
+  background: var(--gray-100);
+  color: var(--ink);
+  font-size: 10px;
+}
+
+/* ---------- Tabs ---------- */
+
+.people-tabs {
+  display: flex;
+  gap: 4px;
+  margin: -6px 0 14px;
+  border-bottom: 2px solid var(--gray-200);
+}
+
+.people-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: -2px;
+  padding: 8px 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--gray-500);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.people-tab:hover {
+  color: var(--ink);
+}
+
+.people-tab.active {
+  border-bottom-color: var(--ink);
+  color: var(--ink);
+}
+
+.people-tab-count {
+  display: inline-block;
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--gray-100);
+  color: var(--gray-600);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+
+/* ---------- Directory grid ---------- */
+
+.people-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.people-card {
+  display: flex;
+  height: 100%;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 18px 14px 14px;
+  border: 2px solid var(--console-line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--console-shadow-small);
+  color: var(--ink);
+  text-align: center;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.people-card:hover,
+.people-card:focus-visible {
+  box-shadow: var(--console-shadow);
+  transform: translate(-1px, -1px);
+}
+
+.people-card-name {
+  max-width: 100%;
+  overflow: hidden;
+  margin-top: 4px;
+  font-size: 14px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.people-card-email,
+.people-card-teams,
+.people-card-count {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--gray-500);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.people-card-count {
+  margin-top: auto;
+  padding-top: 4px;
+  font-size: 11px;
+}
+
+.people-role-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--gray-300);
+  border-radius: 3px;
+  background: var(--gray-50);
+  color: var(--gray-600);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.people-team-icon {
+  display: inline-grid;
+  width: 56px;
+  height: 56px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 2px solid var(--console-line);
+  border-radius: 10px;
+  background: var(--console-violet);
+  color: var(--console-ink);
+}
+
+.people-team-icon.small {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+}
+
+.people-team-icon.large {
+  width: 88px;
+  height: 88px;
+  border-radius: 14px;
+}
+
+.people-empty {
+  margin: 0;
+  padding: 12px 0;
+  color: var(--gray-500);
+  font-size: 13px;
+}
+
+.people-empty a {
+  color: var(--blue-600);
+  font-weight: 600;
+}
+
+/* ---------- Profile / team header ---------- */
+
+.people-profile-header {
+  overflow: hidden;
+  margin-bottom: 18px;
+  border: 2px solid var(--console-line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--console-shadow-small);
+}
+
+.people-profile-banner {
+  height: 72px;
+  border-bottom: 2px solid var(--console-line);
+  background: linear-gradient(
+    100deg,
+    var(--console-cyan),
+    var(--console-lime) 55%,
+    var(--console-orange)
+  );
+}
+
+.people-profile-banner.team {
+  background: linear-gradient(
+    100deg,
+    var(--console-violet),
+    var(--console-pink) 60%,
+    var(--console-orange)
+  );
+}
+
+.people-profile-identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 16px;
+  padding: 0 18px 16px;
+}
+
+.people-profile-identity > .people-avatar,
+.people-profile-identity > .people-team-icon {
+  margin-top: -40px;
+  box-shadow: var(--console-shadow-small);
+}
+
+.people-profile-identity > .people-avatar {
+  font-size: 30px;
+}
+
+.people-profile-text {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 240px;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.people-profile-meta,
+.people-profile-teams {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 0;
+  color: var(--gray-500);
+  font-size: 13px;
+}
+
+.people-profile-meta > span:first-child,
+.people-profile-teams {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.people-profile-meta a,
+.people-profile-teams a,
+.people-inline-link {
+  color: var(--blue-600);
+}
+
+.people-profile-meta a:hover,
+.people-profile-teams a:hover,
+.people-inline-link:hover {
+  text-decoration: underline;
+}
+
+.people-team-description {
+  margin: 0;
+  color: var(--gray-500);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+.people-profile-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  padding: 6px 12px;
+  border: 2px solid var(--console-line);
+  border-radius: var(--radius);
+  background: var(--gray-50);
+}
+
+.people-profile-stat strong {
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.people-profile-stat span {
+  color: var(--gray-500);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* ---------- Sections ---------- */
+
+.people-profile-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
+  align-items: start;
+  gap: 18px;
+}
+
+.people-profile-main,
+.people-profile-side {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.people-section {
+  min-width: 0;
+  padding: 14px 16px;
+  border: 2px solid var(--console-line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--console-shadow-small);
+}
+
+.people-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.people-section-head .people-section-title {
+  margin-bottom: 0;
+}
+
+.people-section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.people-section-actions .text-button,
+.people-section-head > .text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.people-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.people-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--gray-600);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.people-work-group h3 {
+  margin: 12px 0 2px;
+  color: var(--gray-500);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.people-work-group h3 span {
+  color: var(--gray-400);
+}
+
+.people-work-list,
+.people-place-list,
+.people-member-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.people-work-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--gray-100);
+}
+
+.people-work-row:last-child {
+  border-bottom: 0;
+}
+
+.people-work-main {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.people-work-main > a {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 630;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.people-work-main > a:hover {
+  text-decoration: underline;
+}
+
+.people-work-main > span,
+.people-work-meta {
+  color: var(--gray-500);
+  font-size: 11px;
+}
+
+.people-work-main > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.people-work-meta {
+  flex: 0 0 auto;
+}
+
+.people-lozenge {
+  flex: 0 0 auto;
+  max-width: 120px;
+  overflow: hidden;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.people-lozenge-todo {
+  background: var(--gray-100);
+  color: var(--gray-600);
+}
+
+.people-lozenge-in_progress {
+  background: var(--blue-50);
+  color: var(--blue-600);
+}
+
+.people-lozenge-done {
+  background: var(--green-50);
+  color: var(--green-700);
+}
+
+.people-place-list li a,
+.people-member-list li > a {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 4px;
+  border-radius: 4px;
+  color: var(--ink);
+}
+
+.people-place-list li a:hover,
+.people-member-list li > a:hover {
+  background: var(--gray-50);
+}
+
+.people-member-list li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.people-place-name {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 630;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.people-place-name small {
+  overflow: hidden;
+  color: var(--gray-500);
+  font-size: 11px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+}
+
+/* ---------- Member picker (team dialogs) ---------- */
+
+.people-team-form textarea {
+  resize: vertical;
+}
+
+.people-picker {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.people-picker-label {
+  color: var(--gray-600);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.people-picker-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.people-chip {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 4px 2px 3px;
+  border: 1px solid var(--gray-300);
+  border-radius: 999px;
+  background: var(--gray-50);
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.people-chip > span:not(.people-avatar) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.people-chip button {
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--gray-500);
+  cursor: pointer;
+}
+
+.people-chip button:hover {
+  background: var(--gray-200);
+  color: var(--ink);
+}
+
+.people-picker-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--gray-300);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--gray-500);
+}
+
+.people-picker-search:focus-within {
+  border-color: var(--ink);
+}
+
+.people-picker-search input {
+  min-width: 0;
+  flex: 1 1 auto;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.people-picker-options {
+  max-height: 180px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 2px;
+  border: 1px solid var(--gray-200);
+  border-radius: 4px;
+  list-style: none;
+}
+
+.people-picker-options button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.people-picker-options button:hover,
+.people-picker-options button:focus-visible {
+  background: var(--gray-100);
+}
+
+.people-picker-name {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.people-picker-name small {
+  overflow: hidden;
+  color: var(--gray-500);
+  font-size: 11px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.people-picker-empty {
+  padding: 8px;
+  color: var(--gray-500);
+  font-size: 12px;
+}
+
+/* ---------- Responsive ---------- */
+
+@media (max-width: 900px) {
+  .people-profile-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .people-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px;
+  }
+
+  .people-profile-identity {
+    padding: 0 12px 12px;
+  }
+
+  .people-profile-identity > .people-avatar,
+  .people-profile-identity > .people-team-icon.large {
+    width: 64px !important;
+    height: 64px !important;
+    margin-top: -32px;
+    font-size: 22px !important;
+  }
+
+  .people-profile-stat {
+    align-items: flex-start;
+  }
+
+  .people-section {
+    padding: 12px;
+  }
+
+  .people-work-row {
+    flex-wrap: wrap;
+  }
+
+  .people-work-meta {
+    order: 3;
+    width: 100%;
+    padding-left: 26px;
+  }
+}

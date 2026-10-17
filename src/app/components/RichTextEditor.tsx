@@ -21,11 +21,13 @@ export function RichTextEditor({
   onChange,
   members,
   placeholder,
+  autoFocus = false,
 }: {
   value: string;
   onChange: (html: string) => void;
   members: WorkspaceMember[];
   placeholder?: string;
+  autoFocus?: boolean;
 }) {
   const editor = useEditor({
     extensions: [
@@ -40,6 +42,7 @@ export function RichTextEditor({
       Placeholder.configure({ placeholder: placeholder ?? "" }),
     ],
     content: value,
+    autofocus: autoFocus ? "end" : false,
     immediatelyRender: false,
     onUpdate: ({ editor: instance }) => onChange(instance.getHTML()),
   });

@@ -18,6 +18,9 @@ const ALLOWED_TAGS = [
   "h2",
   "h3",
   "span",
+  "dl",
+  "dt",
+  "dd",
 ];
 
 const ALLOWED_ATTRIBUTES: sanitizeHtml.IOptions["allowedAttributes"] = {

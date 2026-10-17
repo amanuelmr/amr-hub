@@ -1,0 +1,1043 @@
+/*
+ * Account flow (login, sign up, recovery, 2FA, invite, onboarding).
+ * Atlassian-style single centered card on a calm page, rendered with the
+ * retro-console tokens. All selectors are prefixed `acct-` so they never
+ * collide with the legacy `.auth-*` rules in globals.css / retro.css.
+ */
+
+.acct-page {
+  display: flex;
+  min-height: 100svh;
+  justify-content: center;
+  align-items: flex-start;
+  padding: clamp(24px, 7vh, 72px) 16px 40px;
+  color: var(--ink);
+  background-color: var(--gray-50);
+  background-image: radial-gradient(
+    color-mix(in srgb, var(--gray-300) 55%, transparent) 1px,
+    transparent 1px
+  );
+  background-size: 18px 18px;
+}
+
+.acct-page-loading {
+  align-items: center;
+}
+
+.acct-column {
+  display: flex;
+  width: 100%;
+  max-width: 400px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 20px;
+}
+
+.acct-column-wide {
+  max-width: 520px;
+}
+
+.acct-card {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 32px 36px 36px;
+  border: 2px solid var(--console-line);
+  border-radius: 4px;
+  background: var(--surface);
+  box-shadow: var(--console-shadow);
+}
+
+/* Brand ------------------------------------------------------------ */
+.acct-brand {
+  display: inline-flex;
+  align-self: center;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.acct-brand-mark {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  font-size: 14px;
+}
+
+.acct-brand-name {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* Heading ---------------------------------------------------------- */
+.acct-heading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.acct-heading h1 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.acct-subtitle {
+  margin: 0;
+  color: var(--gray-500);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.acct-eyebrow {
+  margin: 0;
+  color: var(--gray-500);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.acct-heading-icon {
+  display: inline-grid;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 4px;
+  place-items: center;
+  border: 2px solid var(--console-line);
+  border-radius: 3px;
+  color: var(--console-ink);
+  background: var(--console-cyan);
+  box-shadow: var(--console-shadow-small);
+}
+
+/* Forms ------------------------------------------------------------ */
+.acct-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.acct-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.acct-field > label {
+  color: var(--gray-600);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.acct-field input,
+.acct-prefixed {
+  width: 100%;
+  min-height: 40px;
+  border: 2px solid var(--console-line);
+  border-radius: 2px;
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: 2px 2px 0 var(--gray-200);
+  font: inherit;
+  font-size: 14px;
+}
+
+.acct-field input {
+  padding: 8px 10px;
+}
+
+.acct-field input::placeholder {
+  color: var(--gray-400);
+}
+
+.acct-field input:focus,
+.acct-prefixed:focus-within {
+  border-color: var(--console-cyan);
+  outline: none;
+  box-shadow: 3px 3px 0 var(--console-cyan);
+}
+
+.acct-field-hint {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  color: var(--gray-500);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.acct-hint-ok {
+  color: var(--green-600);
+  font-weight: 650;
+}
+
+.acct-hint-error {
+  color: var(--red-600);
+  font-weight: 650;
+}
+
+.acct-code-input {
+  font-family: var(--font-mono) !important;
+  letter-spacing: 0.08em;
+}
+
+.acct-password {
+  position: relative;
+  display: block;
+}
+
+.acct-password input {
+  padding-right: 44px;
+}
+
+.acct-password button {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 0;
+  border-radius: 2px;
+  color: var(--gray-500);
+  background: transparent;
+  transform: translateY(-50%);
+  cursor: pointer;
+}
+
+.acct-password button:hover,
+.acct-password button:focus-visible {
+  color: var(--ink);
+  background: var(--gray-100);
+}
+
+.acct-prefixed {
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+}
+
+.acct-prefix {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 4px 0 10px;
+  color: var(--gray-500);
+  background: var(--gray-50);
+  border-right: 2px solid var(--gray-200);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.acct-prefixed input {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  border: 0;
+  box-shadow: none;
+}
+
+.acct-prefixed input:focus {
+  box-shadow: none;
+}
+
+.acct-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.acct-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-secondary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.acct-checkbox input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--console-lime-strong);
+}
+
+/* Buttons & links -------------------------------------------------- */
+.acct-button {
+  display: inline-flex;
+  width: 100%;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-decoration: none;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.acct-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+
+.acct-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.acct-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.acct-actions .acct-button {
+  width: auto;
+  min-width: 150px;
+}
+
+.acct-link-button,
+.acct-inline-link {
+  padding: 0;
+  border: 0;
+  color: var(--blue-600);
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.acct-link-button:hover,
+.acct-inline-link:hover {
+  color: var(--ink);
+}
+
+.acct-link-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.acct-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--gray-500);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.acct-divider::before,
+.acct-divider::after {
+  height: 2px;
+  flex: 1;
+  background: var(--gray-200);
+  content: "";
+}
+
+/* Body copy -------------------------------------------------------- */
+.acct-body {
+  margin: 0;
+  color: var(--ink-secondary);
+  font-size: 13px;
+  line-height: 1.55;
+  text-align: center;
+}
+
+.acct-muted {
+  color: var(--gray-500);
+}
+
+.acct-fine-print {
+  margin: 0;
+  color: var(--gray-500);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* Alerts ----------------------------------------------------------- */
+.acct-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 2px solid var(--red-500);
+  border-radius: 3px;
+  color: var(--ink);
+  background: var(--red-50);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.acct-alert > svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--red-600);
+}
+
+.acct-alert-success {
+  border-color: var(--green-500);
+  background: var(--green-50);
+}
+
+.acct-alert-success > svg {
+  color: var(--green-600);
+}
+
+.acct-alert-info {
+  border-color: var(--blue-500);
+  background: var(--blue-50);
+}
+
+.acct-alert-info > svg {
+  color: var(--blue-600);
+}
+
+/* Email chip ------------------------------------------------------- */
+.acct-email-chip {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px 6px 6px;
+  border: 2px solid var(--gray-200);
+  border-radius: 999px;
+  background: var(--gray-25);
+}
+
+.acct-email-avatar,
+.acct-avatar {
+  display: inline-grid;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  place-items: center;
+  border: 2px solid var(--console-line);
+  border-radius: 999px;
+  color: var(--console-ink);
+  background: var(--console-lime);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.acct-email-text {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Password checklist ----------------------------------------------- */
+.acct-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: -4px;
+}
+
+.acct-strength {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.acct-strength-bars {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+
+.acct-strength-bars i {
+  height: 6px;
+  border: 1px solid var(--gray-300);
+  background: var(--gray-100);
+}
+
+.acct-strength-bars[data-score="1"] i.on {
+  border-color: var(--red-500);
+  background: var(--red-500);
+}
+
+.acct-strength-bars[data-score="2"] i.on {
+  border-color: var(--amber-500);
+  background: var(--amber-500);
+}
+
+.acct-strength-bars[data-score="3"] i.on,
+.acct-strength-bars[data-score="4"] i.on {
+  border-color: var(--console-lime-strong);
+  background: var(--console-lime);
+}
+
+.acct-strength-label {
+  min-width: 72px;
+  color: var(--gray-600);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+.acct-checklist ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.acct-checklist li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--gray-500);
+  font-size: 12px;
+}
+
+.acct-checklist li svg {
+  flex: none;
+}
+
+.acct-checklist li em {
+  color: var(--gray-400);
+  font-style: normal;
+}
+
+.acct-checklist li.met {
+  color: var(--green-600);
+  font-weight: 650;
+}
+
+/* Tabs (2FA) ------------------------------------------------------- */
+.acct-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 2px solid var(--console-line);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.acct-tabs button {
+  min-height: 34px;
+  border: 0;
+  color: var(--gray-600);
+  background: var(--surface);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.acct-tabs button + button {
+  border-left: 2px solid var(--console-line);
+}
+
+.acct-tabs button.active {
+  color: var(--console-ink);
+  background: var(--console-lime);
+}
+
+/* Footer ----------------------------------------------------------- */
+.acct-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 0;
+  font-size: 13px;
+}
+
+.acct-footer-links a,
+.acct-footer-item a {
+  color: var(--blue-600);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.acct-footer-links a:hover {
+  text-decoration: underline;
+}
+
+.acct-footer-dot {
+  padding: 0 8px;
+  color: var(--gray-400);
+}
+
+.acct-legal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding-top: 14px;
+  border-top: 2px solid var(--gray-200);
+  color: var(--gray-500);
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.acct-legal p {
+  margin: 0;
+}
+
+.acct-legal-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.acct-legal-mark {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  border: 1px solid var(--console-line);
+  color: var(--console-ink);
+  background: var(--console-lime);
+  font-size: 9px;
+}
+
+/* Loading ---------------------------------------------------------- */
+.acct-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 2px solid var(--console-line);
+  background: var(--surface);
+  box-shadow: var(--console-shadow-small);
+  color: var(--gray-600);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.acct-loading-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--console-lime-strong);
+  animation: acct-blink 0.9s steps(2, start) infinite;
+}
+
+@keyframes acct-blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+/* Onboarding ------------------------------------------------------- */
+.acct-progress {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.acct-progress li {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 4px solid var(--gray-200);
+  color: var(--gray-500);
+}
+
+.acct-progress li.current {
+  border-top-color: var(--console-cyan);
+  color: var(--ink);
+}
+
+.acct-progress li.done {
+  border-top-color: var(--console-lime-strong);
+  color: var(--ink-secondary);
+}
+
+.acct-progress-dot {
+  display: none;
+}
+
+.acct-progress-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.acct-site-preview {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 2px dashed var(--gray-300);
+  border-radius: 3px;
+  background: var(--gray-25);
+}
+
+.acct-site-preview > span:last-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.acct-site-preview strong,
+.acct-site-preview small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.acct-site-preview strong {
+  font-size: 13px;
+}
+
+.acct-site-preview small {
+  color: var(--gray-500);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.acct-avatar-org {
+  width: 34px;
+  height: 34px;
+  border-radius: 3px;
+  background: var(--console-cyan);
+}
+
+.acct-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.acct-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 2px solid var(--gray-300);
+  border-radius: 999px;
+  color: var(--ink);
+  background: var(--surface);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.acct-chip:hover {
+  border-color: var(--console-line);
+}
+
+.acct-chip.selected {
+  border-color: var(--console-line);
+  color: var(--console-ink);
+  background: var(--console-lime);
+  box-shadow: var(--console-shadow-small);
+}
+
+.acct-chip:focus-visible,
+.acct-template:focus-within {
+  outline: 2px solid var(--console-cyan);
+  outline-offset: 2px;
+}
+
+.acct-templates {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.acct-template {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 2px solid var(--gray-300);
+  border-radius: 3px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.acct-template:hover {
+  border-color: var(--console-line);
+}
+
+.acct-template.selected {
+  border-color: var(--console-line);
+  background: var(--gray-25);
+  box-shadow: var(--console-shadow-small);
+}
+
+.acct-template-icon {
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 2px solid var(--console-line);
+  border-radius: 3px;
+  color: var(--console-ink);
+  background: var(--console-violet);
+}
+
+.acct-template.selected .acct-template-icon {
+  background: var(--console-lime);
+}
+
+.acct-template-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.acct-template-text strong {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.acct-template-text small {
+  color: var(--gray-500);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.acct-template-check {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 2px solid var(--gray-300);
+  border-radius: 999px;
+  color: var(--console-ink);
+}
+
+.acct-template.selected .acct-template-check {
+  border-color: var(--console-line);
+  background: var(--console-lime);
+}
+
+/* Invite ----------------------------------------------------------- */
+.acct-invite {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.acct-invite-avatars {
+  display: flex;
+  align-items: center;
+}
+
+.acct-invite-avatars .acct-avatar {
+  width: 40px;
+  height: 40px;
+  font-size: 13px;
+}
+
+.acct-invite-avatars .acct-avatar + .acct-avatar {
+  margin-left: -8px;
+}
+
+.acct-invite-meta {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  gap: 0;
+  margin: 0;
+  border: 2px solid var(--gray-200);
+  border-radius: 3px;
+}
+
+.acct-invite-meta > div {
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.acct-invite-meta > div + div {
+  border-left: 2px solid var(--gray-200);
+}
+
+.acct-invite-meta dt {
+  color: var(--gray-500);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.acct-invite-meta dd {
+  margin: 2px 0 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+/* Dark mode tweaks: keep the dot grid subtle and links readable. ---- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .acct-page {
+    background-image: radial-gradient(
+      color-mix(in srgb, var(--gray-200) 70%, transparent) 1px,
+      transparent 1px
+    );
+  }
+
+  :root:not([data-theme="light"]) .acct-link-button,
+  :root:not([data-theme="light"]) .acct-inline-link,
+  :root:not([data-theme="light"]) .acct-footer-links a {
+    color: var(--console-cyan);
+  }
+
+  :root:not([data-theme="light"]) .acct-alert {
+    background: color-mix(in srgb, var(--red-500) 14%, var(--surface));
+  }
+
+  :root:not([data-theme="light"]) .acct-alert-success {
+    background: color-mix(in srgb, var(--green-500) 14%, var(--surface));
+  }
+
+  :root:not([data-theme="light"]) .acct-alert-info {
+    background: color-mix(in srgb, var(--blue-500) 14%, var(--surface));
+  }
+
+  :root:not([data-theme="light"]) .acct-hint-ok,
+  :root:not([data-theme="light"]) .acct-checklist li.met {
+    color: var(--console-lime);
+  }
+
+  :root:not([data-theme="light"]) .acct-hint-error {
+    color: var(--red-300);
+  }
+}
+
+:root[data-theme="dark"] .acct-page {
+  background-image: radial-gradient(
+    color-mix(in srgb, var(--gray-200) 70%, transparent) 1px,
+    transparent 1px
+  );
+}
+
+:root[data-theme="dark"] .acct-link-button,
+:root[data-theme="dark"] .acct-inline-link,
+:root[data-theme="dark"] .acct-footer-links a {
+  color: var(--console-cyan);
+}
+
+:root[data-theme="dark"] .acct-alert {
+  background: color-mix(in srgb, var(--red-500) 14%, var(--surface));
+}
+
+:root[data-theme="dark"] .acct-alert-success {
+  background: color-mix(in srgb, var(--green-500) 14%, var(--surface));
+}
+
+:root[data-theme="dark"] .acct-alert-info {
+  background: color-mix(in srgb, var(--blue-500) 14%, var(--surface));
+}
+
+:root[data-theme="dark"] .acct-hint-ok,
+:root[data-theme="dark"] .acct-checklist li.met {
+  color: var(--console-lime);
+}
+
+:root[data-theme="dark"] .acct-hint-error {
+  color: var(--red-300);
+}
+
+/* Phones ----------------------------------------------------------- */
+@media (max-width: 480px) {
+  .acct-page {
+    padding-top: 20px;
+  }
+
+  .acct-card {
+    gap: 16px;
+    padding: 24px 18px 26px;
+  }
+
+  .acct-templates {
+    grid-template-columns: 1fr;
+  }
+
+  .acct-actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .acct-actions .acct-button {
+    width: 100%;
+  }
+
+  .acct-invite-meta > div + div {
+    border-left: 0;
+    border-top: 2px solid var(--gray-200);
+  }
+
+  .acct-invite-meta {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .acct-loading-dot {
+    animation: none;
+  }
+}

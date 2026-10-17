@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { recordAudit } from "../../../../server/audit";
 import { removeWorkspaceMember } from "../../../../server/members";
 import { requireWorkspaceRole } from "../../../../server/session";
 
@@ -34,6 +35,13 @@ export async function DELETE(
     session.workspace.id,
     session.user.id,
   );
+  await recordAudit({
+    organizationId: session.workspace.id,
+    actor: { id: session.user.id, name: session.user.name },
+    action: "member.removed",
+    targetType: "member",
+    targetId: id,
+  });
   if (!removed) {
     return NextResponse.json(
       { error: "Workspace member not found" },

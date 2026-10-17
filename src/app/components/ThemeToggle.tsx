@@ -21,6 +21,13 @@ export function ThemeToggle() {
   useEffect(() => {
     const applyCurrentTheme = () => setTheme(readCurrentTheme());
     applyCurrentTheme();
+    // Stay in sync when the theme is switched elsewhere (e.g. the profile menu).
+    const observer = new MutationObserver(applyCurrentTheme);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+    return () => observer.disconnect();
   }, []);
 
   if (theme === null) {

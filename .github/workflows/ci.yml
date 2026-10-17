@@ -22,6 +22,8 @@ jobs:
       NEXT_PUBLIC_APP_URL: "http://localhost:3000"
       BETTER_AUTH_SECRET: "ci-only-authentication-secret-at-least-32-characters"
       AUTH_BOOTSTRAP_TOKEN: "ci-only-owner-bootstrap-token-at-least-32-characters"
+      RESEND_API_KEY: "re_ci_placeholder_never_sends"
+      EMAIL_FROM: "AMR Hub CI <ci@example.com>"
     services:
       postgres:
         image: postgres:16-alpine
