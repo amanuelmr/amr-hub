@@ -5,8 +5,10 @@ import {
   actorAccessUser,
   createIssue,
   getIssue,
+  updateIssue,
   type WorkspaceActor,
 } from "./issues";
+import { issueEstimateSchema } from "./issueSchemas";
 import {
   assertProjectPermission,
   ProjectAccessError,
@@ -15,6 +17,7 @@ import {
 import { trashIssue } from "./trash";
 import { IssueActionError } from "./issueRelations";
 import {
+  isEpicLevel,
   isSubtaskLevel,
   isTodoStatus,
   mapStatusByCategory,
@@ -35,6 +38,101 @@ export const cloneIssueSchema = z
     includeLinks: z.boolean().optional(),
   })
   .strict();
+
+export const splitIssueSchema = z
+  .object({
+    /** New story points for the original issue; omit to keep them. */
+    originalEstimate: issueEstimateSchema.nullable().optional(),
+    parts: z
+      .array(
+        z
+          .object({
+            title: z.string().trim().min(4).max(255),
+            estimate: issueEstimateSchema.nullable(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(10),
+    /** "SAME" keeps the original's sprint, null sends parts to the backlog. */
+    destination: z.union([z.literal("SAME"), z.string().trim().min(1).max(80)]).nullable(),
+  })
+  .strict();
+
+/**
+ * Jira's "Split issue": new work items copy the original's fields, take
+ * their own summary and estimate, start in To do and link back to it.
+ */
+export async function splitIssue(
+  issueId: string,
+  input: z.infer<typeof splitIssueSchema>,
+  actor: WorkspaceActor,
+) {
+  const source = await prisma.issue.findFirst({
+    where: { id: issueId, organizationId: actor.organizationId, deletedAt: null },
+    include: cloneSourceInclude,
+  });
+  if (!source) return null;
+  const user = actorAccessUser(actor);
+  if (user) {
+    await assertProjectPermission(
+      source.projectId,
+      user,
+      actor.organizationId,
+      "edit",
+      "Issue not found",
+    );
+  }
+  if (isEpicLevel(source.kind) || isSubtaskLevel(source.kind)) {
+    throw new IssueActionError("Only standard work items can be split", 400);
+  }
+
+  const cycleId =
+    input.destination === "SAME" ? source.cycleId : input.destination;
+  const created = [];
+  for (const part of input.parts) {
+    const issue = await createIssue(
+      {
+        ...cloneInput(source, part.title, source.parentId, new Set()),
+        status: undefined,
+        estimate: part.estimate as IssueEstimate | null,
+        cycleId,
+      },
+      actor,
+    );
+    created.push(issue);
+  }
+
+  await prisma.issueLink.createMany({
+    data: created.map((issue) => ({
+      sourceId: issue.id,
+      targetId: source.id,
+      type: "RELATES_TO",
+    })),
+    skipDuplicates: true,
+  });
+  await prisma.activity.create({
+    data: {
+      issueId: source.id,
+      type: "LINK_ADDED",
+      description: `split this issue into ${created.map((issue) => issue.id).join(", ")}`,
+      actor: actor.name,
+      actorId: actor.id,
+    },
+  });
+
+  if (
+    input.originalEstimate !== undefined &&
+    input.originalEstimate !== source.estimate
+  ) {
+    await updateIssue(issueId, { estimate: input.originalEstimate }, actor);
+  }
+
+  return {
+    original: await getIssue(issueId, actor.organizationId, user),
+    created,
+  };
+}
 
 export const moveIssueSchema = z
   .object({ projectId: z.string().trim().min(1).max(120) })

@@ -14,6 +14,8 @@ import {
   Link2,
   MoreHorizontal,
   MoveRight,
+  Plus,
+  Scissors,
   Tag,
   Trash2,
   UserRound,
@@ -22,8 +24,12 @@ import {
 } from "lucide-react";
 import { apiRequest, useIssues } from "../../IssueProvider";
 import { authClient } from "../../../lib/auth-client";
-import type { Issue } from "../../data/issues";
-import { isEpicLevel } from "../../data/workflow";
+import {
+  ISSUE_ESTIMATES,
+  type Issue,
+  type IssueEstimate,
+} from "../../data/issues";
+import { isEpicLevel, isSubtaskLevel } from "../../data/workflow";
 import { epicColor, initials } from "./boardModel";
 import { DialogFooter, FormError, PlanningDialog } from "./SprintDialogs";
 
@@ -41,6 +47,7 @@ export type IssueMenuAction =
   | { type: "assign"; assigneeId: string | null }
   | { type: "copy-link" }
   | { type: "copy-key" }
+  | { type: "split" }
   | { type: "delete" };
 
 const stop = (event: React.SyntheticEvent) => event.stopPropagation();
@@ -313,6 +320,15 @@ function MenuBody({
           <DropdownMenu.Separator className="planning-menu-separator" />
         </>
       )}
+      {!isViewer && !isEpicLevel(issue.kind) && !isSubtaskLevel(issue.kind) && (
+        <DropdownMenu.Item
+          className="planning-menu-item"
+          onSelect={() => onAction({ type: "split" })}
+        >
+          <Scissors size={14} aria-hidden="true" />
+          Split work item
+        </DropdownMenu.Item>
+      )}
       <DropdownMenu.Item
         className="planning-menu-item"
         onSelect={() => onAction({ type: "open" })}
@@ -461,7 +477,7 @@ function DeleteIssueDialog({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const subtaskNote =
     issue.childCount > 0
-      ? ` Its ${issue.childCount} child ${issue.childCount === 1 ? "item" : "items"} will lose their parent.`
+      ? ` Child items that aren't subtasks lose their parent.`
       : "";
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -487,7 +503,7 @@ function DeleteIssueDialog({
       open
       onOpenChange={(open) => !open && onClose()}
       title={`Delete ${issue.id}?`}
-      description={`You're about to permanently delete this work item, its comments, attachments and all of its data.${subtaskNote} This can't be undone.`}
+      description={`${issue.id} moves to the trash with its subtasks. A project admin can restore it for 60 days before it is deleted for good.${subtaskNote}`}
     >
       <form onSubmit={handleSubmit}>
         <FormError error={error} />
@@ -496,6 +512,190 @@ function DeleteIssueDialog({
           submitLabel="Delete"
           isSubmitting={isSubmitting}
           danger
+        />
+      </form>
+    </PlanningDialog>
+  );
+}
+
+type SplitPart = { title: string; estimate: IssueEstimate | null };
+
+function EstimateSelect({
+  value,
+  onChange,
+  label,
+}: {
+  value: IssueEstimate | null;
+  onChange: (value: IssueEstimate | null) => void;
+  label: string;
+}) {
+  return (
+    <select
+      aria-label={label}
+      value={value ?? ""}
+      onChange={(event) =>
+        onChange(
+          event.target.value === ""
+            ? null
+            : (Number(event.target.value) as IssueEstimate),
+        )
+      }
+    >
+      <option value="">No estimate</option>
+      {ISSUE_ESTIMATES.map((estimate) => (
+        <option key={estimate} value={estimate}>
+          {estimate} {estimate === 1 ? "point" : "points"}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/** Jira's "Split issue": carve new work items out of an oversized one. */
+function SplitIssueDialog({
+  issue,
+  onClose,
+  onSplit,
+}: {
+  issue: Issue;
+  onClose: () => void;
+  onSplit: (body: {
+    originalEstimate: IssueEstimate | null;
+    parts: SplitPart[];
+    destination: string | null;
+  }) => Promise<void>;
+}) {
+  const { cycles } = useIssues();
+  const sprints = cycles.filter(
+    (cycle) => cycle.projectId === issue.projectId && cycle.state !== "CLOSED",
+  );
+  const [originalEstimate, setOriginalEstimate] = useState<IssueEstimate | null>(
+    issue.estimate,
+  );
+  const [parts, setParts] = useState<SplitPart[]>([
+    { title: "", estimate: null },
+  ]);
+  const [destination, setDestination] = useState<string>(
+    issue.cycleId ? "SAME" : "BACKLOG",
+  );
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const updatePart = (index: number, change: Partial<SplitPart>) =>
+    setParts((current) =>
+      current.map((part, position) =>
+        position === index ? { ...part, ...change } : part,
+      ),
+    );
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const filled = parts.map((part) => ({ ...part, title: part.title.trim() }));
+    if (filled.some((part) => part.title.length < 4)) {
+      setError("Give every new work item a summary of at least 4 characters.");
+      return;
+    }
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      await onSplit({
+        originalEstimate,
+        parts: filled,
+        destination: destination === "BACKLOG" ? null : destination,
+      });
+      onClose();
+    } catch (splitError) {
+      setError(
+        splitError instanceof Error
+          ? splitError.message
+          : "The work item could not be split",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <PlanningDialog
+      open
+      onOpenChange={(open) => !open && onClose()}
+      title={`Split ${issue.id}`}
+      description="New work items copy this one's details and link back to it. Give each its own summary and estimate."
+    >
+      <form className="split-form" onSubmit={handleSubmit}>
+        <div className="split-row split-original">
+          <span className="split-key">{issue.id}</span>
+          <span className="split-title" title={issue.title}>
+            {issue.title}
+          </span>
+          <EstimateSelect
+            label={`Estimate for ${issue.id}`}
+            value={originalEstimate}
+            onChange={setOriginalEstimate}
+          />
+        </div>
+        {parts.map((part, index) => (
+          <div className="split-row" key={index}>
+            <span className="split-key">New</span>
+            <input
+              aria-label={`Summary for new work item ${index + 1}`}
+              value={part.title}
+              placeholder="What needs to be done?"
+              maxLength={255}
+              autoFocus={index === parts.length - 1}
+              onChange={(event) => updatePart(index, { title: event.target.value })}
+            />
+            <EstimateSelect
+              label={`Estimate for new work item ${index + 1}`}
+              value={part.estimate}
+              onChange={(estimate) => updatePart(index, { estimate })}
+            />
+            {parts.length > 1 && (
+              <button
+                className="icon-button"
+                type="button"
+                aria-label={`Remove new work item ${index + 1}`}
+                onClick={() =>
+                  setParts((current) => current.filter((_, position) => position !== index))
+                }
+              >
+                <Trash2 size={13} aria-hidden="true" />
+              </button>
+            )}
+          </div>
+        ))}
+        {parts.length < 10 && (
+          <button
+            className="text-button split-add"
+            type="button"
+            onClick={() => setParts((current) => [...current, { title: "", estimate: null }])}
+          >
+            <Plus size={13} aria-hidden="true" />
+            Add another work item
+          </button>
+        )}
+        <label className="form-field">
+          <span>Put new work items in</span>
+          <select
+            value={destination}
+            onChange={(event) => setDestination(event.target.value)}
+          >
+            {issue.cycleId && <option value="SAME">The same sprint</option>}
+            <option value="BACKLOG">The backlog</option>
+            {sprints
+              .filter((sprint) => sprint.id !== issue.cycleId)
+              .map((sprint) => (
+                <option key={sprint.id} value={sprint.id}>
+                  {sprint.name}
+                </option>
+              ))}
+          </select>
+        </label>
+        <FormError error={error} />
+        <DialogFooter
+          onCancel={onClose}
+          submitLabel="Split"
+          isSubmitting={isSubmitting}
         />
       </form>
     </PlanningDialog>
@@ -522,9 +722,10 @@ export function useIssueMenuActions({
   onError: (message: string) => void;
   onNotice?: (message: string) => void;
 }) {
-  const { updateIssue, addComment, removeIssue, refreshIssues } = useIssues();
+  const { updateIssue, addComment, removeIssue, refreshIssues, replaceIssue } =
+    useIssues();
   const [dialog, setDialog] = useState<
-    { type: "flag" | "delete"; issue: Issue } | null
+    { type: "flag" | "delete" | "split"; issue: Issue } | null
   >(null);
 
   const run = async (issue: Issue, action: IssueMenuAction) => {
@@ -562,6 +763,9 @@ export function useIssueMenuActions({
       case "delete":
         setDialog({ type: "delete", issue });
         return true;
+      case "split":
+        setDialog({ type: "split", issue });
+        return true;
       default:
         return false;
     }
@@ -579,6 +783,23 @@ export function useIssueMenuActions({
           if (comment) {
             await addComment(dialog.issue.id, `Flag added\n\n${comment}`);
           }
+        }}
+      />
+    ) : dialog?.type === "split" ? (
+      <SplitIssueDialog
+        key={dialog.issue.id}
+        issue={dialog.issue}
+        onClose={() => setDialog(null)}
+        onSplit={async (body) => {
+          const result = await apiRequest<{ original: Issue | null; created: Issue[] }>(
+            `/api/issues/${encodeURIComponent(dialog.issue.id)}/split`,
+            { method: "POST", body: JSON.stringify(body) },
+          );
+          if (result.original) replaceIssue(result.original);
+          for (const created of result.created) replaceIssue(created);
+          onNotice?.(
+            `Split ${dialog.issue.id} into ${result.created.map((issue) => issue.id).join(", ")}`,
+          );
         }}
       />
     ) : dialog?.type === "delete" ? (

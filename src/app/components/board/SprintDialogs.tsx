@@ -25,7 +25,24 @@ export function PlanningDialog({
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="planning-dialog-overlay" />
-        <Dialog.Content className="save-view-dialog planning-dialog">
+        <Dialog.Content
+          className="save-view-dialog planning-dialog"
+          onOpenAutoFocus={(event) => {
+            // Start in the first form field rather than the close button.
+            const content = event.currentTarget as HTMLElement;
+            const field = [
+              "form input:not([type='hidden']):not([type='checkbox']):not([type='radio'])",
+              "form textarea",
+              "form select",
+            ]
+              .map((selector) => content.querySelector<HTMLElement>(selector))
+              .find(Boolean);
+            if (field) {
+              event.preventDefault();
+              field.focus();
+            }
+          }}
+        >
           <header>
             <div>
               <Dialog.Title asChild>

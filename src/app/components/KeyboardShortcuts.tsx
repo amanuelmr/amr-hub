@@ -86,6 +86,8 @@ export function KeyboardShortcuts() {
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
       if (isTypingTarget(event.target)) return;
       if (document.querySelector(".command-palette")) return;
+      // Jira ignores global shortcuts while any dialog is open.
+      if (document.querySelector("[role='dialog'], [role='alertdialog']")) return;
 
       const key = event.key;
 
