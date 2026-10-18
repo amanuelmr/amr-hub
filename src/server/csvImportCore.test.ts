@@ -261,3 +261,76 @@ describe("orderRowsForImport", () => {
     expect(rows[1].errors[0]).toMatch(/more than once/);
   });
 });
+
+describe("custom fields in CSV import", () => {
+  const severity = {
+    id: "sev",
+    name: "Severity",
+    type: "SELECT" as const,
+    description: null,
+    options: [
+      { id: "s1", value: "S1" },
+      { id: "s2", value: "S2" },
+    ],
+    required: false,
+    issueTypes: [],
+    position: 0,
+    projectId: null,
+  };
+  const platforms = {
+    ...severity,
+    id: "plat",
+    name: "Platforms",
+    type: "CHECKBOXES" as const,
+    options: [
+      { id: "web", value: "Web" },
+      { id: "ios", value: "iOS" },
+    ],
+  };
+  const qaOwner = { ...severity, id: "qa", name: "QA owner", type: "USER" as const, options: [] };
+  const fields = [severity, platforms, qaOwner];
+  const members = [{ id: "m1", name: "Dana Lee", email: "dana@example.com" }];
+
+  it("maps Jira's Custom field (Name) headers and plain names", () => {
+    expect(
+      guessColumnMapping(["Summary", "Custom field (Severity)", "platforms", "Status"], fields),
+    ).toEqual(["summary", "cf:sev", "cf:plat", "status"]);
+  });
+
+  it("converts cells to stored values and reports bad ones", () => {
+    const [row] = buildImportRows(
+      [["Crash", "S2", "Web; iOS", "dana@example.com"]],
+      ["summary", "cf:sev", "cf:plat", "cf:qa"],
+      { status: {}, kind: {}, priority: {} },
+    );
+    const valid = validateImportRow(row, {
+      statuses: [{ key: "OPEN", name: "To do" }],
+      kinds: [{ key: "TASK", name: "Task" }],
+      priorities: [{ key: "MEDIUM", name: "Medium" }],
+      members,
+      sprints: [],
+      customFields: fields,
+      defaults: { status: "OPEN", kind: "TASK", priority: "MEDIUM" },
+    });
+    expect(valid.errors).toEqual([]);
+    expect(valid.customFields).toEqual({ sev: "s2", plat: ["web", "ios"], qa: "m1" });
+
+    const [badRow] = buildImportRows(
+      [["Crash", "S9", "nobody@example.com"]],
+      ["summary", "cf:sev", "cf:qa"],
+      { status: {}, kind: {}, priority: {} },
+    );
+    const invalid = validateImportRow(badRow, {
+      statuses: [{ key: "OPEN", name: "To do" }],
+      kinds: [{ key: "TASK", name: "Task" }],
+      priorities: [{ key: "MEDIUM", name: "Medium" }],
+      members,
+      sprints: [],
+      customFields: fields,
+      defaults: { status: "OPEN", kind: "TASK", priority: "MEDIUM" },
+    });
+    expect(invalid.errors).toHaveLength(2);
+    expect(invalid.errors[0]).toContain("Severity");
+    expect(invalid.errors[1]).toContain("not a workspace member");
+  });
+});
