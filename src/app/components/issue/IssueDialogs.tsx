@@ -12,7 +12,9 @@ import {
   MoreHorizontal,
   Trash2,
   X,
+  Zap,
 } from "lucide-react";
+import { RunAutomationDialog } from "../automation/RunAutomationDialog";
 import { apiRequest } from "../../IssueProvider";
 import { useProjects } from "../../ProjectProvider";
 import type { Issue } from "../../data/issues";
@@ -78,7 +80,7 @@ function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
-type DialogKind = "clone" | "move" | "delete" | null;
+type DialogKind = "clone" | "move" | "delete" | "automation" | null;
 
 export function IssueMoreMenu({
   issue,
@@ -87,6 +89,8 @@ export function IssueMoreMenu({
   controller,
   onNavigate,
   onDeleted,
+  menuOpen,
+  onMenuOpenChange,
 }: {
   issue: Issue;
   canEdit: boolean;
@@ -94,17 +98,21 @@ export function IssueMoreMenu({
   controller: IssueDetailController;
   onNavigate: (id: string) => void;
   onDeleted: () => void;
+  /** Controlled open state, so the "." shortcut can open the menu. */
+  menuOpen?: boolean;
+  onMenuOpenChange?: (open: boolean) => void;
 }) {
   const [dialog, setDialog] = useState<DialogKind>(null);
 
   return (
     <>
-      <DropdownMenu.Root>
+      <DropdownMenu.Root open={menuOpen} onOpenChange={onMenuOpenChange}>
         <DropdownMenu.Trigger asChild>
           <button
             className="icon-button issue-more-button"
             type="button"
             aria-label="More actions"
+            title="More actions (.)"
           >
             <MoreHorizontal size={16} aria-hidden="true" />
           </button>
@@ -141,6 +149,13 @@ export function IssueMoreMenu({
                   <FolderInput size={14} aria-hidden="true" />
                   Move to another project
                 </DropdownMenu.Item>
+                <DropdownMenu.Item
+                  className="issue-menu-item"
+                  onSelect={() => setDialog("automation")}
+                >
+                  <Zap size={14} aria-hidden="true" />
+                  Run automation
+                </DropdownMenu.Item>
               </>
             )}
             <DropdownMenu.Item
@@ -172,6 +187,13 @@ export function IssueMoreMenu({
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
 
+      <RunAutomationDialog
+        open={dialog === "automation"}
+        onOpenChange={(open) => !open && setDialog(null)}
+        projectId={issue.projectId}
+        issueId={issue.id}
+        onRan={() => void controller.refresh()}
+      />
       {dialog === "clone" && (
         <CloneDialog
           issue={issue}

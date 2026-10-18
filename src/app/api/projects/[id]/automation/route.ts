@@ -22,7 +22,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
   try {
     const { id } = await context.params;
-    const rules = await listAutomationRules(id, session.workspace.id);
+    const trigger = request.nextUrl.searchParams.get("trigger") ?? undefined;
+    const rules = await listAutomationRules(id, session.workspace.id, {
+      trigger,
+    });
     return rules ? NextResponse.json(rules) : notFound("Project");
   } catch (error) {
     return errorResponse(error, "Automation rules could not be loaded");
