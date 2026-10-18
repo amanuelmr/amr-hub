@@ -15,10 +15,13 @@ import {
   CalendarPlus,
   ChevronDown,
   ChevronRight,
+  GitBranch,
   Plus,
   Search,
 } from "lucide-react";
-import { useIssues } from "../../../IssueProvider";
+import { apiRequest, useIssues } from "../../../IssueProvider";
+import { DependencyLayer } from "./DependencyLayer";
+import type { Dependency } from "../../../../server/dependencies";
 import { useProjects } from "../../../ProjectProvider";
 import { authClient } from "../../../../lib/auth-client";
 import { KindIcon, StatusBadge } from "../../../components/IssueVisuals";
@@ -113,6 +116,21 @@ export default function TimelinePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const dragRef = useRef<DragState | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [dependencies, setDependencies] = useState<Dependency[]>([]);
+  const [showDependencies, setShowDependencies] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiRequest<Dependency[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/dependencies`,
+    )
+      .then((loaded) => !cancelled && setDependencies(loaded))
+      .catch(() => !cancelled && setDependencies([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, issues]);
 
   const today = toDayKey(new Date());
   const dayWidth = ZOOM_DAY_WIDTH[zoom];
@@ -312,6 +330,16 @@ export default function TimelinePage() {
     }
   };
 
+  const barSpans = useMemo(() => {
+    const spans = new Map<string, Span>();
+    for (const row of rows) {
+      const span =
+        preview?.id === row.issue.id ? preview.span : barSpan(row.issue);
+      if (span) spans.set(row.issue.id, span);
+    }
+    return spans;
+  }, [rows, preview]);
+
   if (isLoading) return <WorkspaceLoading label="timeline" />;
 
   const gridStyle = {
@@ -362,6 +390,16 @@ export default function TimelinePage() {
           </select>
         </label>
         <div className="jira-toolbar-spacer" />
+        <button
+          type="button"
+          className={showDependencies ? "secondary-button active" : "secondary-button"}
+          aria-pressed={showDependencies}
+          onClick={() => setShowDependencies((current) => !current)}
+          title="Show arrows between work items that block each other"
+        >
+          <GitBranch size={14} aria-hidden="true" />
+          Dependencies
+        </button>
         <div
           className="filter-tabs timeline-zoom"
           role="tablist"
@@ -384,7 +422,15 @@ export default function TimelinePage() {
 
       <section className="panel timeline-panel">
         <div className="timeline-scroll" ref={scrollRef}>
-          <div className="timeline-grid" style={gridStyle}>
+          <div className="timeline-grid" style={gridStyle} ref={gridRef}>
+            {showDependencies && (
+              <DependencyLayer
+                gridRef={gridRef}
+                dependencies={dependencies}
+                spans={barSpans}
+                version={`${zoom}|${rows.length}|${[...expanded].join(",")}|${preview ? `${preview.id}:${preview.span.start}:${preview.span.end}` : ""}`}
+              />
+            )}
             <div className="timeline-head">
               <div className="timeline-row timeline-head-row">
                 <div className="timeline-label timeline-corner">Work</div>
@@ -652,6 +698,7 @@ function TimelineBar({
         isViewer ? "readonly" : "",
       ].join(" ")}
       style={style}
+      data-bar-id={row.issue.id}
       title={`${row.issue.title}: ${span.start} → ${span.end}`}
       role="button"
       tabIndex={-1}

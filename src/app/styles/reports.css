@@ -1620,3 +1620,39 @@ a.calendar-chip-title:hover {
     max-width: 100%;
   }
 }
+
+/* Timeline dependency arrows (Jira Plans style) */
+.timeline-dependencies {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.timeline-dep {
+  fill: none;
+  stroke: var(--gray-500);
+  stroke-width: 1.5;
+  pointer-events: stroke;
+}
+
+.timeline-dep.conflict {
+  stroke: var(--red-500);
+  stroke-dasharray: 4 3;
+}
+
+.timeline-dep-head {
+  fill: var(--gray-500);
+}
+
+.timeline-dep-head.conflict {
+  fill: var(--red-500);
+}
+
+.secondary-button.active {
+  border-color: var(--console-line);
+  color: var(--console-ink);
+  background: var(--console-lime);
+}
