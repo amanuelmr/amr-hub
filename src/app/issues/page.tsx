@@ -50,6 +50,7 @@ import {
   selectedIssueHref,
   useSelectedIssue,
 } from "../components/issue/selectedIssue";
+import { setIssueNavigation } from "../components/issue/issueNav";
 import { KindIcon, StatusBadge } from "../components/IssueVisuals";
 import { BulkBar } from "../components/search/BulkBar";
 import {
@@ -261,6 +262,11 @@ function IssueNavigator() {
   const pageIssues = results.slice(0, visibleCount);
   const selectedIssues = results.filter((issue) => selectedIds.has(issue.id));
   const firstResultId = results[0]?.id ?? null;
+
+  // j/k in the issue view walk the full result order, not just the loaded page.
+  useEffect(() => {
+    setIssueNavigation(results.map((issue) => issue.id));
+  }, [results]);
 
   // Jira's detail view always shows an issue: pick the first result when the
   // URL doesn't name one yet.

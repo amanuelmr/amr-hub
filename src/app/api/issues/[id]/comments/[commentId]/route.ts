@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createCommentSchema } from "../../../../../../server/issueSchemas";
-import { deleteComment, editComment } from "../../../../../../server/comments";
+import {
+  commentBodySchema,
+  deleteComment,
+  editComment,
+} from "../../../../../../server/comments";
 import {
   actorFromSession,
   requireWorkspaceRole,
@@ -20,7 +23,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   if ("response" in result) return result.response;
 
   try {
-    const validation = createCommentSchema.safeParse(await request.json());
+    const validation = commentBodySchema.safeParse(await request.json());
     if (!validation.success) return validationFailed(validation.error);
     const { id, commentId } = await context.params;
     const issue = await editComment(

@@ -40,8 +40,19 @@ export const SHORTCUT_GROUPS: { title: string; shortcuts: Shortcut[] }[] = [
     ],
   },
   {
-    title: "Issue page",
-    shortcuts: [{ keys: ["i"], label: "Assign the issue to me" }],
+    title: "Issue view",
+    shortcuts: [
+      { keys: ["e"], label: "Edit the summary" },
+      { keys: ["i"], label: "Assign the issue to me" },
+      { keys: ["a"], label: "Assign to me / unassign" },
+      { keys: ["m"], label: "Add a comment" },
+      { keys: ["w"], label: "Watch / stop watching" },
+      { keys: ["s"], label: "Share (copies the link)" },
+      { keys: ["."], label: "Open the more actions menu" },
+      { keys: ["j"], label: "Next issue in the list or board" },
+      { keys: ["k"], label: "Previous issue in the list or board" },
+      { keys: ["Esc"], label: "Close the issue" },
+    ],
   },
 ];
 

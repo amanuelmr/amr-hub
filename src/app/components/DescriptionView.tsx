@@ -6,7 +6,7 @@ export function DescriptionView({ value }: { value: string }) {
     // the single trust boundary; nothing downstream re-sanitizes.
     return (
       <div
-        className="issue-description rich-text-content"
+        className="issue-description rich-text-content rich-text-view"
         dangerouslySetInnerHTML={{ __html: value }}
       />
     );

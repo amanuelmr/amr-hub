@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -14,32 +14,40 @@ import {
   Maximize2,
   Paperclip,
   Pencil,
+  RefreshCcw,
   Upload,
   X,
 } from "lucide-react";
-import { useIssues } from "../../IssueProvider";
+import { apiRequest, useIssues } from "../../IssueProvider";
 import { useProjects } from "../../ProjectProvider";
 import { authClient } from "../../../lib/auth-client";
 import { KindIcon } from "../IssueVisuals";
-import { RichTextEditor } from "../RichTextEditor";
+import { RichTextEditor, type ImageUploader } from "../RichTextEditor";
 import { DescriptionView } from "../DescriptionView";
 import { WorkspaceLoading } from "../WorkspaceLoading";
 import { stripHtml } from "../../data/richText";
 import type { Issue, IssueResolution, IssueStatus } from "../../data/issues";
 import { useIssueDetail, type IssueDetailController } from "./useIssueDetail";
 import {
-  ShareButton,
   StatusTransitionButton,
   VoteButton,
   WatchButton,
 } from "./IssueStatusActions";
+import { copyIssueLink, IssueSharePopover } from "./IssueSharePopover";
+import { ImageLightbox, withImage, type LightboxImage } from "./ImageLightbox";
+import { adjacentIssueId, resolveIssueOrder } from "./issueNav";
+import { issueUrl } from "./useIssueDetail";
 import { IssueMoreMenu } from "./IssueDialogs";
 import { IssueDetailsPanel, IssueMetaFooter } from "./IssueDetailsPanel";
 import {
   ChildIssuesSection,
   LinkedIssuesSection,
 } from "./IssueRelationsSections";
-import { IssueAttachments, useAttachmentUpload } from "./IssueAttachments";
+import {
+  INLINE_TYPES,
+  IssueAttachments,
+  useAttachmentUpload,
+} from "./IssueAttachments";
 import { IssueActivityTabs } from "./IssueActivityTabs";
 import { LogWorkDialog } from "./IssueTimeTracking";
 import { IssueHrefProvider, useIssueHref } from "./issueLinks";
@@ -49,6 +57,17 @@ import { isEpicLevel, isSubtaskLevel } from "../../data/workflow";
 
 export type IssueViewVariant = "page" | "modal" | "panel";
 
+function isEditableElement(element: Element) {
+  const html = element as HTMLElement;
+  return (
+    html.tagName === "INPUT" ||
+    html.tagName === "TEXTAREA" ||
+    html.tagName === "SELECT" ||
+    html.isContentEditable ||
+    Boolean(element.closest("[contenteditable='true'], [role='listbox']"))
+  );
+}
+
 function fullPageHref(issueId: string) {
   return `/issues/${encodeURIComponent(issueId)}`;
 }
@@ -57,13 +76,16 @@ function TitleEditor({
   issue,
   readOnly,
   controller,
+  draft,
+  setDraft,
 }: {
   issue: Issue;
   readOnly: boolean;
   controller: IssueDetailController;
+  /** Lifted so the `e` shortcut can start editing. */
+  draft: string | null;
+  setDraft: (draft: string | null) => void;
 }) {
-  const [draft, setDraft] = useState<string | null>(null);
-
   if (draft === null) {
     return readOnly ? (
       <h1 className="issue-title">{issue.title}</h1>
@@ -136,10 +158,12 @@ function DescriptionSection({
   issue,
   readOnly,
   controller,
+  onUploadImages,
 }: {
   issue: Issue;
   readOnly: boolean;
   controller: IssueDetailController;
+  onUploadImages?: ImageUploader;
 }) {
   const { members } = useIssues();
   const [draft, setDraft] = useState<string | null>(null);
@@ -171,7 +195,8 @@ function DescriptionSection({
             onChange={setDraft}
             members={members}
             autoFocus
-            placeholder="Add a description… Type @ to mention someone."
+            onUploadImages={onUploadImages}
+            placeholder="Add a description… Type @ to mention someone. Paste or drop images."
           />
           {draftLength > 0 && draftLength < 12 && (
             <p className="field-meta">
@@ -206,7 +231,7 @@ function DescriptionSection({
           className={`issue-description-view${readOnly ? "" : " is-editable"}`}
           onClick={(event) => {
             if (readOnly) return;
-            if ((event.target as Element).closest("a")) return;
+            if ((event.target as Element).closest("a, img, input")) return;
             setDraft(issue.description);
           }}
         >
@@ -318,6 +343,61 @@ export function IssueDetailView({
     worklog: Worklog | null;
   } | null>(null);
   const { upload, isUploading } = useAttachmentUpload(issue, controller);
+  const [titleDraft, setTitleDraft] = useState<string | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [lightbox, setLightbox] = useState<{
+    images: LightboxImage[];
+    index: number;
+  } | null>(null);
+  const [shortcutToast, setShortcutToast] = useState<string | null>(null);
+  const memberId = activeMember?.id ?? null;
+
+  /** Pasted/dropped editor images become issue attachments. */
+  const uploadImages: ImageUploader = useCallback(
+    async (files) => {
+      const created = await upload(files, { throwOnError: true });
+      return created
+        .filter((attachment) => INLINE_TYPES.includes(attachment.mimeType))
+        .map((attachment) => ({ src: attachment.url, alt: attachment.name }));
+    },
+    [upload],
+  );
+
+  const imageAttachments: LightboxImage[] = controller.attachments
+    .filter((attachment) => INLINE_TYPES.includes(attachment.mimeType))
+    .map((attachment) => ({ src: attachment.url, name: attachment.name }));
+
+  const openLightbox = (image: LightboxImage) => {
+    const inline = [
+      ...(rootRef.current?.querySelectorAll<HTMLImageElement>(
+        ".rich-text-view img",
+      ) ?? []),
+    ].map((element) => ({
+      src: element.getAttribute("src") ?? "",
+      name: element.getAttribute("alt") || "Image",
+    }));
+    const all = [...imageAttachments];
+    for (const candidate of inline) {
+      if (candidate.src && !all.some((item) => item.src === candidate.src)) {
+        all.push(candidate);
+      }
+    }
+    setLightbox(withImage(all, image));
+  };
+
+  useEffect(() => {
+    if (!shortcutToast) return;
+    const timeout = window.setTimeout(() => setShortcutToast(null), 2500);
+    return () => window.clearTimeout(timeout);
+  }, [shortcutToast]);
+
+  const { remoteUpdate, dismissRemoteUpdate } = controller;
+  useEffect(() => {
+    if (!remoteUpdate) return;
+    const timeout = window.setTimeout(dismissRemoteUpdate, 5000);
+    return () => window.clearTimeout(timeout);
+  }, [remoteUpdate, dismissRemoteUpdate]);
 
   const inPlace = variant !== "page";
   const issueHref = useCallback(
@@ -396,12 +476,107 @@ export function IssueDetailView({
           }
         },
         onDrop: (event: React.DragEvent<HTMLDivElement>) => {
-          if (!hasFiles(event)) return;
-          event.preventDefault();
           setIsDragging(false);
+          // The rich-text editor already took dropped images inline.
+          if (!hasFiles(event) || event.defaultPrevented) return;
+          event.preventDefault();
           void upload(event.dataTransfer.files);
         },
       };
+
+  const toggleWatch = async () => {
+    if (!currentUserId) return;
+    const watching = (issue.watcherIds ?? []).includes(currentUserId);
+    const response = await controller.run(() =>
+      apiRequest<{ issue: Issue }>(issueUrl(issue.id, "/watchers"), {
+        method: watching ? "DELETE" : "POST",
+        body: JSON.stringify({}),
+      }),
+    );
+    if (response) {
+      controller.applyIssue(response.issue);
+      setShortcutToast(
+        watching ? "You stopped watching this issue" : "You're watching this issue",
+      );
+    }
+  };
+
+  const assignToMe = async (toggle: boolean) => {
+    if (!memberId) return;
+    const mine = issue.assignee?.id === memberId;
+    if (mine && !toggle) {
+      setShortcutToast(`${issue.id} is already assigned to you`);
+      return;
+    }
+    const next = mine ? null : memberId;
+    if (await controller.patch({ assigneeId: next })) {
+      setShortcutToast(next ? `Assigned ${issue.id} to you` : `Unassigned ${issue.id}`);
+    }
+  };
+
+  const goToAdjacent = (delta: 1 | -1) => {
+    const nextId = adjacentIssueId(resolveIssueOrder(issue.id), issue.id, delta);
+    if (nextId) navigateTo(nextId);
+    else setShortcutToast(delta === 1 ? "This is the last issue" : "This is the first issue");
+  };
+
+  // Jira issue-view shortcuts (see the ? dialog). Capture phase so the global
+  // handler (which also binds `i` on /issues/KEY) sees them as handled.
+  const shortcutRef = useRef<(event: KeyboardEvent) => void>(() => {});
+  useEffect(() => {
+    shortcutRef.current = (event: KeyboardEvent) => {
+      const handlers: Record<string, () => void> = {
+        j: () => goToAdjacent(1),
+        k: () => goToAdjacent(-1),
+        s: () => {
+          void copyIssueLink(issue.id);
+          setShareOpen(true);
+        },
+        ".": () => setMoreMenuOpen(true),
+        ...(readOnly
+          ? {}
+          : {
+              e: () => setTitleDraft(issue.title),
+              i: () => void assignToMe(false),
+              a: () => void assignToMe(true),
+              w: () => void toggleWatch(),
+            }),
+      };
+      const handler = handlers[event.key];
+      if (!handler) return;
+      event.preventDefault();
+      handler();
+    };
+  });
+  useEffect(() => {
+    let lastG = 0;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) {
+        return;
+      }
+      const root = rootRef.current;
+      if (!root) return;
+      const target = event.target instanceof Element ? event.target : document.body;
+      if (isEditableElement(target)) return;
+      // Only the topmost issue view reacts (not one under a modal/popover).
+      const ownDialog = root.closest("[role='dialog']");
+      if (target.closest("[role='dialog'], [role='menu']") !== ownDialog) return;
+      if (!ownDialog && document.querySelector("[data-issue-modal]")) return;
+      if (document.querySelector(".command-palette")) return;
+      // `g` starts a global "go to" sequence; leave its second key alone.
+      if (event.key === "g") {
+        lastG = Date.now();
+        return;
+      }
+      if (Date.now() - lastG < 1200) {
+        lastG = 0;
+        return;
+      }
+      shortcutRef.current(event);
+    };
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
+  }, []);
 
   const actions = (
     <div className="issue-view-actions">
@@ -417,7 +592,14 @@ export function IssueDetailView({
         currentUserId={currentUserId}
         controller={controller}
       />
-      <ShareButton issueId={issue.id} compact={inPlace} />
+      <IssueSharePopover
+        issueId={issue.id}
+        members={members}
+        currentMemberId={memberId}
+        compact={inPlace}
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+      />
       <IssueMoreMenu
         issue={issue}
         canEdit={!readOnly}
@@ -425,6 +607,8 @@ export function IssueDetailView({
         controller={controller}
         onNavigate={navigateTo}
         onDeleted={handleDeleted}
+        menuOpen={moreMenuOpen}
+        onMenuOpenChange={setMoreMenuOpen}
       />
       {inPlace && (
         <Link
@@ -507,10 +691,11 @@ export function IssueDetailView({
   const heading = (
     <>
       <TitleEditor
-        key={issue.title}
         issue={issue}
         readOnly={readOnly}
         controller={controller}
+        draft={titleDraft}
+        setDraft={setTitleDraft}
       />
       {quickAdd}
       {errorBanner}
@@ -523,6 +708,7 @@ export function IssueDetailView({
       issue={issue}
       readOnly={readOnly}
       controller={controller}
+      onUploadImages={readOnly ? undefined : uploadImages}
     />
   );
 
@@ -534,6 +720,9 @@ export function IssueDetailView({
         currentUserId={currentUserId}
         isOwner={isOwner}
         onAttach={() => fileInputRef.current?.click()}
+        onPreview={(attachment) =>
+          openLightbox({ src: attachment.url, name: attachment.name })
+        }
         controller={controller}
       />
       <ChildIssuesSection
@@ -565,6 +754,7 @@ export function IssueDetailView({
       isOwner={isOwner}
       controller={controller}
       onEditWorklog={(worklog) => setWorklogDialog({ worklog })}
+      onUploadImages={readOnly ? undefined : uploadImages}
     />
   );
 
@@ -629,7 +819,23 @@ export function IssueDetailView({
 
   return (
     <IssueHrefProvider value={issueHref}>
-      <div className={className} ref={rootRef} {...dropHandlers}>
+      <div
+        className={className}
+        ref={rootRef}
+        {...dropHandlers}
+        onClickCapture={(event) => {
+          const target = event.target as Element;
+          if (target.tagName !== "IMG" || !target.closest(".rich-text-view")) {
+            return;
+          }
+          event.preventDefault();
+          event.stopPropagation();
+          openLightbox({
+            src: target.getAttribute("src") ?? "",
+            name: target.getAttribute("alt") || "Image",
+          });
+        }}
+      >
         <div className="issue-view-topbar">
           <Breadcrumb issue={issue} compact={isPanel} />
           {actions}
@@ -655,6 +861,40 @@ export function IssueDetailView({
           <div className="issue-drop-overlay" aria-hidden="true">
             <Upload size={22} />
             <span>Drop files to attach</span>
+          </div>
+        )}
+
+        {lightbox && (
+          <ImageLightbox
+            images={lightbox.images}
+            index={lightbox.index}
+            onIndexChange={(index) =>
+              setLightbox((current) => (current ? { ...current, index } : null))
+            }
+            onClose={() => setLightbox(null)}
+          />
+        )}
+
+        {(remoteUpdate || shortcutToast) && (
+          <div className="issue-live-toast" role="status" aria-live="polite">
+            {remoteUpdate ? (
+              <>
+                <RefreshCcw size={13} aria-hidden="true" />
+                <span>
+                  Updated by {remoteUpdate.actorName ?? "a teammate"}
+                </span>
+                <button
+                  className="icon-button"
+                  type="button"
+                  aria-label="Dismiss"
+                  onClick={dismissRemoteUpdate}
+                >
+                  <X size={12} aria-hidden="true" />
+                </button>
+              </>
+            ) : (
+              <span>{shortcutToast}</span>
+            )}
           </div>
         )}
 

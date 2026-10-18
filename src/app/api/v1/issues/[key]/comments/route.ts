@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import prisma from "../../../../../../../prisma/client";
 import { createCommentSchema } from "../../../../../../server/issueSchemas";
 import { addComment } from "../../../../../../server/issues";
+import { prepareCommentBody } from "../../../../../../server/comments";
+import { IssueActionError } from "../../../../../../server/issueRelations";
 import {
   apiError,
   authenticateApiRequest,
@@ -25,7 +27,16 @@ export async function POST(request: Request, route: RouteContext) {
     const validation = createCommentSchema.safeParse(await readJson(request));
     if (!validation.success) return validationResponse(validation.error);
 
-    const issue = await addComment(key, validation.data.body, context.actor);
+    let body: string;
+    try {
+      // Same trust boundary as the app's comment route: HTML is sanitized.
+      body = prepareCommentBody(validation.data.body);
+    } catch (error) {
+      if (error instanceof IssueActionError) return apiError(400, error.message);
+      throw error;
+    }
+
+    const issue = await addComment(key, body, context.actor);
     if (!issue) return apiError(404, "Issue does not exist or you do not have permission to see it.");
 
     const comment = await prisma.comment.findFirst({
@@ -35,7 +46,7 @@ export async function POST(request: Request, route: RouteContext) {
     return NextResponse.json(
       {
         id: comment?.id ?? null,
-        body: comment?.body ?? validation.data.body,
+        body: comment?.body ?? body,
         author: { accountId: context.user.id, displayName: context.user.name },
         created: comment?.createdAt.toISOString() ?? new Date().toISOString(),
       },

@@ -21,9 +21,9 @@ import {
 } from "lucide-react";
 import { apiRequest } from "../../IssueProvider";
 import { CommentBody } from "../CommentBody";
-import { MentionTextarea } from "../MentionTextarea";
-import { RichTextEditor } from "../RichTextEditor";
-import { serializeCommentBody, stripHtml } from "../../data/richText";
+import { RichTextEditor, type ImageUploader } from "../RichTextEditor";
+import { legacyCommentToHtml, stripHtml } from "../../data/richText";
+import { CommentReactions } from "./CommentReactions";
 import {
   formatDuration,
   type Issue,
@@ -93,31 +93,42 @@ function HistoryItem({ event }: { event: IssueActivity }) {
   );
 }
 
+/** Rich comment bodies need visible text (2+ chars) or an image. */
+function hasCommentContent(html: string) {
+  return stripHtml(html).length >= 2 || /<img\b/i.test(html);
+}
+
 function CommentItem({
   issueId,
   comment,
   members,
   canEdit,
   canDelete,
+  canReact,
+  currentUserId,
   controller,
+  onUploadImages,
 }: {
   issueId: string;
   comment: IssueComment;
   members: WorkspaceMember[];
   canEdit: boolean;
   canDelete: boolean;
+  canReact: boolean;
+  currentUserId: string | null;
   controller: IssueDetailController;
+  onUploadImages?: ImageUploader;
 }) {
   const [isEditing, setIsEditing] = useState(false);
-  const [draft, setDraft] = useState(comment.body);
+  const [draft, setDraft] = useState(() => legacyCommentToHtml(comment.body));
   const url = issueUrl(issueId, `/comments/${encodeURIComponent(comment.id)}`);
 
   const save = async () => {
-    if (draft.trim().length < 2) return;
+    if (!hasCommentContent(draft)) return;
     const updated = await controller.run(() =>
       apiRequest<Issue>(url, {
         method: "PATCH",
-        body: JSON.stringify({ body: draft.trim() }),
+        body: JSON.stringify({ body: draft }),
       }),
     );
     if (updated) {
@@ -146,15 +157,19 @@ function CommentItem({
         </header>
         {isEditing ? (
           <div className="issue-comment-edit">
-            <MentionTextarea
+            <RichTextEditor
               value={draft}
               onChange={setDraft}
               members={members}
+              autoFocus
+              onUploadImages={onUploadImages}
+              onSubmitShortcut={() => void save()}
             />
             <div className="issue-comment-actions">
               <button
                 className="primary-button"
                 type="button"
+                disabled={!hasCommentContent(draft)}
                 onClick={() => void save()}
               >
                 Save
@@ -163,7 +178,7 @@ function CommentItem({
                 className="secondary-button"
                 type="button"
                 onClick={() => {
-                  setDraft(comment.body);
+                  setDraft(legacyCommentToHtml(comment.body));
                   setIsEditing(false);
                 }}
               >
@@ -174,13 +189,23 @@ function CommentItem({
         ) : (
           <>
             <CommentBody body={comment.body} />
+            <CommentReactions
+              issueId={issueId}
+              comment={comment}
+              canReact={canReact}
+              currentUserId={currentUserId}
+              controller={controller}
+            />
             {(canEdit || canDelete) && (
               <div className="issue-comment-actions">
                 {canEdit && (
                   <button
                     className="text-button"
                     type="button"
-                    onClick={() => setIsEditing(true)}
+                    onClick={() => {
+                      setDraft(legacyCommentToHtml(comment.body));
+                      setIsEditing(true);
+                    }}
                   >
                     <Pencil size={12} aria-hidden="true" />
                     Edit
@@ -289,6 +314,7 @@ function CommentComposer({
   expanded,
   setExpanded,
   controller,
+  onUploadImages,
 }: {
   issueId: string;
   members: WorkspaceMember[];
@@ -296,14 +322,16 @@ function CommentComposer({
   expanded: boolean;
   setExpanded: (expanded: boolean) => void;
   controller: IssueDetailController;
+  onUploadImages?: ImageUploader;
 }) {
   const [comment, setComment] = useState("");
   const [isPosting, setIsPosting] = useState(false);
 
-  const postComment = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const body = serializeCommentBody(comment);
-    if (body.length < 2) return;
+  const postComment = async (event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault();
+    // Stored as rich HTML; the server sanitizes it.
+    const body = comment;
+    if (!hasCommentContent(body) || isPosting) return;
     setIsPosting(true);
     const updated = await controller.run(() =>
       apiRequest<Issue>(issueUrl(issueId, "/comments"), {
@@ -326,21 +354,22 @@ function CommentComposer({
       </span>
       {expanded ? (
         <form className="issue-comment-form" onSubmit={postComment}>
-          <label>
-            <span className="sr-only">Add a comment</span>
+          <div role="group" aria-label="Add a comment">
             <RichTextEditor
               value={comment}
               onChange={setComment}
               members={members}
               autoFocus
+              onUploadImages={onUploadImages}
+              onSubmitShortcut={() => void postComment()}
               placeholder="Add a comment… Type @ to mention someone."
             />
-          </label>
+          </div>
           <div className="issue-comment-actions">
             <button
               className="primary-button"
               type="submit"
-              disabled={stripHtml(comment).length < 2 || isPosting}
+              disabled={!hasCommentContent(comment) || isPosting}
             >
               {isPosting ? "Saving..." : "Save"}
             </button>
@@ -384,6 +413,7 @@ export function IssueActivityTabs({
   isOwner,
   controller,
   onEditWorklog,
+  onUploadImages,
 }: {
   issue: Issue;
   worklogs: Worklog[];
@@ -394,6 +424,8 @@ export function IssueActivityTabs({
   isOwner: boolean;
   controller: IssueDetailController;
   onEditWorklog: (worklog: Worklog | null) => void;
+  /** Pasted/dropped images in comments become issue attachments. */
+  onUploadImages?: ImageUploader;
 }) {
   // The view only mounts after the client fetch, so localStorage is safe here.
   const [order, setOrderState] = useState<SortOrder>(readStoredOrder);
@@ -493,7 +525,10 @@ export function IssueActivityTabs({
       members={members}
       canEdit={!readOnly && item.authorId === currentUserId}
       canDelete={!readOnly && (isOwner || item.authorId === currentUserId)}
+      canReact={!readOnly}
+      currentUserId={currentUserId}
       controller={controller}
+      onUploadImages={onUploadImages}
     />
   );
 
@@ -516,6 +551,7 @@ export function IssueActivityTabs({
       expanded={composerOpen}
       setExpanded={setComposerOpen}
       controller={controller}
+      onUploadImages={onUploadImages}
     />
   );
 

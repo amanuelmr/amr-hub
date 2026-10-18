@@ -38,8 +38,12 @@ export async function fetchOptionalList<T>(url: string): Promise<T[] | null> {
   }
 }
 
+/** Set when someone else changes the open issue (live updates). */
+export type RemoteUpdate = { actorName: string | null; at: number };
+
 export function useIssueDetail(id: string) {
-  const { replaceIssue } = useIssues();
+  const { replaceIssue, subscribeLive } = useIssues();
+  const [remoteUpdate, setRemoteUpdate] = useState<RemoteUpdate | null>(null);
   const [state, setState] = useState<IssueDetailState>({ status: "loading" });
   const [worklogs, setWorklogs] = useState<Worklog[]>([]);
   const [attachments, setAttachments] = useState<AttachmentSummary[]>([]);
@@ -112,6 +116,32 @@ export function useIssueDetail(id: string) {
     };
   }, [applyIssue, id]);
 
+  // Live updates: take the provider's fresh copy when this issue changes.
+  useEffect(
+    () =>
+      subscribeLive(id, (event) => {
+        if (event.deleted.includes(id)) {
+          setState({ status: "missing" });
+          return;
+        }
+        const change = event.changes.find((candidate) => candidate.id === id);
+        if (!change) return;
+        const fresh = event.issues.get(id);
+        if (fresh) setState({ status: "ready", issue: fresh });
+        if (change.self) return;
+        setRemoteUpdate({ actorName: change.actorName, at: Date.now() });
+        apiRequest<Worklog[]>(issueUrl(id, "/worklogs"))
+          .then(setWorklogs)
+          .catch(() => {});
+        apiRequest<AttachmentSummary[]>(issueUrl(id, "/attachments"))
+          .then(setAttachments)
+          .catch(() => {});
+      }),
+    [id, subscribeLive],
+  );
+
+  const dismissRemoteUpdate = useCallback(() => setRemoteUpdate(null), []);
+
   /** Runs a mutation, applies the returned issue, and surfaces errors. */
   const run = useCallback(
     async <T>(action: () => Promise<T>): Promise<T | null> => {
@@ -154,6 +184,8 @@ export function useIssueDetail(id: string) {
     refreshAttachments,
     run,
     patch,
+    remoteUpdate,
+    dismissRemoteUpdate,
   };
 }
 

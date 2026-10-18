@@ -6,8 +6,10 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
+import { authClient } from "../lib/auth-client";
 import {
   type Cycle,
   type Issue,
@@ -20,6 +22,29 @@ import {
   type WorkspaceLabel,
   type WorkspaceMember,
 } from "./data/issues";
+
+/** One issue that changed since the last live poll (GET /api/live). */
+export type LiveChange = {
+  id: string;
+  updatedAt: string;
+  actorId: string | null;
+  actorName: string | null;
+  /** True when the signed-in user made the change (any tab). */
+  self: boolean;
+};
+
+export type LiveEvent = {
+  changes: LiveChange[];
+  deleted: string[];
+  /** Fresh copies of changed issues (at most LIVE_FETCH_LIMIT). */
+  issues: Map<string, Issue>;
+};
+
+type LiveListener = (event: LiveEvent) => void;
+
+const LIVE_POLL_MS = 10_000;
+const LIVE_FETCH_LIMIT = 25;
+const LIVE_MAX_IDS = 300;
 
 export type IssueListResponse = {
   issues: Issue[];
@@ -48,6 +73,11 @@ type IssueContextValue = {
   refreshCycles: () => Promise<void>;
   /** Reload saved filters after they are edited elsewhere (e.g. /filters). */
   refreshSavedViews: () => Promise<void>;
+  /**
+   * Live updates: `listener` runs after each poll that saw changes. Passing
+   * `issueId` also asks the server whether that issue was deleted.
+   */
+  subscribeLive: (issueId: string | null, listener: LiveListener) => () => void;
 };
 
 const IssueContext = createContext<IssueContextValue | null>(null);
@@ -323,6 +353,117 @@ export function IssueProvider({ children }: { children: React.ReactNode }) {
     );
   }, []);
 
+  // ---- Live updates: poll /api/live every 10s while the tab is visible ----
+  const { data: authSession } = authClient.useSession();
+  const currentUserId = authSession?.user.id ?? null;
+  const issuesRef = useRef<Issue[]>(issues);
+  const userIdRef = useRef<string | null>(currentUserId);
+  const listenersRef = useRef(
+    new Map<LiveListener, string | null>(),
+  );
+  useEffect(() => {
+    issuesRef.current = issues;
+    userIdRef.current = currentUserId;
+  });
+
+  const subscribeLive = useCallback(
+    (issueId: string | null, listener: LiveListener) => {
+      listenersRef.current.set(listener, issueId);
+      return () => {
+        listenersRef.current.delete(listener);
+      };
+    },
+    [],
+  );
+
+  useEffect(() => {
+    let since: string | null = null;
+    let inFlight = false;
+    let cancelled = false;
+
+    const poll = async () => {
+      if (inFlight || cancelled || document.visibilityState !== "visible") {
+        return;
+      }
+      inFlight = true;
+      try {
+        const watched = [...listenersRef.current.values()].filter(
+          (id): id is string => Boolean(id),
+        );
+        const ids = [
+          ...new Set([
+            ...watched,
+            ...issuesRef.current.map((issue) => issue.id),
+          ]),
+        ].slice(0, LIVE_MAX_IDS);
+        const params = new URLSearchParams();
+        if (since) params.set("since", since);
+        if (ids.length > 0) params.set("ids", ids.join(","));
+        const response = await fetch(`/api/live?${params}`, {
+          cache: "no-store",
+        });
+        if (!response.ok || cancelled) return;
+        const payload = (await response.json()) as {
+          now: string;
+          changes: Omit<LiveChange, "self">[];
+          deleted: string[];
+        };
+        since = payload.now;
+        const changes = payload.changes.map((change) => ({
+          ...change,
+          self: Boolean(change.actorId && change.actorId === userIdRef.current),
+        }));
+        const deleted = payload.deleted;
+        if (changes.length === 0 && deleted.length === 0) return;
+
+        if (deleted.length > 0) {
+          setIssues((current) =>
+            current.filter((issue) => !deleted.includes(issue.id)),
+          );
+        }
+
+        const fetched = await Promise.all(
+          changes.slice(0, LIVE_FETCH_LIMIT).map(async (change) => {
+            try {
+              const result = await fetch(
+                `/api/issues/${encodeURIComponent(change.id)}`,
+                { cache: "no-store" },
+              );
+              return result.ok ? ((await result.json()) as Issue) : null;
+            } catch {
+              return null;
+            }
+          }),
+        );
+        if (cancelled) return;
+        const fresh = new Map<string, Issue>();
+        for (const issue of fetched) {
+          if (!issue) continue;
+          fresh.set(issue.id, issue);
+          replaceIssue(issue);
+        }
+        const event: LiveEvent = { changes, deleted, issues: fresh };
+        for (const listener of listenersRef.current.keys()) listener(event);
+      } catch {
+        // Offline or a transient failure: try again on the next tick.
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    void poll();
+    const timer = window.setInterval(() => void poll(), LIVE_POLL_MS);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void poll();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [replaceIssue]);
+
   const refreshCycles = useCallback(async () => {
     setCycles(await apiRequest<Cycle[]>("/api/cycles"));
   }, []);
@@ -351,8 +492,10 @@ export function IssueProvider({ children }: { children: React.ReactNode }) {
       removeIssue,
       refreshCycles,
       refreshSavedViews,
+      subscribeLive,
     }),
     [
+      subscribeLive,
       refreshSavedViews,
       replaceIssue,
       removeIssue,
