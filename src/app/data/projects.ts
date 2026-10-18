@@ -168,6 +168,74 @@ export type Project = {
   leadName?: string | null;
   /** Whether the current user starred the project. */
   starred?: boolean;
+  /** Jira access level: who can see and edit the project. */
+  accessLevel?: ProjectAccessLevel;
+  /** Set when the project is archived (read-only, hidden from lists). */
+  archivedAt?: string | null;
+  /** The current user's permissions on this project. */
+  permissions?: ProjectPermissions;
+  /** The current user's explicit project role, if any. */
+  myRole?: ProjectRole | null;
+};
+
+export const PROJECT_ACCESS_LEVELS = ["OPEN", "LIMITED", "PRIVATE"] as const;
+export type ProjectAccessLevel = (typeof PROJECT_ACCESS_LEVELS)[number];
+export const PROJECT_ROLES = ["ADMIN", "MEMBER", "VIEWER"] as const;
+export type ProjectRole = (typeof PROJECT_ROLES)[number];
+export type ProjectPermissions = {
+  canView: boolean;
+  /** Comment on work items (any role, but not workspace viewers). */
+  canComment: boolean;
+  canEdit: boolean;
+  canAdmin: boolean;
+};
+
+export const PROJECT_ACCESS_LABELS: Record<
+  ProjectAccessLevel,
+  { label: string; description: string }
+> = {
+  OPEN: {
+    label: "Open",
+    description:
+      "Anyone in your workspace can view, create and edit work items in this project.",
+  },
+  LIMITED: {
+    label: "Limited",
+    description:
+      "Anyone in your workspace can view and comment on work items. Only people added to the project can create and edit them.",
+  },
+  PRIVATE: {
+    label: "Private",
+    description:
+      "Only people added to this project and workspace owners can find and access it.",
+  },
+};
+
+export const PROJECT_ROLE_LABELS: Record<ProjectRole, { label: string; description: string }> = {
+  ADMIN: {
+    label: "Administrator",
+    description: "Can manage project settings, people, workflows, automation and work.",
+  },
+  MEMBER: {
+    label: "Member",
+    description: "Can create, edit and comment on work items.",
+  },
+  VIEWER: {
+    label: "Viewer",
+    description: "Can search, view and comment on work items.",
+  },
+};
+
+/** A person with explicit access to a project. */
+export type ProjectMemberEntry = {
+  userId: string;
+  name: string;
+  email: string;
+  image: string | null;
+  role: ProjectRole;
+  workspaceRole: string;
+  isLead: boolean;
+  addedAt: string;
 };
 
 export type NewProjectInput = {
@@ -177,6 +245,7 @@ export type NewProjectInput = {
   color: string | null;
   targetDate: string | null;
   boardType?: BoardType;
+  accessLevel?: ProjectAccessLevel;
 };
 
 export type ProjectUpdates = Partial<

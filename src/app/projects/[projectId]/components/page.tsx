@@ -13,7 +13,7 @@ import {
   PersonAvatar,
   useProjectPeople,
   useProjectResource,
-  useWorkspaceRole,
+  useProjectPermissions, useWorkspaceRole,
   type ProjectPerson,
 } from "../settings/adminUi";
 
@@ -201,9 +201,11 @@ function DeleteComponentBody({
 export default function ProjectComponentsPage() {
   const params = useParams<{ projectId: string }>();
   const projectId = params.projectId;
-  const { isViewer } = useWorkspaceRole();
+  const { isViewer: isWorkspaceViewer } = useWorkspaceRole();
+  const projectPermissions = useProjectPermissions(projectId);
+  const isViewer = isWorkspaceViewer || !projectPermissions.canAdmin;
   const { refreshIssues } = useIssues();
-  const { projects } = useProjects();
+  const { allProjects: projects } = useProjects();
   const projectKey = projects.find((project) => project.id === projectId)?.key;
   const people = useProjectPeople(projectId);
   const {

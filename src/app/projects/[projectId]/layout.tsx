@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
+  Archive,
   BarChart3,
   CalendarDays,
   Check,
@@ -14,6 +15,7 @@ import {
   LayoutGrid,
   Link2,
   List,
+  Lock,
   MoreHorizontal,
   Package,
   Puzzle,
@@ -26,6 +28,7 @@ import {
 import { useProjects } from "../../ProjectProvider";
 import { apiRequest } from "../../IssueProvider";
 import { ProjectAvatar } from "../../components/shell/ProjectAvatar";
+import { PROJECT_ACCESS_LABELS } from "../../data/projects";
 
 type ProjectTab = {
   label: string;
@@ -66,7 +69,7 @@ export default function ProjectLayout({
   const projectId = params.projectId;
   const pathname = usePathname();
   const router = useRouter();
-  const { projects, setActiveProjectId, refreshProjects } = useProjects();
+  const { allProjects: projects, setActiveProjectId, refreshProjects } = useProjects();
   const project = projects.find((candidate) => candidate.id === projectId);
   const [starOverride, setStarOverride] = useState<{ id: string; starred: boolean } | null>(
     null,
@@ -83,6 +86,8 @@ export default function ProjectLayout({
     return () => window.clearTimeout(timeout);
   }, [copiedAt]);
 
+  const canAdmin = project?.permissions?.canAdmin ?? false;
+  const isArchived = Boolean(project?.archivedAt);
   const base = `/projects/${projectId}`;
   const activeSegment = pathname.slice(base.length).split("/")[1] ?? "";
   const isSettingsRoute = activeSegment === "settings";
@@ -148,13 +153,15 @@ export default function ProjectLayout({
                 </DropdownMenu.Trigger>
                 <DropdownMenu.Portal>
                   <DropdownMenu.Content className="shell-menu" align="start" sideOffset={6}>
-                    <DropdownMenu.Item
-                      className="shell-menu-item"
-                      onSelect={() => router.push(`${base}/settings`)}
-                    >
-                      <Settings size={15} aria-hidden="true" />
-                      Project settings
-                    </DropdownMenu.Item>
+                    {canAdmin && (
+                      <DropdownMenu.Item
+                        className="shell-menu-item"
+                        onSelect={() => router.push(`${base}/settings`)}
+                      >
+                        <Settings size={15} aria-hidden="true" />
+                        Project settings
+                      </DropdownMenu.Item>
+                    )}
                     <DropdownMenu.Item
                       className="shell-menu-item"
                       onSelect={() => void copyLink("menu")}
@@ -168,6 +175,21 @@ export default function ProjectLayout({
               <span className="project-head-type">
                 {project.boardType === "KANBAN" ? "Kanban" : "Scrum"}
               </span>
+              {project.accessLevel && project.accessLevel !== "OPEN" && (
+                <span
+                  className="project-head-type pa-access-chip"
+                  title={PROJECT_ACCESS_LABELS[project.accessLevel].description}
+                >
+                  <Lock size={11} aria-hidden="true" />
+                  {PROJECT_ACCESS_LABELS[project.accessLevel].label}
+                </span>
+              )}
+              {isArchived && (
+                <span className="project-head-type pa-access-chip">
+                  <Archive size={11} aria-hidden="true" />
+                  Archived
+                </span>
+              )}
             </div>
             <div className="project-head-actions">
               <span className="project-head-status" role="status" aria-live="polite">
@@ -186,15 +208,17 @@ export default function ProjectLayout({
                 )}
                 <span className="project-head-button-label">Share</span>
               </button>
-              <Link
-                href={`${base}/settings?tab=automation`}
-                className="project-head-button"
-                aria-label="Automation"
-                title="Automation"
-              >
-                <Zap size={15} aria-hidden="true" />
-                <span className="project-head-button-label">Automation</span>
-              </Link>
+              {canAdmin && (
+                <Link
+                  href={`${base}/settings?tab=automation`}
+                  className="project-head-button"
+                  aria-label="Automation"
+                  title="Automation"
+                >
+                  <Zap size={15} aria-hidden="true" />
+                  <span className="project-head-button-label">Automation</span>
+                </Link>
+              )}
             </div>
           </div>
           {!isSettingsRoute && (
@@ -218,6 +242,12 @@ export default function ProjectLayout({
             </nav>
           )}
         </div>
+      )}
+      {project && isArchived && !isSettingsRoute && (
+        <p className="pa-archived-banner pa-archived-project" role="status">
+          This project is archived, so it&apos;s read-only.
+          {canAdmin ? " Restore it from Project settings → Danger zone." : ""}
+        </p>
       )}
       {children}
     </div>

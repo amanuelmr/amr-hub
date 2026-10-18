@@ -116,7 +116,8 @@ export type IssueActivityType =
   | "AUTOMATION"
   | "TEAM_CHANGED"
   | "GOAL_CHANGED"
-  | "CUSTOM_FIELD_CHANGED";
+  | "CUSTOM_FIELD_CHANGED"
+  | "ARCHIVE_CHANGED";
 
 export type IssueActivity = {
   id: string;
@@ -210,6 +211,8 @@ export type Issue = {
   startDate: string | null;
   rank: number;
   flagged: boolean;
+  /** Set when the work item is archived (hidden from boards and search). */
+  archivedAt?: string | null;
   resolution: IssueResolution | null;
   resolvedAt: string | null;
   environment: string | null;

@@ -260,7 +260,7 @@ function Breadcrumb({
   compact: boolean;
 }) {
   const { issues } = useIssues();
-  const { projects } = useProjects();
+  const { allProjects: projects } = useProjects();
   const project = projects.find((candidate) => candidate.id === issue.projectId);
   const parentInList = issue.parent
     ? issues.find((candidate) => candidate.id === issue.parent?.id)
@@ -327,13 +327,18 @@ export function IssueDetailView({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { issues, labels, cycles, members, removeIssue } = useIssues();
-  const { projects } = useProjects();
+  const { allProjects: projects } = useProjects();
   const { data: session } = authClient.useSession();
   const { data: activeMember } = authClient.useActiveMember();
   const role = activeMember?.role ?? "viewer";
-  const readOnly = role === "viewer";
   const isOwner = role === "owner";
   const currentUserId = session?.user.id ?? null;
+  const project = projects.find((candidate) => candidate.id === issue.projectId);
+  // Project access (Jira project roles) decides edit rights; fall back to the
+  // workspace role until the project list has loaded.
+  const permissions = project?.permissions;
+  const readOnly = permissions ? !permissions.canEdit : role === "viewer";
+  const canComment = permissions ? permissions.canComment : !readOnly;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [childComposerOpen, setChildComposerOpen] = useState(false);
@@ -408,9 +413,11 @@ export function IssueDetailView({
     [inPlace, pathname, searchParams],
   );
 
-  const project = projects.find((candidate) => candidate.id === issue.projectId);
-  const canDelete =
-    !readOnly && (isOwner || issue.creator?.id === currentUserId);
+  const canDelete = permissions
+    ? permissions.canAdmin ||
+      (permissions.canEdit && issue.creator?.id === currentUserId)
+    : !readOnly && (isOwner || issue.creator?.id === currentUserId);
+  const canArchive = permissions ? permissions.canAdmin : isOwner;
   const isPanel = variant === "panel";
 
   const transition = (status: IssueStatus, resolution?: IssueResolution) =>
@@ -604,6 +611,7 @@ export function IssueDetailView({
         issue={issue}
         canEdit={!readOnly}
         canDelete={canDelete}
+        canArchive={canArchive}
         controller={controller}
         onNavigate={navigateTo}
         onDeleted={handleDeleted}
@@ -697,6 +705,12 @@ export function IssueDetailView({
         draft={titleDraft}
         setDraft={setTitleDraft}
       />
+      {issue.archivedAt && (
+        <p className="pa-archived-banner" role="status">
+          This work item is archived. It&apos;s hidden from boards, backlogs and
+          search{canArchive ? "; unarchive it from the ••• menu." : "."}
+        </p>
+      )}
       {quickAdd}
       {errorBanner}
     </>
@@ -751,6 +765,7 @@ export function IssueDetailView({
       currentUserId={currentUserId}
       currentUserName={session?.user.name ?? null}
       readOnly={readOnly}
+      canComment={canComment}
       isOwner={isOwner}
       controller={controller}
       onEditWorklog={(worklog) => setWorklogDialog({ worklog })}

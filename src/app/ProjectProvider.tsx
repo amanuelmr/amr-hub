@@ -14,7 +14,10 @@ import { apiRequest } from "./IssueProvider";
 const ACTIVE_PROJECT_STORAGE_KEY = "amr-hub:active-project-id";
 
 type ProjectContextValue = {
+  /** Projects the user can see, without archived ones (pickers, sidebar). */
   projects: Project[];
+  /** Every visible project, archived ones included (project pages by id). */
+  allProjects: Project[];
   activeProjectId: string | null;
   isLoading: boolean;
   setActiveProjectId: (id: string | null) => void;
@@ -30,7 +33,11 @@ function messageFrom(error: unknown, fallback: string) {
 }
 
 export function ProjectProvider({ children }: { children: React.ReactNode }) {
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [allProjects, setProjects] = useState<Project[]>([]);
+  const projects = useMemo(
+    () => allProjects.filter((project) => !project.archivedAt),
+    [allProjects],
+  );
   const [activeProjectId, setActiveProjectIdState] = useState<string | null>(
     null,
   );
@@ -53,12 +60,13 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       if (current && loaded.some((project) => project.id === current)) {
         return current;
       }
+      const active = loaded.filter((project) => !project.archivedAt);
       const stored =
         typeof window !== "undefined"
           ? window.localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY)
           : null;
-      const restored = loaded.find((project) => project.id === stored);
-      return (restored ?? loaded[0])?.id ?? null;
+      const restored = active.find((project) => project.id === stored);
+      return (restored ?? active[0])?.id ?? null;
     });
   }, []);
 
@@ -67,7 +75,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     setError(null);
 
     try {
-      applyLoadedProjects(await apiRequest<Project[]>("/api/projects"));
+      applyLoadedProjects(await apiRequest<Project[]>("/api/projects?archived=include"));
     } catch (requestError) {
       setError(messageFrom(requestError, "Projects could not be loaded"));
     } finally {
@@ -78,7 +86,9 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const controller = new AbortController();
 
-    apiRequest<Project[]>("/api/projects", { signal: controller.signal })
+    apiRequest<Project[]>("/api/projects?archived=include", {
+      signal: controller.signal,
+    })
       .then(applyLoadedProjects)
       .catch((requestError) => {
         if (!controller.signal.aborted) {
@@ -142,6 +152,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo(
     () => ({
       projects,
+      allProjects,
       activeProjectId,
       isLoading,
       setActiveProjectId,
@@ -151,6 +162,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       projects,
+      allProjects,
       activeProjectId,
       isLoading,
       setActiveProjectId,

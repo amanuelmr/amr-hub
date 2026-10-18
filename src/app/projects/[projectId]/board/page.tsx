@@ -266,9 +266,14 @@ export default function ProjectBoardPage() {
     isLoading,
     createIssue,
   } = useIssues();
-  const { projects } = useProjects();
+  const { allProjects: projects } = useProjects();
   const { data: activeMember } = authClient.useActiveMember();
-  const isViewer = activeMember?.role === "viewer";
+  // Read-only for workspace viewers and for people without edit access to
+  // this project (Limited/Private projects, project Viewer role, archived).
+  const isViewer =
+    activeMember?.role === "viewer" ||
+    projects.find((candidate) => candidate.id === projectId)?.permissions
+      ?.canEdit === false;
   const meId = activeMember?.id ?? null;
   const planning = usePlanningActions();
   const { open: openIssue } = useSelectedIssue();

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { CircleAlert } from "lucide-react";
 import { authClient } from "../../lib/auth-client";
 import { ChipMultiSelect } from "./issue/ChipMultiSelect";
@@ -71,7 +71,15 @@ export function CreateIssueForm({
   const { data: activeMember } = authClient.useActiveMember();
   const [statusChoice, setStatus] = useState<IssueStatus>("OPEN");
   const { createIssue, issues, labels, cycles, members } = useIssues();
-  const { projects, activeProjectId } = useProjects();
+  const { projects: allVisible, activeProjectId: storedActiveId } = useProjects();
+  // Only projects the user can create work in (Jira's "Create issues" permission).
+  const projects = useMemo(
+    () => allVisible.filter((project) => project.permissions?.canEdit !== false),
+    [allVisible],
+  );
+  const activeProjectId = projects.some((project) => project.id === storedActiveId)
+    ? storedActiveId
+    : null;
   const defaultParent = defaults?.parentId
     ? issues.find((issue) => issue.id === defaults.parentId)
     : null;

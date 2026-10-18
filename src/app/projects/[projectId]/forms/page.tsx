@@ -11,7 +11,7 @@ import {
   AdminDialog,
   errorMessage,
   useProjectResource,
-  useWorkspaceRole,
+  useProjectPermissions, useWorkspaceRole,
 } from "../settings/adminUi";
 import type { IntakeForm } from "../../../components/forms/formModel";
 
@@ -19,7 +19,9 @@ export default function ProjectFormsPage() {
   const params = useParams<{ projectId: string }>();
   const projectId = params.projectId;
   const router = useRouter();
-  const { isViewer } = useWorkspaceRole();
+  const { isViewer: isWorkspaceViewer } = useWorkspaceRole();
+  const projectPermissions = useProjectPermissions(projectId);
+  const isViewer = isWorkspaceViewer || !projectPermissions.canAdmin;
   const { items: forms, setItems, isLoading, error } = useProjectResource<IntakeForm>(
     projectId,
     "forms",

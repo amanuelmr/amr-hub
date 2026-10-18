@@ -169,7 +169,7 @@ export default function ProjectSummaryPage() {
 function ProjectSummary() {
   const params = useParams<{ projectId: string }>();
   const projectId = params.projectId;
-  const { projects, isLoading: isLoadingProjects } = useProjects();
+  const { allProjects: projects, isLoading: isLoadingProjects } = useProjects();
   const { issues: allIssues, isLoading: isLoadingIssues } = useIssues();
   const pathname = usePathname();
   const searchParams = useSearchParams();

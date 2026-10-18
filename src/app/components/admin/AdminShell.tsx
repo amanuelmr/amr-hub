@@ -9,6 +9,7 @@ import {
   KeyRound,
   ListPlus,
   ScrollText,
+  Trash2,
   Upload,
   Webhook,
 } from "lucide-react";
@@ -24,6 +25,7 @@ const NAV = [
   { href: "/admin/webhooks", label: "Webhooks", icon: Webhook, ownerOnly: true },
   { href: "/admin/import", label: "Import", icon: Upload, ownerOnly: false },
   { href: "/admin/export", label: "Export", icon: Download, ownerOnly: false },
+  { href: "/admin/trash", label: "Trash", icon: Trash2, ownerOnly: true },
 ];
 
 export function AdminShell({ children }: { children: ReactNode }) {

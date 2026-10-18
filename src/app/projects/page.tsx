@@ -2,14 +2,28 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { FolderKanban, MoreHorizontal, Plus, Search, Star } from "lucide-react";
+import {
+  Archive,
+  FolderKanban,
+  Lock,
+  LockKeyhole,
+  MoreHorizontal,
+  Plus,
+  Search,
+  Star,
+} from "lucide-react";
 import { apiRequest } from "../IssueProvider";
 import { useProjects } from "../ProjectProvider";
 import { authClient } from "../../lib/auth-client";
 import { WorkspaceLoading } from "../components/WorkspaceLoading";
-import { PROJECT_STATUS_LABELS, type Project } from "../data/projects";
+import {
+  PROJECT_ACCESS_LABELS,
+  PROJECT_STATUS_LABELS,
+  type Project,
+} from "../data/projects";
 
 type TypeFilter = "ALL" | "SCRUM" | "KANBAN";
+type StateFilter = "ACTIVE" | "ARCHIVED";
 
 function sortProjects(projects: Project[], starred: Record<string, boolean>) {
   return [...projects].sort((left, right) => {
@@ -21,7 +35,16 @@ function sortProjects(projects: Project[], starred: Record<string, boolean>) {
 }
 
 export default function ProjectsPage() {
-  const { projects, isLoading } = useProjects();
+  const { projects: activeProjects, allProjects, isLoading } = useProjects();
+  const [stateFilter, setStateFilter] = useState<StateFilter>("ACTIVE");
+  const archivedCount = allProjects.length - activeProjects.length;
+  const projects = useMemo(
+    () =>
+      stateFilter === "ARCHIVED"
+        ? allProjects.filter((project) => project.archivedAt)
+        : activeProjects,
+    [stateFilter, allProjects, activeProjects],
+  );
   const { data: activeMember } = authClient.useActiveMember();
   const isViewer = activeMember?.role === "viewer";
   const [query, setQuery] = useState("");
@@ -64,7 +87,7 @@ export default function ProjectsPage() {
     }
   };
 
-  if (isLoading && projects.length === 0) {
+  if (isLoading && allProjects.length === 0) {
     return <WorkspaceLoading label="projects" />;
   }
 
@@ -85,7 +108,7 @@ export default function ProjectsPage() {
         )}
       </header>
 
-      {projects.length === 0 ? (
+      {allProjects.length === 0 ? (
         <div className="empty-state">
           <FolderKanban size={24} aria-hidden="true" />
           <h2>No projects yet</h2>
@@ -121,6 +144,20 @@ export default function ProjectsPage() {
                 <option value="ALL">All project types</option>
                 <option value="SCRUM">Scrum</option>
                 <option value="KANBAN">Kanban</option>
+              </select>
+            </label>
+            <label className="jira-toolbar-select">
+              <span className="sr-only">Project state</span>
+              <select
+                value={stateFilter}
+                onChange={(event) =>
+                  setStateFilter(event.target.value as StateFilter)
+                }
+              >
+                <option value="ACTIVE">Active projects</option>
+                <option value="ARCHIVED">
+                  Archived projects{archivedCount ? ` (${archivedCount})` : ""}
+                </option>
               </select>
             </label>
           </div>
@@ -185,6 +222,29 @@ export default function ProjectsPage() {
                             {project.key.slice(0, 2)}
                           </span>
                           {project.name}
+                          {project.accessLevel === "PRIVATE" && (
+                            <Lock
+                              size={13}
+                              className="pac-lock"
+                              aria-label="Private project"
+                            >
+                              <title>{PROJECT_ACCESS_LABELS.PRIVATE.description}</title>
+                            </Lock>
+                          )}
+                          {project.accessLevel === "LIMITED" && (
+                            <LockKeyhole
+                              size={13}
+                              className="pac-lock"
+                              aria-label="Limited project"
+                            >
+                              <title>{PROJECT_ACCESS_LABELS.LIMITED.description}</title>
+                            </LockKeyhole>
+                          )}
+                          {project.archivedAt && (
+                            <span className="pac-tag">
+                              <Archive size={11} aria-hidden="true" /> Archived
+                            </span>
+                          )}
                         </Link>
                       </td>
                       <td className="jira-table-key">{project.key}</td>
@@ -229,7 +289,7 @@ export default function ProjectsPage() {
                             >
                               Open board
                             </Link>
-                            {!isViewer && (
+                            {project.permissions?.canAdmin && (
                               <Link
                                 role="menuitem"
                                 href={`/projects/${project.id}/settings`}
@@ -247,7 +307,9 @@ export default function ProjectsPage() {
             </table>
             {visible.length === 0 && (
               <p className="activity-empty">
-                No projects match your search.
+                {stateFilter === "ARCHIVED" && projects.length === 0
+                  ? "No projects are archived."
+                  : "No projects match your search."}
               </p>
             )}
           </div>

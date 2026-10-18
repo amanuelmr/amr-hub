@@ -10,7 +10,7 @@ import { REPORTS, REPORT_GROUPS } from "../../../components/reports/registry";
 
 export default function ProjectReportsPage() {
   const { projectId } = useParams<{ projectId: string }>();
-  const { projects, isLoading } = useProjects();
+  const { allProjects: projects, isLoading } = useProjects();
   const project = projects.find((candidate) => candidate.id === projectId);
   const [query, setQuery] = useState("");
 

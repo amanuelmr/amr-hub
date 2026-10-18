@@ -410,6 +410,7 @@ export function IssueActivityTabs({
   currentUserId,
   currentUserName,
   readOnly,
+  canComment = !readOnly,
   isOwner,
   controller,
   onEditWorklog,
@@ -421,6 +422,8 @@ export function IssueActivityTabs({
   currentUserId: string | null;
   currentUserName: string | null;
   readOnly: boolean;
+  /** Limited projects let non-members comment without editing. */
+  canComment?: boolean;
   isOwner: boolean;
   controller: IssueDetailController;
   onEditWorklog: (worklog: Worklog | null) => void;
@@ -443,7 +446,7 @@ export function IssueActivityTabs({
   };
 
   useEffect(() => {
-    if (readOnly) return;
+    if (!canComment) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "m" && event.key !== "M") return;
       if (
@@ -471,7 +474,7 @@ export function IssueActivityTabs({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [readOnly]);
+  }, [canComment]);
 
   const comments = sortByDate(issue.comments ?? [], order);
   const history = sortByDate(
@@ -523,9 +526,9 @@ export function IssueActivityTabs({
       issueId={issue.id}
       comment={item}
       members={members}
-      canEdit={!readOnly && item.authorId === currentUserId}
-      canDelete={!readOnly && (isOwner || item.authorId === currentUserId)}
-      canReact={!readOnly}
+      canEdit={canComment && item.authorId === currentUserId}
+      canDelete={canComment && (isOwner || item.authorId === currentUserId)}
+      canReact={canComment}
       currentUserId={currentUserId}
       controller={controller}
       onUploadImages={onUploadImages}
@@ -543,7 +546,7 @@ export function IssueActivityTabs({
     />
   );
 
-  const composer = !readOnly && (
+  const composer = canComment && (
     <CommentComposer
       issueId={issue.id}
       members={members}

@@ -56,6 +56,7 @@ const activityVisuals: Record<
   TEAM_CHANGED: { icon: UserRound, tone: "blue" },
   GOAL_CHANGED: { icon: CircleDot, tone: "green" },
   CUSTOM_FIELD_CHANGED: { icon: PencilLine, tone: "blue" },
+  ARCHIVE_CHANGED: { icon: PencilLine, tone: "neutral" },
 };
 
 export function WorkspaceActivity({

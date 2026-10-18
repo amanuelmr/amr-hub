@@ -37,6 +37,7 @@ import {
   Settings2,
   Signal,
   Trash2,
+  Archive,
   TriangleAlert,
   UserRound,
   X,
@@ -223,7 +224,7 @@ function BulkDeleteDialog({
       open
       onOpenChange={(open) => !open && onClose()}
       title={`Delete ${count} work items?`}
-      description="You're about to permanently delete these work items and all of their data. This can't be undone."
+      description="These work items and their subtasks move to the trash. Project admins can restore them for 60 days before they're deleted permanently."
     >
       <form
         onSubmit={async (event) => {
@@ -405,10 +406,18 @@ export default function ProjectBacklogPage() {
     replaceIssue,
     removeIssue,
   } = useIssues();
-  const { projects } = useProjects();
+  const { allProjects: projects } = useProjects();
   const { data: activeMember } = authClient.useActiveMember();
-  const isViewer = activeMember?.role === "viewer";
+  // Read-only for workspace viewers and for people without edit access to
+  // this project (Limited/Private projects, project Viewer role, archived).
+  const isViewer =
+    activeMember?.role === "viewer" ||
+    projects.find((candidate) => candidate.id === projectId)?.permissions
+      ?.canEdit === false;
   const isOwner = activeMember?.role === "owner";
+  const canAdminProject =
+    projects.find((candidate) => candidate.id === projectId)?.permissions
+      ?.canAdmin === true;
   const meId = activeMember?.id ?? null;
   const planning = usePlanningActions();
   const workflow = useWorkflow(projectId);
@@ -702,7 +711,8 @@ export default function ProjectBacklogPage() {
       | { operation: "assign"; value: string | null }
       | { operation: "priority"; value: IssuePriority }
       | { operation: "flag"; value: boolean }
-      | { operation: "delete" },
+      | { operation: "delete" }
+      | { operation: "archive"; value: boolean },
   ) => {
     planning.setError(null);
     const issueIds = orderedSelection;
@@ -713,7 +723,9 @@ export default function ProjectBacklogPage() {
       );
       for (const result of results) {
         if (!result.ok) continue;
-        if (body.operation === "delete") removeIssue(result.id);
+        if (body.operation === "delete" || body.operation === "archive") {
+          removeIssue(result.id);
+        }
         else if (result.issue) replaceIssue(result.issue);
       }
       const failed = results.filter((result) => !result.ok);
@@ -723,10 +735,10 @@ export default function ProjectBacklogPage() {
         );
       } else {
         setNotice(
-          `${results.length} ${results.length === 1 ? "work item" : "work items"} ${body.operation === "delete" ? "deleted" : "updated"}`,
+          `${results.length} ${results.length === 1 ? "work item" : "work items"} ${body.operation === "delete" ? "moved to trash" : body.operation === "archive" ? "archived" : "updated"}`,
         );
       }
-      if (body.operation === "delete") setSelected([]);
+      if (body.operation === "delete" || body.operation === "archive") setSelected([]);
     } catch (error) {
       const text =
         error instanceof Error ? error.message : "The bulk change failed";
@@ -1080,7 +1092,16 @@ export default function ProjectBacklogPage() {
                   <FlagOff size={14} aria-hidden="true" />
                   Remove flag
                 </DropdownMenu.Item>
-                {isOwner && (
+                {canAdminProject && (
+                  <DropdownMenu.Item
+                    className="planning-menu-item"
+                    onSelect={() => void runBulk({ operation: "archive", value: true })}
+                  >
+                    <Archive size={14} aria-hidden="true" />
+                    Archive
+                  </DropdownMenu.Item>
+                )}
+                {(isOwner || canAdminProject) && (
                   <>
                     <DropdownMenu.Separator className="planning-menu-separator" />
                     <DropdownMenu.Item

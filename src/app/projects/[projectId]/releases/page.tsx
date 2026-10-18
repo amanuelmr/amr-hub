@@ -19,7 +19,7 @@ import {
   formatDay,
   toDateInput,
   useProjectResource,
-  useWorkspaceRole,
+  useProjectPermissions, useWorkspaceRole,
 } from "../settings/adminUi";
 import {
   isVersionOverdue,
@@ -257,7 +257,9 @@ function MoveIssuesDialogBody({
 export default function ProjectReleasesPage() {
   const params = useParams<{ projectId: string }>();
   const projectId = params.projectId;
-  const { isViewer } = useWorkspaceRole();
+  const { isViewer: isWorkspaceViewer } = useWorkspaceRole();
+  const projectPermissions = useProjectPermissions(projectId);
+  const isViewer = isWorkspaceViewer || !projectPermissions.canEdit;
   const { refreshIssues } = useIssues();
   const {
     items: versions,

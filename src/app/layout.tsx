@@ -20,6 +20,7 @@ import "./styles/landing.css";
 import "./styles/custom-fields.css";
 import "./styles/notifications.css";
 import "./styles/automation.css";
+import "./styles/project-access.css";
 import { AppShell } from "./AppShell";
 
 export const metadata: Metadata = {

@@ -14,7 +14,9 @@ import { useProjects } from "../../../ProjectProvider";
 import { WorkspaceLoading } from "../../../components/WorkspaceLoading";
 import { AutomationSettings } from "./AutomationSettings";
 import { BoardSettings } from "./BoardSettings";
+import { AccessSettings } from "./AccessSettings";
 import { DangerZone } from "./DangerZone";
+import { ArchivedIssuesSettings, TrashSettings } from "./TrashSettings";
 import { DetailsSettings } from "./DetailsSettings";
 import { FieldSettings } from "./FieldSettings";
 import { WorkflowSettings } from "./WorkflowSettings";
@@ -23,12 +25,15 @@ import { useProjectPeople, useWorkspaceRole } from "./adminUi";
 
 const SECTIONS = [
   { value: "details", label: "Details" },
+  { value: "access", label: "Access", adminOnly: true },
   { value: "types", label: "Work types" },
   { value: "fields", label: "Fields" },
   { value: "workflow", label: "Workflow" },
   { value: "board", label: "Board" },
-  { value: "automation", label: "Automation" },
-  { value: "danger", label: "Danger zone" },
+  { value: "automation", label: "Automation", adminOnly: true },
+  { value: "archived", label: "Archived work items", adminOnly: true },
+  { value: "trash", label: "Trash", adminOnly: true },
+  { value: "danger", label: "Danger zone", adminOnly: true },
 ] as const;
 
 type SectionValue = (typeof SECTIONS)[number]["value"];
@@ -48,15 +53,22 @@ export default function ProjectSettingsPage() {
 function ProjectSettings() {
   const params = useParams<{ projectId: string }>();
   const projectId = params.projectId;
-  const { projects, isLoading } = useProjects();
-  const { isViewer, isOwner } = useWorkspaceRole();
+  const { allProjects: projects, isLoading } = useProjects();
+  const { isViewer } = useWorkspaceRole();
   const people = useProjectPeople(projectId);
   const project = projects.find((candidate) => candidate.id === projectId);
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab");
-  const activeTab: SectionValue = isSection(tabParam) ? tabParam : "details";
+  // Jira: only project administrators manage settings; others read them.
+  const canAdmin = project?.permissions?.canAdmin ?? false;
+  const readOnly = !canAdmin || isViewer;
+  const sections = SECTIONS.filter((section) => canAdmin || !("adminOnly" in section));
+  const activeTab: SectionValue =
+    isSection(tabParam) && sections.some((section) => section.value === tabParam)
+      ? tabParam
+      : "details";
 
   const selectTab = (value: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -111,7 +123,7 @@ function ProjectSettings() {
             </span>
           </div>
           <Tabs.List className="pa-settings-nav" aria-label="Settings sections">
-            {SECTIONS.map((section) => (
+            {sections.map((section) => (
               <Tabs.Trigger
                 key={section.value}
                 value={section.value}
@@ -131,9 +143,9 @@ function ProjectSettings() {
           <header className="jira-page-header">
             <div>
               <h1 className="jira-page-title">Project settings</h1>
-              {isViewer && (
+              {readOnly && (
                 <p className="jira-page-subtitle">
-                  Viewers can see settings but not change them.
+                  Only project administrators can change these settings.
                 </p>
               )}
             </div>
@@ -144,20 +156,20 @@ function ProjectSettings() {
               key={`${project.id}-details`}
               project={project}
               people={people}
-              readOnly={isViewer}
+              readOnly={readOnly}
             />
           </Tabs.Content>
           <Tabs.Content value="types" className="panel pa-settings-panel">
             <h2>Work types</h2>
-            <WorkTypeSettings projectId={project.id} readOnly={isViewer} />
+            <WorkTypeSettings projectId={project.id} readOnly={readOnly} />
           </Tabs.Content>
           <Tabs.Content value="fields" className="panel pa-settings-panel">
             <h2>Fields</h2>
-            <FieldSettings projectId={project.id} readOnly={isViewer} />
+            <FieldSettings projectId={project.id} readOnly={readOnly} />
           </Tabs.Content>
           <Tabs.Content value="workflow" className="panel pa-settings-panel">
             <h2>Workflow</h2>
-            <WorkflowSettings projectId={project.id} readOnly={isViewer} />
+            <WorkflowSettings projectId={project.id} readOnly={readOnly} />
           </Tabs.Content>
           <Tabs.Content value="board" className="panel pa-settings-panel">
             <h2>Board</h2>
@@ -165,17 +177,33 @@ function ProjectSettings() {
               // Remount when the server changes the mapping (e.g. a new status).
               key={`${project.id}-board-${JSON.stringify(project.boardConfig)}`}
               project={project}
-              readOnly={isViewer}
+              readOnly={readOnly}
             />
           </Tabs.Content>
-          <Tabs.Content value="automation" className="panel pa-settings-panel">
-            <h2>Automation</h2>
-            <AutomationSettings projectId={project.id} readOnly={isViewer} />
-          </Tabs.Content>
-          <Tabs.Content value="danger" className="panel pa-settings-panel">
-            <h2>Danger zone</h2>
-            <DangerZone project={project} isOwner={isOwner} />
-          </Tabs.Content>
+          {canAdmin && (
+            <>
+              <Tabs.Content value="access" className="panel pa-settings-panel">
+                <h2>Access</h2>
+                <AccessSettings project={project} />
+              </Tabs.Content>
+              <Tabs.Content value="automation" className="panel pa-settings-panel">
+                <h2>Automation</h2>
+                <AutomationSettings projectId={project.id} readOnly={readOnly} />
+              </Tabs.Content>
+              <Tabs.Content value="archived" className="panel pa-settings-panel">
+                <h2>Archived work items</h2>
+                <ArchivedIssuesSettings projectId={project.id} />
+              </Tabs.Content>
+              <Tabs.Content value="trash" className="panel pa-settings-panel">
+                <h2>Trash</h2>
+                <TrashSettings projectId={project.id} />
+              </Tabs.Content>
+              <Tabs.Content value="danger" className="panel pa-settings-panel">
+                <h2>Danger zone</h2>
+                <DangerZone project={project} canAdmin={canAdmin} />
+              </Tabs.Content>
+            </>
+          )}
         </div>
       </Tabs.Root>
     </div>

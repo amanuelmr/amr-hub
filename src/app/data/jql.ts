@@ -64,6 +64,7 @@ export type BuiltinJqlField =
   | "due"
   | "startdate"
   | "flagged"
+  | "archived"
   | "watcher"
   | "resolution"
   | "storypoints"
@@ -210,6 +211,7 @@ export const JQL_FIELD_SPECS: Record<BuiltinJqlField, FieldSpec> = {
   due: { name: "due", type: "date", operators: ORD, sortable: true },
   startdate: { name: "startDate", type: "date", operators: ORD, sortable: true },
   flagged: { name: "flagged", type: "flag", operators: EQ, sortable: true },
+  archived: { name: "archived", type: "flag", operators: EQ, sortable: true },
   watcher: { name: "watcher", type: "user", operators: EQ, sortable: false },
   resolution: { name: "resolution", type: "enum", operators: EQ, sortable: true },
   storypoints: { name: "\"story points\"", type: "number", operators: ORD, sortable: true },
@@ -260,6 +262,7 @@ const FIELD_ALIASES: Record<string, BuiltinJqlField> = {
   duedate: "due",
   startdate: "startdate",
   flagged: "flagged",
+  archived: "archived",
   watcher: "watcher",
   watchers: "watcher",
   resolution: "resolution",
@@ -1251,6 +1254,8 @@ function isFieldEmpty(field: JqlField, issue: Issue, ctx: JqlContext): boolean {
       return !issueDate(field, issue);
     case "flagged":
       return !issue.flagged;
+    case "archived":
+      return !issue.archivedAt;
     case "watcher":
       return (issue.watcherIds ?? []).length === 0;
     case "resolution":
@@ -1337,6 +1342,10 @@ function literalMatches(
       const wanted = value.toLowerCase();
       const truthy = ["true", "yes", "impediment", "1", "flagged"].includes(wanted);
       return truthy ? issue.flagged : !issue.flagged;
+    }
+    case "archived": {
+      const truthy = ["true", "yes", "1", "archived"].includes(value.toLowerCase());
+      return truthy ? Boolean(issue.archivedAt) : !issue.archivedAt;
     }
     case "resolution":
       if (norm(value) === "unresolved") return !issue.resolution;
@@ -1816,6 +1825,8 @@ function sortValue(field: JqlField, issue: Issue, ctx: JqlContext): SortValue {
     }
     case "flagged":
       return issue.flagged ? 1 : 0;
+    case "archived":
+      return issue.archivedAt ? 1 : 0;
     case "resolution":
       return issue.resolution ? RESOLUTION_LABELS[issue.resolution].toLowerCase() : null;
     case "storypoints":
@@ -2049,6 +2060,7 @@ const SUGGESTED_FIELDS: { label: string; field: BuiltinJqlField }[] = [
   { label: "resolved", field: "resolved" },
   { label: "due", field: "due" },
   { label: "flagged", field: "flagged" },
+  { label: "archived", field: "archived" },
   { label: "watcher", field: "watcher" },
   { label: "resolution", field: "resolution" },
   { label: "\"story points\"", field: "storypoints" },
@@ -2159,6 +2171,7 @@ function valueSuggestions(field: JqlField, source: JqlSuggestionSource): JqlSugg
     case "resolution":
       return values(["Unresolved", ...Object.values(RESOLUTION_LABELS)]);
     case "flagged":
+    case "archived":
       return values(["true", "false"]);
     case "created":
     case "updated":
