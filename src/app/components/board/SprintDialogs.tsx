@@ -8,7 +8,7 @@ import { CircleAlert, X } from "lucide-react";
 import type { Cycle, Issue } from "../../data/issues";
 import { addDaysToDateInput, pointBreakdown, toDateInput } from "./boardModel";
 
-function PlanningDialog({
+export function PlanningDialog({
   open,
   onOpenChange,
   title,
@@ -48,7 +48,7 @@ function PlanningDialog({
   );
 }
 
-function FormError({ error }: { error: string | null }) {
+export function FormError({ error }: { error: string | null }) {
   if (!error) return null;
   return (
     <p className="form-submit-error" role="alert">
@@ -62,7 +62,7 @@ function errorText(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
-function DialogFooter({
+export function DialogFooter({
   onCancel,
   submitLabel,
   isSubmitting,

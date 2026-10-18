@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
@@ -27,7 +27,9 @@ import {
   ChevronRight,
   CircleAlert,
   Clock,
+  Lightbulb,
   MoreHorizontal,
+  Package,
   Plus,
   Rows3,
   Settings2,
@@ -42,7 +44,24 @@ import {
   BoardCardBody,
   SortableBoardCard,
   type CardAction,
+  type CardDisplay,
 } from "../../../components/board/BoardCard";
+import {
+  useIssueMenuActions,
+  type MoveDestination,
+} from "../../../components/board/IssueActions";
+import { KanbanReleaseDialog } from "../../../components/board/KanbanRelease";
+import { InsightsPanel } from "../../../components/board/InsightsPanel";
+import {
+  activeSprintsOf,
+  cardColorFor,
+  compileQueries,
+  groupQueryLanes,
+  isHiddenKanbanDone,
+  matchesQuickFilters,
+  visibleSprintIds,
+} from "../../../components/board/boardRules";
+import { useJqlContext } from "../../../components/search/useJqlContext";
 import {
   AssigneeStack,
   EpicFilter,
@@ -50,6 +69,7 @@ import {
   FilterMenu,
   MenuLabel,
   PlanningSearch,
+  QuickFilterButtons,
   TypeFilter,
   hasActiveFilters,
   toggleValue,
@@ -59,6 +79,7 @@ import { usePlanningActions } from "../../../components/board/sprintApi";
 import { useWorkflow } from "../../../WorkflowProvider";
 import {
   allowedTransitions,
+  isDoneStatus,
   isEpicLevel,
   statusName,
 } from "../../../data/workflow";
@@ -66,7 +87,6 @@ import {
   BOARD_CREATE_DESCRIPTION,
   EMPTY_FILTERS,
   UNASSIGNED,
-  activeSprintOf,
   columnForStatus,
   compareRank,
   computeDropTarget,
@@ -98,6 +118,7 @@ const GROUP_OPTIONS: { value: BoardSwimlanes; label: string }[] = [
   { value: "ASSIGNEE", label: "Assignee" },
   { value: "EPIC", label: "Epic" },
   { value: "PRIORITY", label: "Priority" },
+  { value: "QUERY", label: "Queries" },
 ];
 
 
@@ -244,7 +265,6 @@ export default function ProjectBoardPage() {
     labels,
     isLoading,
     createIssue,
-    updateIssue,
   } = useIssues();
   const { projects } = useProjects();
   const { data: activeMember } = authClient.useActiveMember();
@@ -266,8 +286,24 @@ export default function ProjectBoardPage() {
     () => new Set(),
   );
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [isCompleteOpen, setIsCompleteOpen] = useState(false);
+  const [completeSprintId, setCompleteSprintId] = useState<string | null>(null);
+  const [chosenSprintIds, setChosenSprintIds] = useState<string[]>([]);
+  const [isReleaseOpen, setIsReleaseOpen] = useState(false);
+  const [showInsights, setShowInsights] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const justDragged = useRef(false);
+  const [now] = useState(() => new Date());
+  const jqlContext = useJqlContext(now);
+  const issueActions = useIssueMenuActions({
+    onError: (text) => planning.setError(text),
+    onNotice: setNotice,
+  });
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 2500);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -279,9 +315,26 @@ export default function ProjectBoardPage() {
   const project = projects.find((candidate) => candidate.id === projectId);
   const boardType = project?.boardType ?? "SCRUM";
   const config = project?.boardConfig ?? DEFAULT_BOARD_CONFIG;
-  const swimlanes = swimlaneChoice ?? config.swimlanes;
   const columns = resolveBoardColumns(config, boardType);
-  const activeSprint = activeSprintOf(cycles, projectId);
+  const quickFilters = compileQueries(config.quickFilters, now);
+  const laneQueries = compileQueries(config.swimlaneQueries, now);
+  const colorQueries = compileQueries(config.cardColors.queries, now);
+  const groupOptions = GROUP_OPTIONS.filter(
+    (option) => option.value !== "QUERY" || laneQueries.length > 0,
+  );
+  const swimlaneWanted = swimlaneChoice ?? config.swimlanes;
+  const swimlanes: BoardSwimlanes =
+    swimlaneWanted === "QUERY" && laneQueries.length === 0
+      ? "NONE"
+      : swimlaneWanted;
+
+  const activeSprints = activeSprintsOf(cycles, projectId);
+  const shownSprintIds = visibleSprintIds(activeSprints, chosenSprintIds);
+  const shownSprints = activeSprints.filter((sprint) =>
+    shownSprintIds.includes(sprint.id),
+  );
+  const activeSprint = shownSprints[0] ?? null;
+  const futureSprints = futureSprintsOf(cycles, projectId);
 
   const projectIssues = planning
     .applyOverrides(allIssues.filter((issue) => issue.projectId === projectId))
@@ -290,22 +343,37 @@ export default function ProjectBoardPage() {
   const boardKinds: IssueKind[] = workflow.types
     .filter((type) => type.level === 0)
     .map((type) => type.key);
+  const typeColor = (kind: string) =>
+    workflow.types.find((type) => type.key === kind)?.color ?? null;
 
   const boardIssues = projectIssues.filter((issue) => {
     if (!isPlanningIssue(issue)) return false;
     if (boardType === "SCRUM") {
-      return !!activeSprint && issue.cycleId === activeSprint.id;
+      return !!issue.cycleId && shownSprintIds.includes(issue.cycleId);
     }
-    return true;
+    return !isHiddenKanbanDone(issue, config.kanbanDoneDays, now);
   });
 
   const columnOf = (issue: Issue) =>
     columnForStatus(columns, issue.status, boardType);
   const onBoard = boardIssues.filter((issue) => columnOf(issue) !== null);
-  const visible = onBoard.filter((issue) =>
-    matchesFilters(issue, filters, meId),
+  const visible = onBoard.filter(
+    (issue) =>
+      matchesFilters(issue, filters, meId) &&
+      matchesQuickFilters(issue, filters.quickFilterIds, quickFilters, jqlContext),
   );
-  const lanes = groupLanes(visible, swimlanes, members);
+  const lanes =
+    swimlanes === "QUERY"
+      ? groupQueryLanes(visible, laneQueries, jqlContext)
+      : groupLanes(visible, swimlanes, members);
+  const displayOf = (issue: Issue): CardDisplay => ({
+    fields: config.cardFields,
+    color: cardColorFor(issue, config.cardColors, {
+      ctx: jqlContext,
+      compiled: colorQueries,
+      typeColor,
+    }),
+  });
 
   const boardMembers = members.filter((member) =>
     onBoard.some((issue) => issue.assignee?.id === member.id),
@@ -405,17 +473,45 @@ export default function ProjectBoardPage() {
     void moveIssue(issue, targetColumn, target);
   };
 
+  /** Sprints and the backlog a board card can move to (Scrum only). */
+  const destinationsFor = (issue: Issue): MoveDestination[] =>
+    boardType === "SCRUM"
+      ? [
+          ...activeSprints,
+          ...futureSprints,
+        ]
+          .filter((sprint) => sprint.id !== issue.cycleId)
+          .map<MoveDestination>((sprint) => ({ id: sprint.id, label: sprint.name }))
+          .concat([{ id: null, label: "Backlog" }])
+      : [];
+
+  const moveToSprint = (issue: Issue, cycleId: string | null) => {
+    const last = projectIssues
+      .filter(
+        (candidate) =>
+          candidate.cycleId === cycleId &&
+          candidate.id !== issue.id &&
+          isPlanningIssue(candidate),
+      )
+      .at(-1);
+    const rank = last ? last.rank + 1 : issue.rank;
+    void planning.rank(
+      { issueIds: [issue.id], afterId: last?.id, cycleId },
+      new Map([[issue.id, { rank, cycleId }]]),
+    );
+  };
+
   const handleCardAction = (issue: Issue, action: CardAction) => {
-    if (action === "open") {
+    if (action.type === "open") {
       openIssue(issue.id);
       return;
     }
-    if (action === "flag") {
-      void updateIssue(issue.id, { flagged: !issue.flagged });
+    if (action.type === "move") {
+      moveToSprint(issue, action.cycleId);
       return;
     }
-    if (action === "assign-me") {
-      if (meId) void updateIssue(issue.id, { assigneeId: meId });
+    if (action.type !== "top" && action.type !== "bottom") {
+      void issueActions.run(issue, action);
       return;
     }
     const column = columns.find((candidate) => candidate.id === columnOf(issue));
@@ -428,7 +524,7 @@ export default function ProjectBoardPage() {
     void moveIssue(
       issue,
       column,
-      action === "top"
+      action.type === "top"
         ? { beforeId: list[0], order: [issue.id, ...list] }
         : { afterId: list.at(-1), order: [...list, issue.id] },
     );
@@ -479,7 +575,11 @@ export default function ProjectBoardPage() {
 
   const boardName =
     boardType === "SCRUM"
-      ? (activeSprint?.name ?? `${project.key} board`)
+      ? shownSprints.length === 1
+        ? shownSprints[0].name
+        : shownSprints.length > 1
+          ? `${shownSprints.length} active sprints`
+          : `${project.key} board`
       : `${project.key} board`;
 
   const boardMenu = (
@@ -510,7 +610,7 @@ export default function ProjectBoardPage() {
     </DropdownMenu.Root>
   );
 
-  if (boardType === "SCRUM" && !activeSprint) {
+  if (boardType === "SCRUM" && activeSprints.length === 0) {
     return (
       <div className="page board-page">
         <div className="board-titlebar">
@@ -532,11 +632,12 @@ export default function ProjectBoardPage() {
   const activeIssue = activeId
     ? visible.find((issue) => issue.id === activeId) ?? null
     : null;
-  const sprintIssues = activeSprint
-    ? projectIssues.filter(
-        (issue) => issue.cycleId === activeSprint.id && isPlanningIssue(issue),
-      )
-    : [];
+  const completeSprint =
+    activeSprints.find((sprint) => sprint.id === completeSprintId) ?? null;
+  const sprintIssuesOf = (sprintId: string) =>
+    projectIssues.filter(
+      (issue) => issue.cycleId === sprintId && isPlanningIssue(issue),
+    );
 
   const canAssignToMe = !!meId && !isViewer;
   const columnStyle = {
@@ -545,14 +646,58 @@ export default function ProjectBoardPage() {
   const quickCount = QUICK_FILTERS.filter(([key]) => filters[key]).length +
     (filters.labelId ? 1 : 0);
   const groupLabel =
-    GROUP_OPTIONS.find((option) => option.value === swimlanes)?.label ?? "None";
+    groupOptions.find((option) => option.value === swimlanes)?.label ?? "None";
   const remaining = activeSprint ? daysRemaining(activeSprint.endDate) : 0;
+  // Kanban "Release" lives on the last column when it only holds done statuses.
+  const releaseColumn =
+    boardType === "KANBAN"
+      ? (() => {
+          const last = columns.at(-1);
+          return last &&
+            last.statuses.length > 0 &&
+            last.statuses.every((status) => isDoneStatus(status))
+            ? last
+            : null;
+        })()
+      : null;
+  const releasable = releaseColumn
+    ? onBoard.filter((issue) => columnOf(issue) === releaseColumn.id)
+    : [];
+  const toggleSprint = (sprintId: string) =>
+    setChosenSprintIds(() => {
+      const current = shownSprintIds;
+      const next = toggleValue(current, sprintId);
+      return next.length === 0 ? current : next;
+    });
 
   return (
-    <div className="page board-page">
+    <div
+      className={
+        showInsights ? "page board-page with-insights" : "page board-page"
+      }
+    >
       <div className="board-titlebar">
         <h2 className="board-name">{boardName}</h2>
       </div>
+
+      {boardType === "SCRUM" && activeSprints.length > 1 && (
+        <div className="board-sprint-chips" role="group" aria-label="Active sprints">
+          {activeSprints.map((sprint) => {
+            const active = shownSprintIds.includes(sprint.id);
+            return (
+              <button
+                key={sprint.id}
+                type="button"
+                className={active ? "planning-quick-filter active" : "planning-quick-filter"}
+                aria-pressed={active}
+                onClick={() => toggleSprint(sprint.id)}
+              >
+                {sprint.name}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <div className="planning-toolbar" role="toolbar" aria-label="Board filters">
         <div className="planning-toolbar-start">
@@ -617,6 +762,11 @@ export default function ProjectBoardPage() {
               </>
             )}
           </FilterMenu>
+          <QuickFilterButtons
+            filters={filters}
+            queries={quickFilters}
+            setFilters={setFilters}
+          />
           {hasActiveFilters(filters) && (
             <button
               className="text-button planning-clear"
@@ -629,7 +779,7 @@ export default function ProjectBoardPage() {
         </div>
 
         <div className="planning-toolbar-end">
-          {activeSprint && (
+          {activeSprint && shownSprints.length === 1 && (
             <Tooltip.Provider delayDuration={200}>
               <Tooltip.Root>
                 <Tooltip.Trigger asChild>
@@ -656,15 +806,47 @@ export default function ProjectBoardPage() {
               </Tooltip.Root>
             </Tooltip.Provider>
           )}
-          {activeSprint && !isViewer && (
+          {!isViewer && shownSprints.length === 1 && (
             <button
               className="secondary-button"
               type="button"
-              onClick={() => setIsCompleteOpen(true)}
+              onClick={() => setCompleteSprintId(shownSprints[0].id)}
             >
               Complete sprint
             </button>
           )}
+          {!isViewer && shownSprints.length > 1 && (
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger asChild>
+                <button className="secondary-button" type="button">
+                  Complete sprint
+                  <ChevronDown size={14} aria-hidden="true" />
+                </button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content className="planning-menu" align="end" sideOffset={4}>
+                  {shownSprints.map((sprint) => (
+                    <DropdownMenu.Item
+                      key={sprint.id}
+                      className="planning-menu-item"
+                      onSelect={() => setCompleteSprintId(sprint.id)}
+                    >
+                      {sprint.name}
+                    </DropdownMenu.Item>
+                  ))}
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
+          )}
+          <button
+            className={showInsights ? "planning-filter active" : "planning-filter"}
+            type="button"
+            aria-pressed={showInsights}
+            onClick={() => setShowInsights((current) => !current)}
+          >
+            <Lightbulb size={14} aria-hidden="true" />
+            Insights
+          </button>
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
               <button className="planning-filter" type="button">
@@ -685,7 +867,7 @@ export default function ProjectBoardPage() {
                     setSwimlaneChoice(value as BoardSwimlanes)
                   }
                 >
-                  {GROUP_OPTIONS.map((option) => (
+                  {groupOptions.map((option) => (
                     <DropdownMenu.RadioItem
                       key={option.value}
                       value={option.value}
@@ -713,7 +895,13 @@ export default function ProjectBoardPage() {
           {planning.error}
         </p>
       )}
+      {notice && (
+        <p className="planning-notice" role="status">
+          {notice}
+        </p>
+      )}
 
+      <div className="board-body">
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
@@ -748,6 +936,22 @@ export default function ProjectBoardPage() {
                     </span>
                   )}
                   {overLimit && <span className="sr-only">WIP limit exceeded</span>}
+                  {releaseColumn?.id === column.id && !isViewer && (
+                    <button
+                      type="button"
+                      className="board-column-release"
+                      disabled={releasable.length === 0}
+                      title={
+                        releasable.length === 0
+                          ? "Nothing to release yet"
+                          : "Release the done work items as a version"
+                      }
+                      onClick={() => setIsReleaseOpen(true)}
+                    >
+                      <Package size={12} aria-hidden="true" />
+                      Release
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -794,9 +998,10 @@ export default function ProjectBoardPage() {
                               issue={issue}
                               cellId={id}
                               isViewer={isViewer}
-                              canAssignToMe={
-                                canAssignToMe && issue.assignee?.id !== meId
-                              }
+                              canAssignToMe={canAssignToMe}
+                              meId={meId}
+                              destinations={destinationsFor(issue)}
+                              display={displayOf(issue)}
                               onAction={handleCardAction}
                               onOpen={(target) => openIssue(target.id)}
                               shouldIgnoreClick={() => justDragged.current}
@@ -825,29 +1030,60 @@ export default function ProjectBoardPage() {
         </div>
         <DragOverlay>
           {activeIssue && (
-            <div className="board-card planning-card overlay">
+            <div
+              className={
+                displayOf(activeIssue).color
+                  ? "board-card planning-card overlay colored"
+                  : "board-card planning-card overlay"
+              }
+              style={
+                {
+                  "--card-color": displayOf(activeIssue).color ?? undefined,
+                } as React.CSSProperties
+              }
+            >
               <BoardCardBody
                 issue={activeIssue}
                 isViewer={isViewer}
                 canAssignToMe={false}
+                display={displayOf(activeIssue)}
               />
             </div>
           )}
         </DragOverlay>
       </DndContext>
+      {showInsights && (
+        <InsightsPanel
+          projectId={projectId}
+          sprints={boardType === "SCRUM" ? shownSprints : []}
+          issues={boardIssues}
+          cycles={cycles}
+          onClose={() => setShowInsights(false)}
+        />
+      )}
+      </div>
 
-      {isCompleteOpen && activeSprint && (
+      {completeSprint && (
         <CompleteSprintDialog
-          sprint={activeSprint}
-          issues={sprintIssues}
-          futureSprints={futureSprintsOf(cycles, projectId)}
-          open={isCompleteOpen}
-          onOpenChange={setIsCompleteOpen}
+          key={completeSprint.id}
+          sprint={completeSprint}
+          issues={sprintIssuesOf(completeSprint.id)}
+          futureSprints={futureSprints}
+          open
+          onOpenChange={(open) => !open && setCompleteSprintId(null)}
           onComplete={(destination) =>
-            planning.completeSprint(activeSprint.id, destination)
+            planning.completeSprint(completeSprint.id, destination)
           }
         />
       )}
+      {isReleaseOpen && (
+        <KanbanReleaseDialog
+          projectId={projectId}
+          issues={releasable}
+          onOpenChange={setIsReleaseOpen}
+        />
+      )}
+      {issueActions.dialogs}
     </div>
   );
 }

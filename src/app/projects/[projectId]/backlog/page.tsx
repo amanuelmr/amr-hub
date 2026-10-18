@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
@@ -25,18 +25,24 @@ import {
   ChevronDown,
   ChevronRight,
   CircleAlert,
+  Flag,
+  FlagOff,
+  Lightbulb,
   MoreHorizontal,
   MoveRight,
+  Package,
   PanelLeft,
   Pencil,
   Plus,
   Settings2,
+  Signal,
   Trash2,
   TriangleAlert,
+  UserRound,
   X,
   Zap,
 } from "lucide-react";
-import { useIssues } from "../../../IssueProvider";
+import { apiRequest, useIssues } from "../../../IssueProvider";
 import { useProjects } from "../../../ProjectProvider";
 import { authClient } from "../../../../lib/auth-client";
 import { WorkspaceLoading } from "../../../components/WorkspaceLoading";
@@ -51,7 +57,10 @@ import {
 import {
   AssigneeStack,
   EpicFilter,
+  FilterCheckItem,
+  FilterMenu,
   PlanningSearch,
+  QuickFilterButtons,
   TypeFilter,
   hasActiveFilters,
   toggleValue,
@@ -59,9 +68,25 @@ import {
 import {
   CompleteSprintDialog,
   DeleteSprintDialog,
+  DialogFooter,
   EditSprintDialog,
+  FormError,
+  PlanningDialog,
   StartSprintDialog,
 } from "../../../components/board/SprintDialogs";
+import { useIssueMenuActions } from "../../../components/board/IssueActions";
+import {
+  createProjectVersion,
+  useProjectVersions,
+} from "../../../components/board/KanbanRelease";
+import { InsightsPanel } from "../../../components/board/InsightsPanel";
+import {
+  activeSprintsOf,
+  cardColorFor,
+  compileQueries,
+  matchesQuickFilters,
+} from "../../../components/board/boardRules";
+import { useJqlContext } from "../../../components/search/useJqlContext";
 import { usePlanningActions } from "../../../components/board/sprintApi";
 import {
   BACKLOG_CREATE_DESCRIPTION,
@@ -70,6 +95,7 @@ import {
   computeDropTarget,
   epicColor,
   formatShortDate,
+  initials,
   isPlanningIssue,
   isStaleDone,
   matchesFilters,
@@ -78,12 +104,16 @@ import {
   type DropTarget,
   type IssueFilters,
 } from "../../../components/board/boardModel";
-import type {
-  Cycle,
-  Issue,
-  IssueKind,
-  IssueStatus,
+import {
+  PRIORITY_LABELS,
+  type Cycle,
+  type Issue,
+  type IssueEstimate,
+  type IssueKind,
+  type IssuePriority,
+  type IssueStatus,
 } from "../../../data/issues";
+import { DEFAULT_BOARD_CONFIG } from "../../../data/projects";
 import { isEpicLevel } from "../../../data/workflow";
 import { useWorkflow } from "../../../WorkflowProvider";
 
@@ -137,18 +167,109 @@ function SectionDropZone({
   );
 }
 
+/** Dropping on a sprint header puts the work at the bottom of that sprint. */
+function SectionHeader({
+  sectionKey,
+  children,
+}: {
+  sectionKey: string;
+  children: React.ReactNode;
+}) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `header::${sectionKey}`,
+    data: { type: "section", sectionId: sectionKey },
+  });
+  return (
+    <header
+      ref={setNodeRef}
+      className={
+        isOver ? "backlog-section-header drag-over" : "backlog-section-header"
+      }
+    >
+      {children}
+    </header>
+  );
+}
+
+const QUICK_FILTERS = [
+  ["onlyMine", "Only my issues"],
+  ["recent", "Recently updated"],
+  ["flagged", "Flagged"],
+] as const;
+
+const PRIORITIES: IssuePriority[] = [
+  "URGENT",
+  "HIGH",
+  "MEDIUM",
+  "LOW",
+  "NO_PRIORITY",
+];
+
+type BulkResult = { id: string; ok: boolean; error?: string; issue?: Issue };
+
+function BulkDeleteDialog({
+  count,
+  onClose,
+  onDelete,
+}: {
+  count: number;
+  onClose: () => void;
+  onDelete: () => Promise<void>;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  return (
+    <PlanningDialog
+      open
+      onOpenChange={(open) => !open && onClose()}
+      title={`Delete ${count} work items?`}
+      description="You're about to permanently delete these work items and all of their data. This can't be undone."
+    >
+      <form
+        onSubmit={async (event) => {
+          event.preventDefault();
+          setIsSubmitting(true);
+          setError(null);
+          try {
+            await onDelete();
+            onClose();
+          } catch (deleteError) {
+            setError(
+              deleteError instanceof Error
+                ? deleteError.message
+                : "The work items could not be deleted",
+            );
+          } finally {
+            setIsSubmitting(false);
+          }
+        }}
+      >
+        <FormError error={error} />
+        <DialogFooter
+          onCancel={onClose}
+          submitLabel="Delete"
+          isSubmitting={isSubmitting}
+          danger
+        />
+      </form>
+    </PlanningDialog>
+  );
+}
+
 function InlineRowCreate({
   onCreate,
   placeholder = "What needs to be done?",
   label = "Create",
   withKind = true,
   kinds = [],
+  minLength = 4,
 }: {
   onCreate: (title: string, kind: IssueKind) => Promise<void>;
   placeholder?: string;
   label?: string;
   withKind?: boolean;
   kinds?: { key: IssueKind; name: string }[];
+  minLength?: number;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [title, setTitle] = useState("");
@@ -176,8 +297,12 @@ function InlineRowCreate({
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (title.trim().length < 4) {
-      setError("Titles need at least 4 characters.");
+    if (title.trim().length < minLength) {
+      setError(
+        minLength === 1
+          ? "Enter a name."
+          : `Titles need at least ${minLength} characters.`,
+      );
       return;
     }
     setIsSubmitting(true);
@@ -277,10 +402,13 @@ export default function ProjectBacklogPage() {
     isLoading,
     createIssue,
     updateIssue,
+    replaceIssue,
+    removeIssue,
   } = useIssues();
   const { projects } = useProjects();
   const { data: activeMember } = authClient.useActiveMember();
   const isViewer = activeMember?.role === "viewer";
+  const isOwner = activeMember?.role === "owner";
   const meId = activeMember?.id ?? null;
   const planning = usePlanningActions();
   const workflow = useWorkflow(projectId);
@@ -293,7 +421,25 @@ export default function ProjectBacklogPage() {
   } = useSelectedIssue();
 
   const [filters, setFilters] = useState<IssueFilters>(EMPTY_FILTERS);
-  const [showEpics, setShowEpics] = useState(false);
+  const [panel, setPanel] = useState<"epics" | "versions" | null>(null);
+  const showEpics = panel === "epics";
+  const showVersions = panel === "versions";
+  const [showInsights, setShowInsights] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
+  const [now] = useState(() => new Date());
+  const jqlContext = useJqlContext(now);
+  const issueActions = useIssueMenuActions({
+    onError: (text) => planning.setError(text),
+    onNotice: setNotice,
+  });
+  const versionState = useProjectVersions(projectId, showVersions);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 2500);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [selected, setSelected] = useState<string[]>([]);
   const anchor = useRef<{ id: string; section: string } | null>(null);
@@ -327,23 +473,38 @@ export default function ProjectBacklogPage() {
     .sort(compareRank);
   const epics = projectIssues.filter((issue) => isEpicLevel(issue.kind));
   const planningIssues = projectIssues.filter(isPlanningIssue);
+  const config = project.boardConfig ?? DEFAULT_BOARD_CONFIG;
+  const quickFilters = compileQueries(config.quickFilters, now);
+  const colorQueries = compileQueries(config.cardColors.queries, now);
+  const colorOf = (issue: Issue) =>
+    cardColorFor(issue, config.cardColors, {
+      ctx: jqlContext,
+      compiled: colorQueries,
+      typeColor: (kind) =>
+        workflow.types.find((type) => type.key === kind)?.color ?? null,
+    });
   const projectSprints = cycles.filter(
     (cycle) => cycle.projectId === projectId,
   );
-  const activeSprint =
-    projectSprints.find((cycle) => cycle.state === "ACTIVE") ?? null;
+  const activeSprints = activeSprintsOf(cycles, projectId);
+  const activeSprint = activeSprints[0] ?? null;
   const futureSprints = projectSprints
     .filter((cycle) => (cycle.state ?? "FUTURE") === "FUTURE")
     .sort((left, right) => left.startDate.localeCompare(right.startDate));
   const openSprintIds = new Set(
-    [activeSprint, ...futureSprints].filter(Boolean).map((cycle) => cycle!.id),
+    [...activeSprints, ...futureSprints].map((cycle) => cycle.id),
+  );
+  const closedSprintIds = new Set(
+    projectSprints
+      .filter((cycle) => cycle.state === "CLOSED")
+      .map((cycle) => cycle.id),
   );
 
-  const visible = (issue: Issue) => matchesFilters(issue, filters, meId);
+  const visible = (issue: Issue) =>
+    matchesFilters(issue, filters, meId) &&
+    matchesQuickFilters(issue, filters.quickFilterIds, quickFilters, jqlContext);
   const sections: Section[] = [
-    ...[activeSprint, ...futureSprints]
-      .filter((cycle): cycle is Cycle => cycle !== null)
-      .map((sprint) => {
+    ...[...activeSprints, ...futureSprints].map((sprint) => {
         const sprintIssues = planningIssues.filter(
           (issue) => issue.cycleId === sprint.id,
         );
@@ -360,7 +521,7 @@ export default function ProjectBacklogPage() {
   const backlogIssues = planningIssues.filter(
     (issue) =>
       (issue.cycleId === null || !openSprintIds.has(issue.cycleId)) &&
-      !isStaleDone(issue),
+      !isStaleDone(issue, now, closedSprintIds),
   );
   sections.push({
     key: BACKLOG_KEY,
@@ -451,7 +612,19 @@ export default function ProjectBacklogPage() {
     void updateIssue(issue.id, { status });
   };
 
+  const handleEstimateChange = (issue: Issue, estimate: IssueEstimate | null) => {
+    void updateIssue(issue.id, { estimate });
+  };
+
   const handleRowAction = (issue: Issue, action: RowAction) => {
+    if (action.type === "open") {
+      openIssue(issue.id);
+      return;
+    }
+    if (action.type !== "top" && action.type !== "bottom" && action.type !== "move") {
+      void issueActions.run(issue, action);
+      return;
+    }
     const section = sectionOf(issue.id);
     if (!section) return;
     if (action.type === "move") {
@@ -523,6 +696,50 @@ export default function ProjectBacklogPage() {
     });
   };
 
+  /** POST /api/issues/bulk for the multi-selection. */
+  const runBulk = async (
+    body:
+      | { operation: "assign"; value: string | null }
+      | { operation: "priority"; value: IssuePriority }
+      | { operation: "flag"; value: boolean }
+      | { operation: "delete" },
+  ) => {
+    planning.setError(null);
+    const issueIds = orderedSelection;
+    try {
+      const { results } = await apiRequest<{ results: BulkResult[] }>(
+        "/api/issues/bulk",
+        { method: "POST", body: JSON.stringify({ issueIds, ...body }) },
+      );
+      for (const result of results) {
+        if (!result.ok) continue;
+        if (body.operation === "delete") removeIssue(result.id);
+        else if (result.issue) replaceIssue(result.issue);
+      }
+      const failed = results.filter((result) => !result.ok);
+      if (failed.length > 0) {
+        planning.setError(
+          `${failed.length} of ${results.length} work items could not be changed: ${failed[0].error ?? "unknown error"}`,
+        );
+      } else {
+        setNotice(
+          `${results.length} ${results.length === 1 ? "work item" : "work items"} ${body.operation === "delete" ? "deleted" : "updated"}`,
+        );
+      }
+      if (body.operation === "delete") setSelected([]);
+    } catch (error) {
+      const text =
+        error instanceof Error ? error.message : "The bulk change failed";
+      if (body.operation === "delete") throw new Error(text);
+      planning.setError(text);
+    }
+  };
+
+  const handleCreateVersion = async (name: string) => {
+    await createProjectVersion(projectId, name);
+    versionState.reload();
+  };
+
   const handleCreateSprint = async () => {
     setIsCreatingSprint(true);
     try {
@@ -551,7 +768,12 @@ export default function ProjectBacklogPage() {
     : null;
   const dragCount =
     activeId && selected.includes(activeId) ? orderedSelection.length : 1;
-  const topFutureId = activeSprint ? null : (futureSprints[0]?.id ?? null);
+  // Jira: only the top future sprint can start, unless parallel sprints are
+  // on, in which case every future sprint can.
+  const canStart = (sprint: Cycle) =>
+    config.parallelSprints
+      ? sprint.state === "FUTURE" || sprint.state === undefined
+      : !activeSprint && futureSprints[0]?.id === sprint.id;
 
   const isFiltered = hasActiveFilters(filters);
 
@@ -607,7 +829,7 @@ export default function ProjectBacklogPage() {
   return (
     <div
       className={
-        selectedIssueId
+        selectedIssueId || showInsights
           ? "page backlog-page with-issue-panel"
           : "page backlog-page"
       }
@@ -643,6 +865,27 @@ export default function ProjectBacklogPage() {
             setFilters={setFilters}
             projectId={projectId}
           />
+          <FilterMenu
+            label="Quick filters"
+            count={QUICK_FILTERS.filter(([key]) => filters[key]).length}
+          >
+            {QUICK_FILTERS.map(([key, label]) => (
+              <FilterCheckItem
+                key={key}
+                checked={filters[key]}
+                onToggle={() =>
+                  setFilters((current) => ({ ...current, [key]: !current[key] }))
+                }
+              >
+                {label}
+              </FilterCheckItem>
+            ))}
+          </FilterMenu>
+          <QuickFilterButtons
+            filters={filters}
+            queries={quickFilters}
+            setFilters={setFilters}
+          />
           {isFiltered && (
             <button
               className="text-button planning-clear"
@@ -655,13 +898,34 @@ export default function ProjectBacklogPage() {
         </div>
         <div className="planning-toolbar-end">
           <button
+            className={showVersions ? "planning-filter active" : "planning-filter"}
+            type="button"
+            aria-pressed={showVersions}
+            onClick={() => setPanel((current) => (current === "versions" ? null : "versions"))}
+          >
+            <Package size={14} aria-hidden="true" />
+            Versions
+          </button>
+          <button
             className={showEpics ? "planning-filter active" : "planning-filter"}
             type="button"
             aria-pressed={showEpics}
-            onClick={() => setShowEpics((current) => !current)}
+            onClick={() => setPanel((current) => (current === "epics" ? null : "epics"))}
           >
             <PanelLeft size={14} aria-hidden="true" />
             Epic panel
+          </button>
+          <button
+            className={showInsights ? "planning-filter active" : "planning-filter"}
+            type="button"
+            aria-pressed={showInsights}
+            onClick={() => {
+              if (!showInsights && selectedIssueId) closeIssue();
+              setShowInsights((current) => !current);
+            }}
+          >
+            <Lightbulb size={14} aria-hidden="true" />
+            Insights
           </button>
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
@@ -708,29 +972,126 @@ export default function ProjectBacklogPage() {
         </p>
       )}
 
+      {notice && (
+        <p className="planning-notice" role="status">
+          {notice}
+        </p>
+      )}
+
       {orderedSelection.length > 1 && !isViewer && (
         <div className="backlog-bulk-bar" role="status">
           <strong>{orderedSelection.length} work items selected</strong>
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
               <button className="secondary-button" type="button">
-                <MoveRight size={14} aria-hidden="true" />
-                Move to
+                Bulk actions
+                <ChevronDown size={14} aria-hidden="true" />
               </button>
             </DropdownMenu.Trigger>
             <DropdownMenu.Portal>
               <DropdownMenu.Content className="planning-menu" sideOffset={4}>
-                {destinations.map((destination) => (
-                  <DropdownMenu.Item
-                    key={destination.id ?? BACKLOG_KEY}
-                    className="planning-menu-item"
-                    onSelect={() =>
-                      moveToSection(orderedSelection, destination.id)
-                    }
-                  >
-                    {destination.label}
-                  </DropdownMenu.Item>
-                ))}
+                <DropdownMenu.Sub>
+                  <DropdownMenu.SubTrigger className="planning-menu-item">
+                    <MoveRight size={14} aria-hidden="true" />
+                    Move to
+                    <ChevronRight size={13} aria-hidden="true" className="planning-menu-end" />
+                  </DropdownMenu.SubTrigger>
+                  <DropdownMenu.Portal>
+                    <DropdownMenu.SubContent className="planning-menu planning-filter-menu" sideOffset={4}>
+                      {destinations.map((destination) => (
+                        <DropdownMenu.Item
+                          key={destination.id ?? BACKLOG_KEY}
+                          className="planning-menu-item"
+                          onSelect={() =>
+                            moveToSection(orderedSelection, destination.id)
+                          }
+                        >
+                          <span className="planning-menu-text">{destination.label}</span>
+                        </DropdownMenu.Item>
+                      ))}
+                    </DropdownMenu.SubContent>
+                  </DropdownMenu.Portal>
+                </DropdownMenu.Sub>
+                <DropdownMenu.Sub>
+                  <DropdownMenu.SubTrigger className="planning-menu-item">
+                    <UserRound size={14} aria-hidden="true" />
+                    Assign
+                    <ChevronRight size={13} aria-hidden="true" className="planning-menu-end" />
+                  </DropdownMenu.SubTrigger>
+                  <DropdownMenu.Portal>
+                    <DropdownMenu.SubContent className="planning-menu planning-filter-menu" sideOffset={4}>
+                      <DropdownMenu.Item
+                        className="planning-menu-item"
+                        onSelect={() => void runBulk({ operation: "assign", value: null })}
+                      >
+                        <span className="avatar avatar-small" aria-hidden="true">?</span>
+                        Unassigned
+                      </DropdownMenu.Item>
+                      {members.map((member) => (
+                        <DropdownMenu.Item
+                          key={member.id}
+                          className="planning-menu-item"
+                          onSelect={() =>
+                            void runBulk({ operation: "assign", value: member.id })
+                          }
+                        >
+                          <span className="avatar avatar-small" aria-hidden="true">
+                            {initials(member.name)}
+                          </span>
+                          <span className="planning-menu-text">{member.name}</span>
+                        </DropdownMenu.Item>
+                      ))}
+                    </DropdownMenu.SubContent>
+                  </DropdownMenu.Portal>
+                </DropdownMenu.Sub>
+                <DropdownMenu.Sub>
+                  <DropdownMenu.SubTrigger className="planning-menu-item">
+                    <Signal size={14} aria-hidden="true" />
+                    Priority
+                    <ChevronRight size={13} aria-hidden="true" className="planning-menu-end" />
+                  </DropdownMenu.SubTrigger>
+                  <DropdownMenu.Portal>
+                    <DropdownMenu.SubContent className="planning-menu" sideOffset={4}>
+                      {PRIORITIES.map((priority) => (
+                        <DropdownMenu.Item
+                          key={priority}
+                          className="planning-menu-item"
+                          onSelect={() =>
+                            void runBulk({ operation: "priority", value: priority })
+                          }
+                        >
+                          {PRIORITY_LABELS[priority]}
+                        </DropdownMenu.Item>
+                      ))}
+                    </DropdownMenu.SubContent>
+                  </DropdownMenu.Portal>
+                </DropdownMenu.Sub>
+                <DropdownMenu.Item
+                  className="planning-menu-item"
+                  onSelect={() => void runBulk({ operation: "flag", value: true })}
+                >
+                  <Flag size={14} aria-hidden="true" />
+                  Add flag
+                </DropdownMenu.Item>
+                <DropdownMenu.Item
+                  className="planning-menu-item"
+                  onSelect={() => void runBulk({ operation: "flag", value: false })}
+                >
+                  <FlagOff size={14} aria-hidden="true" />
+                  Remove flag
+                </DropdownMenu.Item>
+                {isOwner && (
+                  <>
+                    <DropdownMenu.Separator className="planning-menu-separator" />
+                    <DropdownMenu.Item
+                      className="planning-menu-item danger"
+                      onSelect={() => setIsBulkDeleteOpen(true)}
+                    >
+                      <Trash2 size={14} aria-hidden="true" />
+                      Delete
+                    </DropdownMenu.Item>
+                  </>
+                )}
               </DropdownMenu.Content>
             </DropdownMenu.Portal>
           </DropdownMenu.Root>
@@ -746,7 +1107,9 @@ export default function ProjectBacklogPage() {
 
       <div className="backlog-split">
         <div
-          className={showEpics ? "backlog-layout with-epics" : "backlog-layout"}
+          className={
+            panel ? "backlog-layout with-epics" : "backlog-layout"
+          }
         >
           {showEpics && (
             <aside className="backlog-epics" aria-label="Epics">
@@ -756,7 +1119,7 @@ export default function ProjectBacklogPage() {
                   className="icon-button"
                   type="button"
                   aria-label="Close epic panel"
-                  onClick={() => setShowEpics(false)}
+                  onClick={() => setPanel(null)}
                 >
                   <X size={14} aria-hidden="true" />
                 </button>
@@ -832,6 +1195,94 @@ export default function ProjectBacklogPage() {
               )}
             </aside>
           )}
+          {showVersions && (
+            <aside className="backlog-epics backlog-versions" aria-label="Versions">
+              <div className="backlog-epics-header">
+                <h2>Versions</h2>
+                <button
+                  className="icon-button"
+                  type="button"
+                  aria-label="Close versions panel"
+                  onClick={() => setPanel(null)}
+                >
+                  <X size={14} aria-hidden="true" />
+                </button>
+              </div>
+              <button
+                type="button"
+                className={
+                  filters.versionId === null
+                    ? "backlog-epic-all active"
+                    : "backlog-epic-all"
+                }
+                onClick={() =>
+                  setFilters((current) => ({ ...current, versionId: null }))
+                }
+              >
+                All versions
+              </button>
+              {versionState.error && (
+                <p className="form-submit-error">{versionState.error}</p>
+              )}
+              {versionState.isLoading && (
+                <p className="field-meta">Loading versions…</p>
+              )}
+              {!versionState.isLoading &&
+                !versionState.error &&
+                versionState.versions.filter((version) => version.status === "UNRELEASED").length === 0 && (
+                  <p className="field-meta">No unreleased versions.</p>
+                )}
+              <ul>
+                {versionState.versions
+                  .filter((version) => version.status === "UNRELEASED")
+                  .map((version) => {
+                    const percent = version.issueCount
+                      ? Math.round((version.doneCount / version.issueCount) * 100)
+                      : 0;
+                    const isActive = filters.versionId === version.id;
+                    return (
+                      <li key={version.id}>
+                        <button
+                          type="button"
+                          className={isActive ? "backlog-epic active" : "backlog-epic"}
+                          aria-pressed={isActive}
+                          style={{ "--epic-color": "var(--console-cyan)" } as React.CSSProperties}
+                          onClick={() =>
+                            setFilters((current) => ({
+                              ...current,
+                              versionId: isActive ? null : version.id,
+                            }))
+                          }
+                        >
+                          <span className="backlog-epic-title">
+                            <Package size={12} aria-hidden="true" />
+                            {version.name}
+                          </span>
+                          <span className="backlog-epic-progress" aria-hidden="true">
+                            <i style={{ width: `${percent}%` }} />
+                          </span>
+                          <small>
+                            {version.doneCount}/{version.issueCount} done
+                            {version.releaseDate
+                              ? ` · ${formatShortDate(version.releaseDate)}`
+                              : ""}
+                          </small>
+                        </button>
+                      </li>
+                    );
+                  })}
+              </ul>
+              {!isViewer && (
+                <InlineRowCreate
+                  label="Create version"
+                  placeholder="Version name"
+                  withKind={false}
+                  minLength={1}
+                  onCreate={(title) => handleCreateVersion(title)}
+                />
+              )}
+            </aside>
+          )}
 
           <DndContext
             sensors={sensors}
@@ -861,7 +1312,7 @@ export default function ProjectBacklogPage() {
                       .join(" ")}
                     aria-label={section.title}
                   >
-                    <header className="backlog-section-header">
+                    <SectionHeader sectionKey={section.key}>
                       <button
                         type="button"
                         className="backlog-section-toggle"
@@ -900,7 +1351,7 @@ export default function ProjectBacklogPage() {
                         <PointPills issues={section.allIssues} />
                         {sprint && !isViewer && (
                           <>
-                            {sprint.id === topFutureId && (
+                            {canStart(sprint) && (
                               <button
                                 className="secondary-button"
                                 type="button"
@@ -933,7 +1384,7 @@ export default function ProjectBacklogPage() {
                         )}
                         {!sprint && createSprintButton}
                       </span>
-                    </header>
+                    </SectionHeader>
                     {sprint?.goal && !isCollapsed && (
                       <p className="backlog-sprint-goal">{sprint.goal}</p>
                     )}
@@ -948,6 +1399,8 @@ export default function ProjectBacklogPage() {
                               isSelected={selected.includes(issue.id)}
                               isOpen={selectedIssueId === issue.id}
                               isViewer={isViewer}
+                              meId={meId}
+                              color={colorOf(issue)}
                               destinations={destinations.filter(
                                 (destination) =>
                                   destination.id !== section.cycleId,
@@ -955,6 +1408,7 @@ export default function ProjectBacklogPage() {
                               onSelect={handleSelect}
                               onAction={handleRowAction}
                               onStatusChange={handleStatusChange}
+                              onEstimateChange={handleEstimateChange}
                             />
                           ))}
                           {section.issues.length === 0 && (
@@ -993,7 +1447,7 @@ export default function ProjectBacklogPage() {
             </DragOverlay>
           </DndContext>
         </div>
-        {selectedIssueId && (
+        {selectedIssueId ? (
           <aside className="backlog-issue-panel" aria-label="Work item details">
             <IssueDetailContainer
               issueId={selectedIssueId}
@@ -1001,6 +1455,20 @@ export default function ProjectBacklogPage() {
               onClose={closeIssue}
             />
           </aside>
+        ) : (
+          showInsights && (
+            <InsightsPanel
+              projectId={projectId}
+              sprints={activeSprints}
+              issues={planningIssues.filter(
+                (issue) =>
+                  !!issue.cycleId &&
+                  activeSprints.some((sprint) => sprint.id === issue.cycleId),
+              )}
+              cycles={cycles}
+              onClose={() => setShowInsights(false)}
+            />
+          )
         )}
       </div>
 
@@ -1039,6 +1507,14 @@ export default function ProjectBacklogPage() {
           open
           onOpenChange={(open) => !open && setDialog(null)}
           onSave={(fields) => planning.updateSprint(dialog.sprint.id, fields)}
+        />
+      )}
+      {issueActions.dialogs}
+      {isBulkDeleteOpen && (
+        <BulkDeleteDialog
+          count={orderedSelection.length}
+          onClose={() => setIsBulkDeleteOpen(false)}
+          onDelete={() => runBulk({ operation: "delete" })}
         />
       )}
       {dialog?.type === "delete" && (

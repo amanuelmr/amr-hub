@@ -17,23 +17,162 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, GripVertical, Plus, Trash2 } from "lucide-react";
+import { parseJql } from "../../../data/jql";
 import { useProjects } from "../../../ProjectProvider";
 import type { IssueStatus } from "../../../data/issues";
 import { statusName } from "../../../data/workflow";
 import { useWorkflow } from "../../../WorkflowProvider";
-import type {
-  BoardColumnConfig,
-  BoardConfig,
-  BoardSwimlanes,
-  Project,
+import {
+  CARD_BASE_FIELDS,
+  CARD_EXTRA_FIELDS,
+  CARD_FIELD_LABELS,
+  MAX_CARD_EXTRA_FIELDS,
+  type BoardColumnConfig,
+  type BoardConfig,
+  type BoardQuery,
+  type BoardSwimlanes,
+  type CardColorStrategy,
+  type Project,
 } from "../../../data/projects";
 import {
   addColumn,
+  addQuery,
   assignStatus,
   moveColumn,
+  removeQuery,
+  shiftQuery,
+  toggleCardField,
   unmappedStatuses,
+  updateQuery,
 } from "./boardEditor";
+
+const QUERY_COLORS = ["#e5484d", "#f76b15", "#ffb224", "#30a46c", "#3e63dd", "#8e4ec6"];
+
+function jqlError(jql: string) {
+  if (!jql.trim()) return "Enter a JQL query";
+  const parsed = parseJql(jql);
+  return parsed.ok ? null : parsed.error.message;
+}
+
+/** Editable list of named JQL queries (quick filters, swimlanes, card colors). */
+function QueryListEditor({
+  queries,
+  readOnly,
+  withColor = false,
+  addLabel,
+  emptyText,
+  onChange,
+}: {
+  queries: BoardQuery[];
+  readOnly: boolean;
+  withColor?: boolean;
+  addLabel: string;
+  emptyText: string;
+  onChange: (queries: BoardQuery[]) => void;
+}) {
+  return (
+    <div className="pa-query-list">
+      {queries.length === 0 && <p className="pa-muted">{emptyText}</p>}
+      {queries.map((query, index) => {
+        const error = jqlError(query.jql);
+        return (
+          <div className="pa-query-row" key={query.id}>
+            {withColor && (
+              <input
+                type="color"
+                className="pa-query-color"
+                value={query.color ?? QUERY_COLORS[0]}
+                disabled={readOnly}
+                aria-label={`Color for ${query.name || "query"}`}
+                onChange={(event) =>
+                  onChange(updateQuery(queries, query.id, { color: event.target.value }))
+                }
+              />
+            )}
+            <input
+              className="pa-query-name"
+              value={query.name}
+              maxLength={60}
+              placeholder="Name"
+              disabled={readOnly}
+              aria-label="Name"
+              onChange={(event) =>
+                onChange(updateQuery(queries, query.id, { name: event.target.value }))
+              }
+            />
+            <input
+              className={error ? "pa-query-jql invalid" : "pa-query-jql"}
+              value={query.jql}
+              maxLength={2000}
+              placeholder='JQL, e.g. assignee = currentUser()'
+              disabled={readOnly}
+              aria-label={`JQL for ${query.name || "query"}`}
+              aria-invalid={!!error}
+              spellCheck={false}
+              onChange={(event) =>
+                onChange(updateQuery(queries, query.id, { jql: event.target.value }))
+              }
+            />
+            {!readOnly && (
+              <span className="pa-query-actions">
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label={`Move ${query.name || "query"} up`}
+                  disabled={index === 0}
+                  onClick={() => onChange(shiftQuery(queries, query.id, -1))}
+                >
+                  <ArrowUp size={14} aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label={`Move ${query.name || "query"} down`}
+                  disabled={index === queries.length - 1}
+                  onClick={() => onChange(shiftQuery(queries, query.id, 1))}
+                >
+                  <ArrowDown size={14} aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label={`Delete ${query.name || "query"}`}
+                  onClick={() => onChange(removeQuery(queries, query.id))}
+                >
+                  <Trash2 size={14} aria-hidden="true" />
+                </button>
+              </span>
+            )}
+            {error && query.jql.trim() && (
+              <p className="field-error pa-query-error">Invalid JQL: {error}</p>
+            )}
+          </div>
+        );
+      })}
+      {!readOnly && queries.length < 20 && (
+        <button
+          className="secondary-button"
+          type="button"
+          onClick={() =>
+            onChange(
+              addQuery(queries, {
+                name: "",
+                jql: "",
+                ...(withColor
+                  ? { color: QUERY_COLORS[queries.length % QUERY_COLORS.length] }
+                  : {}),
+              }),
+            )
+          }
+        >
+          <Plus size={15} aria-hidden="true" />
+          {addLabel}
+        </button>
+      )}
+    </div>
+  );
+}
 
 function ColumnRow({
   column,
@@ -180,9 +319,34 @@ export function BoardSettings({
     }
   };
 
+  const trimQuery = (query: BoardQuery): BoardQuery => ({
+    ...query,
+    name: query.name.trim(),
+    jql: query.jql.trim(),
+  });
+  const extraCount = config.cardFields.filter((field) =>
+    CARD_EXTRA_FIELDS.includes(field),
+  ).length;
+
   const save = async () => {
     if (config.columns.some((column) => !column.name.trim())) {
       setMessage({ ok: false, text: "Every column needs a name." });
+      return;
+    }
+    const queryLists = [
+      config.quickFilters,
+      config.swimlaneQueries,
+      config.cardColors.strategy === "QUERY" ? config.cardColors.queries : [],
+    ];
+    if (
+      queryLists.some((list) =>
+        list.some((query) => !query.name.trim() || jqlError(query.jql)),
+      )
+    ) {
+      setMessage({
+        ok: false,
+        text: "Every quick filter, swimlane and card color needs a name and valid JQL.",
+      });
       return;
     }
     setIsSaving(true);
@@ -194,6 +358,12 @@ export function BoardSettings({
           ...column,
           name: column.name.trim(),
         })),
+        quickFilters: config.quickFilters.map(trimQuery),
+        swimlaneQueries: config.swimlaneQueries.map(trimQuery),
+        cardColors: {
+          ...config.cardColors,
+          queries: config.cardColors.queries.map(trimQuery),
+        },
       },
     });
     setIsSaving(false);
@@ -363,6 +533,7 @@ export function BoardSettings({
             <option value="ASSIGNEE">Assignee</option>
             <option value="EPIC">Epic</option>
             <option value="PRIORITY">Priority</option>
+            <option value="QUERY">Queries</option>
           </select>
         </label>
         <label className="form-field">
@@ -382,6 +553,204 @@ export function BoardSettings({
           </select>
         </label>
       </section>
+
+      {config.swimlanes === "QUERY" && (
+        <section>
+          <h3 className="pa-section-title">Swimlane queries</h3>
+          <p className="pa-muted">
+            Each work item appears in the first swimlane whose JQL matches it;
+            the rest go to &ldquo;Everything else&rdquo;.
+          </p>
+          <QueryListEditor
+            queries={config.swimlaneQueries}
+            readOnly={readOnly}
+            addLabel="Add swimlane"
+            emptyText="No swimlanes yet."
+            onChange={(swimlaneQueries) =>
+              setConfig((current) => ({ ...current, swimlaneQueries }))
+            }
+          />
+        </section>
+      )}
+
+      <section>
+        <h3 className="pa-section-title">Quick filters</h3>
+        <p className="pa-muted">
+          Quick filters appear as buttons on the board and backlog. Turning on
+          several shows only work items matching all of them.
+        </p>
+        <QueryListEditor
+          queries={config.quickFilters}
+          readOnly={readOnly}
+          addLabel="Add quick filter"
+          emptyText="No quick filters yet."
+          onChange={(quickFilters) =>
+            setConfig((current) => ({ ...current, quickFilters }))
+          }
+        />
+      </section>
+
+      <section>
+        <h3 className="pa-section-title">Card layout</h3>
+        <p className="pa-muted">
+          Choose the fields shown on board cards. You can add up to{" "}
+          {MAX_CARD_EXTRA_FIELDS} extra fields.
+        </p>
+        <div className="pa-card-fields">
+          <fieldset>
+            <legend>Default fields</legend>
+            {CARD_BASE_FIELDS.map((field) => (
+              <label className="pa-checkbox" key={field}>
+                <input
+                  type="checkbox"
+                  checked={config.cardFields.includes(field)}
+                  disabled={readOnly}
+                  onChange={() =>
+                    setConfig((current) => ({
+                      ...current,
+                      cardFields: toggleCardField(current.cardFields, field),
+                    }))
+                  }
+                />
+                {CARD_FIELD_LABELS[field]}
+              </label>
+            ))}
+          </fieldset>
+          <fieldset>
+            <legend>
+              Extra fields ({extraCount}/{MAX_CARD_EXTRA_FIELDS})
+            </legend>
+            {CARD_EXTRA_FIELDS.map((field) => {
+              const checked = config.cardFields.includes(field);
+              return (
+                <label className="pa-checkbox" key={field}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    disabled={
+                      readOnly || (!checked && extraCount >= MAX_CARD_EXTRA_FIELDS)
+                    }
+                    onChange={() =>
+                      setConfig((current) => ({
+                        ...current,
+                        cardFields: toggleCardField(current.cardFields, field),
+                      }))
+                    }
+                  />
+                  {CARD_FIELD_LABELS[field]}
+                </label>
+              );
+            })}
+          </fieldset>
+        </div>
+      </section>
+
+      <section>
+        <h3 className="pa-section-title">Card colors</h3>
+        <label className="form-field">
+          <span>Colors based on</span>
+          <select
+            value={config.cardColors.strategy}
+            disabled={readOnly}
+            onChange={(event) =>
+              setConfig((current) => ({
+                ...current,
+                cardColors: {
+                  ...current.cardColors,
+                  strategy: event.target.value as CardColorStrategy,
+                },
+              }))
+            }
+          >
+            <option value="NONE">None</option>
+            <option value="ISSUE_TYPE">Work type</option>
+            <option value="PRIORITY">Priority</option>
+            <option value="ASSIGNEE">Assignee</option>
+            <option value="QUERY">Queries</option>
+          </select>
+        </label>
+        {config.cardColors.strategy === "QUERY" && (
+          <>
+            <p className="pa-muted">
+              Cards take the color of the first query they match.
+            </p>
+            <QueryListEditor
+              queries={config.cardColors.queries}
+              readOnly={readOnly}
+              withColor
+              addLabel="Add color"
+              emptyText="No card colors yet."
+              onChange={(queries) =>
+                setConfig((current) => ({
+                  ...current,
+                  cardColors: { ...current.cardColors, queries },
+                }))
+              }
+            />
+          </>
+        )}
+        {config.cardColors.strategy !== "NONE" &&
+          config.cardColors.strategy !== "QUERY" && (
+            <p className="pa-muted">
+              Cards show a color bar on the left based on their{" "}
+              {config.cardColors.strategy === "ISSUE_TYPE"
+                ? "work type color"
+                : config.cardColors.strategy === "PRIORITY"
+                  ? "priority"
+                  : "assignee"}
+              .
+            </p>
+          )}
+      </section>
+
+      {project.boardType === "SCRUM" && (
+        <section>
+          <h3 className="pa-section-title">Sprints</h3>
+          <label className="pa-checkbox">
+            <input
+              type="checkbox"
+              checked={config.parallelSprints}
+              disabled={readOnly}
+              onChange={(event) =>
+                setConfig((current) => ({
+                  ...current,
+                  parallelSprints: event.target.checked,
+                }))
+              }
+            />
+            Allow parallel sprints (more than one active sprint at a time)
+          </label>
+        </section>
+      )}
+
+      {project.boardType === "KANBAN" && (
+        <label className="form-field pa-done-days">
+          <span>Hide completed work items older than</span>
+          <select
+            value={config.kanbanDoneDays === null ? "" : String(config.kanbanDoneDays)}
+            disabled={readOnly}
+            onChange={(event) =>
+              setConfig((current) => ({
+                ...current,
+                kanbanDoneDays: event.target.value ? Number(event.target.value) : null,
+              }))
+            }
+          >
+            {[1, 7, 14, 28, 60, 90].map((days) => (
+              <option key={days} value={days}>
+                {days === 1 ? "1 day" : `${days} days`}
+              </option>
+            ))}
+            {config.kanbanDoneDays !== null &&
+              ![1, 7, 14, 28, 60, 90].includes(config.kanbanDoneDays) && (
+                <option value={config.kanbanDoneDays}>
+                  {config.kanbanDoneDays} days
+                </option>
+              )}
+            <option value="">Never hide</option>
+          </select>
+        </label>
+      )}
 
       {project.boardType === "KANBAN" && (
         <label className="pa-checkbox">

@@ -123,12 +123,20 @@ export function isRecentlyUpdated(issue: Pick<Issue, "updatedAt">, now = new Dat
   return now.getTime() - new Date(issue.updatedAt).getTime() <= 7 * DAY_MS;
 }
 
-/** Jira hides long-done work from the backlog. */
+/**
+ * Jira hides long-done work from the backlog, and done work from closed
+ * sprints never comes back to it. `closedSprintIds` are the project's
+ * closed sprints.
+ */
 export function isStaleDone(
-  issue: Pick<Issue, "status" | "resolvedAt" | "updatedAt">,
+  issue: Pick<Issue, "status" | "resolvedAt" | "updatedAt"> & {
+    cycleId?: string | null;
+  },
   now = new Date(),
+  closedSprintIds: ReadonlySet<string> = new Set(),
 ) {
   if (!isDoneStatus(issue.status)) return false;
+  if (issue.cycleId && closedSprintIds.has(issue.cycleId)) return true;
   const doneAt = new Date(issue.resolvedAt ?? issue.updatedAt).getTime();
   return now.getTime() - doneAt > 14 * DAY_MS;
 }
@@ -142,6 +150,10 @@ export type IssueFilters = {
   epicId: string | null;
   labelId: string | null;
   kinds: string[];
+  /** Board quick filters (JQL), AND-combined; applied by the page. */
+  quickFilterIds: string[];
+  /** Backlog versions panel. */
+  versionId: string | null;
 };
 
 export const EMPTY_FILTERS: IssueFilters = {
@@ -153,6 +165,8 @@ export const EMPTY_FILTERS: IssueFilters = {
   epicId: null,
   labelId: null,
   kinds: [],
+  quickFilterIds: [],
+  versionId: null,
 };
 
 export const UNASSIGNED = "__unassigned";
@@ -188,6 +202,9 @@ export function matchesFilters(
     return false;
   }
   if (filters.kinds.length > 0 && !filters.kinds.includes(issue.kind)) {
+    return false;
+  }
+  if (filters.versionId && issue.fixVersion?.id !== filters.versionId) {
     return false;
   }
   return true;

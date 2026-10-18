@@ -4,16 +4,13 @@ import Link from "next/link";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { Check, ChevronDown, ListTree } from "lucide-react";
 import {
-  ArrowDownToLine,
-  ArrowUpToLine,
-  Check,
-  ChevronDown,
-  ListTree,
-  MoreHorizontal,
-  MoveRight,
-} from "lucide-react";
-import type { Issue, IssueStatus } from "../../data/issues";
+  ISSUE_ESTIMATES,
+  type Issue,
+  type IssueEstimate,
+  type IssueStatus,
+} from "../../data/issues";
 import {
   allowedTransitions,
   isDoneStatus,
@@ -25,13 +22,14 @@ import { useWorkflow } from "../../WorkflowProvider";
 import { KindIcon, PriorityBadge } from "../IssueVisuals";
 import { epicOf } from "./boardModel";
 import { EpicChip, FlagMark, MemberAvatar, PointsBadge } from "./PlanningVisuals";
+import {
+  IssueActionsMenu,
+  type IssueMenuAction,
+  type MoveDestination,
+} from "./IssueActions";
 
-export type MoveDestination = { id: string | null; label: string };
-
-export type RowAction =
-  | { type: "top" }
-  | { type: "bottom" }
-  | { type: "move"; cycleId: string | null };
+export type { MoveDestination };
+export type RowAction = IssueMenuAction;
 
 const categoryClass = (status: IssueStatus) => statusTone(status);
 
@@ -109,14 +107,82 @@ export function StatusLozenge({
   );
 }
 
+/** Jira's inline story point estimate: click the badge to pick a value. */
+export function EstimateMenu({
+  estimate,
+  onChange,
+}: {
+  estimate: IssueEstimate | null;
+  onChange?: (estimate: IssueEstimate | null) => void;
+}) {
+  if (!onChange) return <PointsBadge points={estimate} />;
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <button
+          type="button"
+          className={
+            estimate === null
+              ? "planning-points empty planning-points-edit"
+              : "planning-points planning-points-edit"
+          }
+          aria-label={`Story points: ${estimate ?? "none"}. Change estimate`}
+          onClick={stop}
+          onPointerDown={stop}
+          onKeyDown={stop}
+        >
+          {estimate ?? "-"}
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          className="planning-menu planning-estimate-menu"
+          align="end"
+          sideOffset={4}
+          onClick={stop}
+        >
+          <DropdownMenu.Label className="planning-menu-label">
+            Story points
+          </DropdownMenu.Label>
+          <DropdownMenu.RadioGroup
+            className="planning-estimate-grid"
+            value={estimate === null ? "" : String(estimate)}
+            onValueChange={(value) =>
+              onChange(value === "" ? null : (Number(value) as IssueEstimate))
+            }
+          >
+            {ISSUE_ESTIMATES.map((value) => (
+              <DropdownMenu.RadioItem
+                key={value}
+                value={String(value)}
+                className="planning-menu-item planning-estimate-item"
+              >
+                {value}
+              </DropdownMenu.RadioItem>
+            ))}
+            <DropdownMenu.RadioItem
+              value=""
+              className="planning-menu-item planning-estimate-item none"
+            >
+              None
+            </DropdownMenu.RadioItem>
+          </DropdownMenu.RadioGroup>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
+}
+
 export function BacklogRowBody({
   issue,
   selectionCount = 0,
   onStatusChange,
+  onEstimateChange,
 }: {
   issue: Issue;
   selectionCount?: number;
   onStatusChange?: (status: IssueStatus) => void;
+  onEstimateChange?: (estimate: IssueEstimate | null) => void;
 }) {
   const epic = epicOf(issue);
   const isDone = isDoneStatus(issue.status);
@@ -161,7 +227,7 @@ export function BacklogRowBody({
       <span className="board-card-priority">
         <PriorityBadge priority={issue.priority} />
       </span>
-      <PointsBadge points={issue.estimate} />
+      <EstimateMenu estimate={issue.estimate} onChange={onEstimateChange} />
       <MemberAvatar member={issue.assignee} />
       {selectionCount > 1 && (
         <span className="backlog-drag-count">{selectionCount}</span>
@@ -176,20 +242,27 @@ export function SortableBacklogRow({
   isSelected,
   isOpen,
   isViewer,
+  meId,
+  color = null,
   destinations,
   onSelect,
   onAction,
   onStatusChange,
+  onEstimateChange,
 }: {
   issue: Issue;
   sectionId: string;
   isSelected: boolean;
   isOpen: boolean;
   isViewer: boolean;
+  meId: string | null;
+  /** Left color bar from the board's card color strategy. */
+  color?: string | null;
   destinations: MoveDestination[];
   onSelect: (issue: Issue, event: React.MouseEvent) => void;
   onAction: (issue: Issue, action: RowAction) => void;
   onStatusChange: (issue: Issue, status: IssueStatus) => void;
+  onEstimateChange: (issue: Issue, estimate: IssueEstimate | null) => void;
 }) {
   const {
     attributes,
@@ -213,10 +286,17 @@ export function SortableBacklogRow({
         isOpen ? "open" : "",
         isDragging ? "dragging" : "",
         issue.flagged ? "flagged" : "",
+        color ? "colored" : "",
       ]
         .filter(Boolean)
         .join(" ")}
-      style={{ transform: CSS.Translate.toString(transform), transition }}
+      style={
+        {
+          transform: CSS.Translate.toString(transform),
+          transition,
+          ...(color ? { "--card-color": color } : {}),
+        } as React.CSSProperties
+      }
       {...attributes}
       {...listeners}
       aria-selected={isSelected}
@@ -228,63 +308,19 @@ export function SortableBacklogRow({
         onStatusChange={
           isViewer ? undefined : (status) => onStatusChange(issue, status)
         }
+        onEstimateChange={
+          isViewer ? undefined : (estimate) => onEstimateChange(issue, estimate)
+        }
       />
-      {isViewer ? (
-        <span aria-hidden="true" />
-      ) : (
-        <DropdownMenu.Root>
-          <DropdownMenu.Trigger asChild>
-            <button
-              className="board-card-menu-trigger"
-              type="button"
-              aria-label={`Actions for ${issue.id}`}
-              onClick={stop}
-              onPointerDown={stop}
-              onKeyDown={stop}
-            >
-              <MoreHorizontal size={15} aria-hidden="true" />
-            </button>
-          </DropdownMenu.Trigger>
-          <DropdownMenu.Portal>
-            <DropdownMenu.Content
-              className="planning-menu"
-              align="end"
-              sideOffset={4}
-              onClick={stop}
-            >
-              <DropdownMenu.Item
-                className="planning-menu-item"
-                onSelect={() => onAction(issue, { type: "top" })}
-              >
-                <ArrowUpToLine size={14} aria-hidden="true" />
-                Move to top
-              </DropdownMenu.Item>
-              <DropdownMenu.Item
-                className="planning-menu-item"
-                onSelect={() => onAction(issue, { type: "bottom" })}
-              >
-                <ArrowDownToLine size={14} aria-hidden="true" />
-                Move to bottom
-              </DropdownMenu.Item>
-              {destinations.length > 0 && (
-                <DropdownMenu.Separator className="planning-menu-separator" />
-              )}
-              {destinations.map((destination) => (
-                <DropdownMenu.Item
-                  key={destination.id ?? "backlog"}
-                  className="planning-menu-item"
-                  onSelect={() =>
-                    onAction(issue, { type: "move", cycleId: destination.id })
-                  }
-                >
-                  <MoveRight size={14} aria-hidden="true" />
-                  Move to {destination.label}
-                </DropdownMenu.Item>
-              ))}
-            </DropdownMenu.Content>
-          </DropdownMenu.Portal>
-        </DropdownMenu.Root>
-      )}
+      <IssueActionsMenu
+        issue={issue}
+        isViewer={isViewer}
+        canAssignToMe={!isViewer && !!meId}
+        meId={meId}
+        scope="list"
+        destinations={destinations}
+        onAction={(action) => onAction(issue, action)}
+      />
     </div>
   );
 }

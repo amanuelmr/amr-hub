@@ -49,6 +49,7 @@ function issue(overrides: Partial<Issue>): Issue {
     timeSpentMinutes: 0,
     childCount: 0,
     doneChildCount: 0,
+    customFields: {},
     ...overrides,
   };
 }
@@ -172,5 +173,9 @@ describe("filters and grouping", () => {
   it("detects stale done work and remaining days", () => {
     expect(isStaleDone(issue({ status: "DONE", resolvedAt: "2026-09-01T00:00:00.000Z" }), now)).toBe(true);
     expect(daysRemaining("2026-10-18T23:59:59.000Z", now)).toBe(3);
+    const fresh = issue({ status: "DONE", resolvedAt: now.toISOString(), cycleId: "old" });
+    expect(isStaleDone(fresh, now)).toBe(false);
+    expect(isStaleDone(fresh, now, new Set(["old"]))).toBe(true);
+    expect(isStaleDone({ ...fresh, status: "OPEN" }, now, new Set(["old"]))).toBe(false);
   });
 });

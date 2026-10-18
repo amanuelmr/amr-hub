@@ -2,8 +2,26 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../../prisma/client", () => ({ default: {} }));
 
-const { defaultSprintWindow, nextSprintName, sortSprints, sprintPoints } =
-  await import("./sprints");
+const {
+  defaultSprintWindow,
+  nextSprintName,
+  parallelSprintConflict,
+  sortSprints,
+  sprintPoints,
+} = await import("./sprints");
+
+describe("parallelSprintConflict", () => {
+  it("blocks a second active sprint unless parallel sprints are on", () => {
+    expect(parallelSprintConflict([], false)).toBeNull();
+    expect(parallelSprintConflict(["AMR Sprint 1"], false)).toMatch(
+      /AMR Sprint 1 is already active/,
+    );
+    expect(parallelSprintConflict(["AMR Sprint 1"], true)).toBeNull();
+    expect(
+      parallelSprintConflict(["AMR Sprint 1", "AMR Sprint 2"], true),
+    ).toBeNull();
+  });
+});
 
 describe("nextSprintName", () => {
   it("numbers sprints after existing ones", () => {
@@ -14,6 +32,16 @@ describe("nextSprintName", () => {
     expect(nextSprintName("AMR", ["Launch", "AMR Sprint 3"])).toBe(
       "AMR Sprint 4",
     );
+  });
+
+  it("follows the latest sprint's naming pattern", () => {
+    expect(nextSprintName("AMR", ["AMR Sprint 1", "Release train 7"])).toBe(
+      "Release train 8",
+    );
+    expect(
+      nextSprintName("AMR", ["Release train 8", "Release train 7"]),
+    ).toBe("Release train 9");
+    expect(nextSprintName("AMR", ["Launch"])).toBe("AMR Sprint 2");
   });
 });
 
