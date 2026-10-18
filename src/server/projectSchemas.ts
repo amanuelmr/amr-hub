@@ -74,7 +74,7 @@ export const boardConfigSchema = z
       )
       .min(1)
       .max(12),
-    swimlanes: z.enum(["NONE", "ASSIGNEE", "EPIC", "PRIORITY", "QUERY"]),
+    swimlanes: z.enum(["NONE", "ASSIGNEE", "EPIC", "PRIORITY", "QUERY", "SUBTASKS"]),
     showBacklogColumn: z.boolean(),
     estimation: z.enum(["STORY_POINTS", "TIME"]),
     cardFields: z

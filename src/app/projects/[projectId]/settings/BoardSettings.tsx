@@ -533,6 +533,7 @@ export function BoardSettings({
             <option value="ASSIGNEE">Assignee</option>
             <option value="EPIC">Epic</option>
             <option value="PRIORITY">Priority</option>
+            <option value="SUBTASKS">Subtasks</option>
             <option value="QUERY">Queries</option>
           </select>
         </label>

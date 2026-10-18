@@ -170,6 +170,8 @@ export const EMPTY_FILTERS: IssueFilters = {
 };
 
 export const UNASSIGNED = "__unassigned";
+/** The "Everything else" lane when grouping by subtasks. */
+export const NO_SUBTASKS_LANE = "__everything-else";
 
 export function matchesFilters(
   issue: Issue,
@@ -227,6 +229,8 @@ export function groupLanes(
 ): Lane[] {
   if (mode === "NONE") return [{ id: "all", title: "All issues", issues }];
 
+  if (mode === "SUBTASKS") return groupSubtaskLanes(issues);
+
   if (mode === "PRIORITY") {
     return PRIORITY_ORDER.map((priority) => ({
       id: priority,
@@ -269,6 +273,48 @@ export function groupLanes(
     ),
     ...(fallback.issues.length > 0 ? [fallback] : []),
   ];
+}
+
+/**
+ * Jira's "Subtasks" swimlanes: every parent with subtasks on the board gets
+ * its own lane holding those subtasks (the parent is the lane header, not a
+ * card); all other work sits in "Everything else".
+ */
+export function groupSubtaskLanes(issues: Issue[]): Lane[] {
+  const byParent = new Map<string, Lane>();
+  for (const issue of issues) {
+    if (!isSubtaskLevel(issue.kind) || !issue.parentId) continue;
+    const lane = byParent.get(issue.parentId) ?? {
+      id: issue.parentId,
+      title: issue.parent
+        ? `${issue.parent.id} ${issue.parent.title}`
+        : issue.parentId,
+      issues: [],
+    };
+    lane.issues.push(issue);
+    byParent.set(issue.parentId, lane);
+  }
+
+  const rest = issues.filter(
+    (issue) =>
+      !(isSubtaskLevel(issue.kind) && issue.parentId) && !byParent.has(issue.id),
+  );
+  // Parent lanes follow the parents' board order (issues arrive ranked).
+  const order = issues.map((issue) => issue.id);
+  const parentLanes = [...byParent.values()].sort(
+    (left, right) => rankIndex(order, left.id) - rankIndex(order, right.id),
+  );
+  return [
+    ...parentLanes,
+    ...(rest.length > 0
+      ? [{ id: NO_SUBTASKS_LANE, title: "Everything else", issues: rest }]
+      : []),
+  ];
+}
+
+function rankIndex(order: string[], id: string) {
+  const index = order.indexOf(id);
+  return index === -1 ? Number.MAX_SAFE_INTEGER : index;
 }
 
 export type PointBreakdown = {

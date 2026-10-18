@@ -2,7 +2,13 @@ import type { IssueStatus } from "./issues";
 
 export type ProjectStatus = "ACTIVE" | "PAUSED" | "COMPLETED" | "CANCELED";
 export type BoardType = "SCRUM" | "KANBAN";
-export type BoardSwimlanes = "NONE" | "ASSIGNEE" | "EPIC" | "PRIORITY" | "QUERY";
+export type BoardSwimlanes =
+  | "NONE"
+  | "ASSIGNEE"
+  | "EPIC"
+  | "PRIORITY"
+  | "QUERY"
+  | "SUBTASKS";
 
 /** Fields a board card can show (Jira "Card layout"). */
 export type CardField =

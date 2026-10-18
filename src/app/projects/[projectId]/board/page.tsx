@@ -81,11 +81,13 @@ import {
   allowedTransitions,
   isDoneStatus,
   isEpicLevel,
+  isSubtaskLevel,
   statusName,
 } from "../../../data/workflow";
 import {
   BOARD_CREATE_DESCRIPTION,
   EMPTY_FILTERS,
+  NO_SUBTASKS_LANE,
   UNASSIGNED,
   columnForStatus,
   compareRank,
@@ -118,6 +120,7 @@ const GROUP_OPTIONS: { value: BoardSwimlanes; label: string }[] = [
   { value: "ASSIGNEE", label: "Assignee" },
   { value: "EPIC", label: "Epic" },
   { value: "PRIORITY", label: "Priority" },
+  { value: "SUBTASKS", label: "Subtasks" },
   { value: "QUERY", label: "Queries" },
 ];
 
@@ -351,13 +354,29 @@ export default function ProjectBoardPage() {
   const typeColor = (kind: string) =>
     workflow.types.find((type) => type.key === kind)?.color ?? null;
 
-  const boardIssues = projectIssues.filter((issue) => {
+  const planningBoardIssues = projectIssues.filter((issue) => {
     if (!isPlanningIssue(issue)) return false;
     if (boardType === "SCRUM") {
       return !!issue.cycleId && shownSprintIds.includes(issue.cycleId);
     }
     return !isHiddenKanbanDone(issue, config.kanbanDoneDays, now);
   });
+  // Subtask lanes need the subtasks of every parent on the board; subtasks
+  // follow their parent's sprint, as in Jira.
+  const onBoardParents = new Set(planningBoardIssues.map((issue) => issue.id));
+  const boardIssues =
+    swimlanes === "SUBTASKS"
+      ? [
+          ...planningBoardIssues,
+          ...projectIssues.filter(
+            (issue) =>
+              isSubtaskLevel(issue.kind) &&
+              !!issue.parentId &&
+              onBoardParents.has(issue.parentId) &&
+              !isHiddenKanbanDone(issue, config.kanbanDoneDays, now),
+          ),
+        ]
+      : planningBoardIssues;
 
   const columnOf = (issue: Issue) =>
     columnForStatus(columns, issue.status, boardType);
@@ -366,6 +385,14 @@ export default function ProjectBoardPage() {
     (issue) =>
       matchesFilters(issue, filters, meId) &&
       matchesQuickFilters(issue, filters.quickFilterIds, quickFilters, jqlContext),
+  );
+  // Parents shown as subtask-lane headers aren't cards, so they don't count.
+  const laneHeaderIds = new Set(
+    swimlanes === "SUBTASKS"
+      ? onBoard.flatMap((issue) =>
+          isSubtaskLevel(issue.kind) && issue.parentId ? [issue.parentId] : [],
+        )
+      : [],
   );
   const lanes =
     swimlanes === "QUERY"
@@ -560,6 +587,13 @@ export default function ProjectBoardPage() {
       input.parentId = lane.id;
     } else if (swimlanes === "PRIORITY") {
       input.priority = lane.id as IssuePriority;
+    } else if (swimlanes === "SUBTASKS" && lane.id !== NO_SUBTASKS_LANE) {
+      const subtaskKind = workflow.types.find((type) => type.level === -1)?.key;
+      if (subtaskKind) {
+        input.parentId = lane.id;
+        input.kind = subtaskKind;
+        input.cycleId = null;
+      }
     }
     if (filters.epicId && !input.parentId) input.parentId = filters.epicId;
     await createIssue(input);
@@ -923,7 +957,8 @@ export default function ProjectBoardPage() {
           >
             {columns.map((column) => {
               const count = onBoard.filter(
-                (issue) => columnOf(issue) === column.id,
+                (issue) =>
+                  columnOf(issue) === column.id && !laneHeaderIds.has(issue.id),
               ).length;
               const overLimit = column.wipLimit !== null && count > column.wipLimit;
               return (

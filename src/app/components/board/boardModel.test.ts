@@ -179,3 +179,45 @@ describe("filters and grouping", () => {
     expect(isStaleDone({ ...fresh, status: "OPEN" }, now, new Set(["old"]))).toBe(false);
   });
 });
+
+describe("subtask swimlanes", () => {
+  const parentRef = {
+    id: "WEB-1",
+    title: "Checkout",
+    status: "IN_PROGRESS" as const,
+    kind: "STORY" as const,
+    priority: "MEDIUM" as const,
+    assignee: null,
+    estimate: null,
+  };
+  const parent = issue({ id: "WEB-1", title: "Checkout", kind: "STORY", rank: 1 });
+  const loner = issue({ id: "WEB-2", title: "Copy fix", kind: "TASK", rank: 2 });
+  const subA = issue({
+    id: "WEB-3",
+    kind: "SUBTASK",
+    parentId: "WEB-1",
+    parent: parentRef,
+    rank: 3,
+  });
+  const subB = issue({
+    id: "WEB-4",
+    kind: "SUBTASK",
+    parentId: "WEB-1",
+    parent: parentRef,
+    rank: 4,
+  });
+
+  it("gives each parent a lane of its subtasks and drops the parent card", () => {
+    const lanes = groupLanes([parent, loner, subA, subB], "SUBTASKS", []);
+    expect(lanes.map((lane) => lane.id)).toEqual(["WEB-1", "__everything-else"]);
+    expect(lanes[0].title).toBe("WEB-1 Checkout");
+    expect(lanes[0].issues.map((item) => item.id)).toEqual(["WEB-3", "WEB-4"]);
+    expect(lanes[1].issues.map((item) => item.id)).toEqual(["WEB-2"]);
+  });
+
+  it("keeps everything in one lane when nothing has subtasks", () => {
+    const lanes = groupLanes([parent, loner], "SUBTASKS", []);
+    expect(lanes).toHaveLength(1);
+    expect(lanes[0].issues.map((item) => item.id)).toEqual(["WEB-1", "WEB-2"]);
+  });
+});
