@@ -6,6 +6,7 @@ import "./styles/shell.css";
 import "./styles/board.css";
 import "./styles/backlog.css";
 import "./styles/issue-detail.css";
+import "./styles/collab.css";
 import "./styles/create-issue.css";
 import "./styles/project-admin.css";
 import "./styles/workflow-admin.css";
@@ -16,6 +17,9 @@ import "./styles/goals-forms.css";
 import "./styles/people.css";
 import "./styles/auth.css";
 import "./styles/landing.css";
+import "./styles/custom-fields.css";
+import "./styles/notifications.css";
+import "./styles/automation.css";
 import { AppShell } from "./AppShell";
 
 export const metadata: Metadata = {
