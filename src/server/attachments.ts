@@ -1,6 +1,11 @@
 import prisma from "../../prisma/client";
+import {
+  assertIssuePermission,
+  visibleIssueWhere,
+  type AccessUser,
+} from "./projectAccess";
 import { notifyRecipients } from "./notifications";
-import { getIssue, type WorkspaceActor } from "./issues";
+import { getIssue, type WorkspaceActor, actorAccessUser } from "./issues";
 import { IssueActionError } from "./issueRelations";
 import type { AttachmentSummary } from "../app/components/issue/types";
 
@@ -177,16 +182,23 @@ export async function createAttachments(
 
   return {
     attachments: (await listAttachments(issueId, actor.organizationId)) ?? [],
-    issue: await getIssue(issueId, actor.organizationId),
+    issue: await getIssue(issueId, actor.organizationId, actorAccessUser(actor)),
   };
 }
 
 export async function getAttachmentContent(
   attachmentId: string,
   organizationId: string,
+  user: AccessUser,
 ) {
   return prisma.attachment.findFirst({
-    where: { id: attachmentId, issue: { organizationId } },
+    where: {
+      id: attachmentId,
+      issue: visibleIssueWhere(user, organizationId, {
+        includeArchived: true,
+        includeArchivedProjects: true,
+      }),
+    },
     select: { name: true, mimeType: true, size: true, data: true },
   });
 }
@@ -203,6 +215,15 @@ export async function deleteAttachment(
     },
     select: { id: true, name: true, issueId: true, userId: true },
   });
+  const accessUser = actorAccessUser(actor);
+  if (attachment && accessUser) {
+    await assertIssuePermission(
+      attachment.issueId,
+      accessUser,
+      actor.organizationId,
+      "edit",
+    );
+  }
   if (!attachment) return null;
   if (!canDeleteAttachment(attachment.userId, actor.id, role)) {
     throw new IssueActionError(
@@ -224,5 +245,5 @@ export async function deleteAttachment(
     }),
   ]);
 
-  return getIssue(attachment.issueId, actor.organizationId);
+  return getIssue(attachment.issueId, actor.organizationId, actorAccessUser(actor));
 }

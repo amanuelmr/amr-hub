@@ -1,6 +1,11 @@
 import prisma from "../../prisma/client";
 import type { Issue } from "../app/data/issues";
 import { issueInclude, serializeIssue } from "./issues";
+import {
+  visibleIssueWhere,
+  visibleProjectWhere,
+  type AccessUser,
+} from "./projectAccess";
 
 const WORKED_ON_DAYS = 30;
 const DAY_MS = 86_400_000;
@@ -14,10 +19,10 @@ export type YourWork = {
   starredProjectIds: string[];
 };
 
-async function loadIssues(ids: string[], organizationId: string) {
+async function loadIssues(ids: string[], organizationId: string, user: AccessUser) {
   if (ids.length === 0) return new Map<string, Issue>();
   const issues = await prisma.issue.findMany({
-    where: { id: { in: ids }, organizationId },
+    where: { id: { in: ids }, ...visibleIssueWhere(user, organizationId) },
     include: issueInclude,
   });
   return new Map(issues.map((issue) => [issue.id, serializeIssue(issue)]));
@@ -25,11 +30,12 @@ async function loadIssues(ids: string[], organizationId: string) {
 
 /** Jira "For you": recently viewed, worked on (30 days), assigned, starred projects. */
 export async function getYourWork(
-  userId: string,
+  user: AccessUser,
   organizationId: string,
 ): Promise<YourWork> {
+  const userId = user.id;
   const since = new Date(Date.now() - WORKED_ON_DAYS * DAY_MS);
-  const inOrg = { organizationId };
+  const inOrg = visibleIssueWhere(user, organizationId);
 
   const [views, activity, comments, worklogs, created, assignedRows, stars] =
     await Promise.all([
@@ -61,7 +67,7 @@ export async function getYourWork(
         take: 200,
       }),
       prisma.projectStar.findMany({
-        where: { userId, project: inOrg },
+        where: { userId, project: visibleProjectWhere(user, organizationId) },
         orderBy: { createdAt: "asc" },
         select: { projectId: true },
       }),
@@ -85,6 +91,7 @@ export async function getYourWork(
   const issues = await loadIssues(
     [...new Set([...views.map((view) => view.issueId), ...workedOnIds])],
     organizationId,
+    user,
   );
 
   return {
@@ -106,17 +113,24 @@ export async function getYourWork(
 
 /** Lightweight read for the sidebar "Recent" section. */
 export async function getRecentlyViewed(
-  userId: string,
+  user: AccessUser,
   organizationId: string,
   limit: number,
 ) {
+  const userId = user.id;
   const views = await prisma.issueView.findMany({
     where: { userId },
     orderBy: { viewedAt: "desc" },
     take: limit * 2,
   });
   const issues = await prisma.issue.findMany({
-    where: { id: { in: views.map((view) => view.issueId) }, organizationId },
+    where: {
+      id: { in: views.map((view) => view.issueId) },
+      ...visibleIssueWhere(user, organizationId, {
+        includeArchived: true,
+        includeArchivedProjects: true,
+      }),
+    },
     select: { id: true, title: true, kind: true, projectId: true },
   });
   const byId = new Map(issues.map((issue) => [issue.id, issue]));

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { issueGuard, accessErrorResponse } from "../../../../../server/projectAccess";
 import {
   commentBodySchema,
   prepareCommentBody,
@@ -33,6 +34,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     const { id } = await context.params;
+    const denied = await issueGuard(result.session, id, "comment");
+    if (denied) return denied;
     const issue = await addComment(
       id,
       prepareCommentBody(validation.data.body),
@@ -45,6 +48,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     return NextResponse.json(issue, { status: 201 });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     if (error instanceof SyntaxError) {
       return NextResponse.json(
         { error: "Request body must be valid JSON" },

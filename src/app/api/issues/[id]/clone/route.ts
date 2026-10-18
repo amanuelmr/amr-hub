@@ -1,4 +1,5 @@
 import { isWorkflowValidationError } from "../../../../../server/workflows";
+import { issueGuard, accessErrorResponse } from "../../../../../server/projectAccess";
 import { NextRequest, NextResponse } from "next/server";
 import {
   InvalidParentError,
@@ -32,6 +33,8 @@ export async function POST(request: NextRequest, context: IssueRouteContext) {
     const validation = cloneIssueSchema.safeParse(await readJsonBody(request));
     if (!validation.success) return validationFailed(validation.error);
     const { id } = await context.params;
+    const denied = await issueGuard(result.session, id, "edit");
+    if (denied) return denied;
     const issue = await cloneIssue(
       id,
       validation.data,
@@ -40,6 +43,8 @@ export async function POST(request: NextRequest, context: IssueRouteContext) {
     if (!issue) return issueNotFound();
     return NextResponse.json(issue, { status: 201 });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     if (
       error instanceof UnknownLabelError ||
       error instanceof UnknownCycleError ||

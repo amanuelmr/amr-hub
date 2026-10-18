@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse, projectGuard } from "../../../../../../server/projectAccess";
 import {
   CustomFieldInputError,
   reorderCustomFields,
@@ -22,6 +23,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const validation = reorderCustomFieldsSchema.safeParse(await request.json());
     if (!validation.success) return validationFailed(validation.error);
     const { id } = await context.params;
+    const guard = await projectGuard(result.session, id, "admin");
+    if (guard) return guard;
     const project = await prisma.project.findFirst({
       where: { id, organizationId: session.workspace.id },
       select: { id: true },
@@ -30,6 +33,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const fields = await reorderCustomFields(session.workspace.id, id, validation.data.ids);
     return NextResponse.json(fields);
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(error, "Custom fields could not be reordered", [CustomFieldInputError]);
   }
 }

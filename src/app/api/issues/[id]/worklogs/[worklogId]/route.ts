@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { issueGuard, accessErrorResponse } from "../../../../../../server/projectAccess";
 import {
   deleteWorklog,
   updateWorklog,
@@ -26,6 +27,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     const validation = updateWorklogSchema.safeParse(await request.json());
     if (!validation.success) return validationFailed(validation.error);
     const { id, worklogId } = await context.params;
+    const denied = await issueGuard(result.session, id, "edit");
+    if (denied) return denied;
     const response = await updateWorklog(
       id,
       worklogId,
@@ -35,6 +38,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     if (!response) return issueNotFound("Work log not found");
     return NextResponse.json(response);
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return routeError(
       error,
       "Failed to update work log",
@@ -49,6 +54,8 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
   try {
     const { id, worklogId } = await context.params;
+    const denied = await issueGuard(result.session, id, "edit");
+    if (denied) return denied;
     const issue = await deleteWorklog(
       id,
       worklogId,
@@ -58,6 +65,8 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     if (!issue) return issueNotFound("Work log not found");
     return NextResponse.json(issue);
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return routeError(
       error,
       "Failed to delete work log",

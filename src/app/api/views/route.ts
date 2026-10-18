@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../server/projectAccess";
 import type { ZodError } from "zod";
 import { createSavedViewSchema } from "../../../server/savedViewSchemas";
 import {
@@ -37,6 +38,8 @@ export async function GET(request: NextRequest) {
       await listSavedViews(session.user.id, session.workspace.id, { all }),
     );
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     console.error("Failed to load saved views", error);
     return NextResponse.json(
       { error: "Saved views could not be loaded" },
@@ -68,6 +71,8 @@ export async function POST(request: NextRequest) {
       { status: 201 },
     );
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     if (error instanceof SyntaxError) {
       return NextResponse.json(
         { error: "Request body must be valid JSON" },

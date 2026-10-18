@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { issueGuard, accessErrorResponse } from "../../../../../server/projectAccess";
 import {
   addIssueLink,
   createLinkSchema,
@@ -24,6 +25,8 @@ export async function POST(request: NextRequest, context: IssueRouteContext) {
     const validation = createLinkSchema.safeParse(await request.json());
     if (!validation.success) return validationFailed(validation.error);
     const { id } = await context.params;
+    const denied = await issueGuard(result.session, id, "edit");
+    if (denied) return denied;
     const issue = await addIssueLink(
       id,
       validation.data,
@@ -32,6 +35,8 @@ export async function POST(request: NextRequest, context: IssueRouteContext) {
     if (!issue) return issueNotFound();
     return NextResponse.json(issue, { status: 201 });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return routeError(error, "Failed to link issue", "Link could not be added");
   }
 }
@@ -49,6 +54,8 @@ export async function DELETE(request: NextRequest, context: IssueRouteContext) {
       return NextResponse.json({ error: "linkId is required" }, { status: 400 });
     }
     const { id } = await context.params;
+    const denied = await issueGuard(result.session, id, "edit");
+    if (denied) return denied;
     const issue = await removeIssueLink(
       id,
       linkId,
@@ -57,6 +64,8 @@ export async function DELETE(request: NextRequest, context: IssueRouteContext) {
     if (!issue) return issueNotFound("Link not found");
     return NextResponse.json(issue);
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return routeError(
       error,
       "Failed to remove issue link",

@@ -1,8 +1,18 @@
 import { z } from "zod";
-import { dispatchWebhook } from "./webhooks";
 import { Prisma } from "@prisma/client";
 import prisma from "../../prisma/client";
-import { createIssue, getIssue, type WorkspaceActor } from "./issues";
+import {
+  actorAccessUser,
+  createIssue,
+  getIssue,
+  type WorkspaceActor,
+} from "./issues";
+import {
+  assertProjectPermission,
+  ProjectAccessError,
+  projectPermission,
+} from "./projectAccess";
+import { trashIssue } from "./trash";
 import { IssueActionError } from "./issueRelations";
 import {
   isSubtaskLevel,
@@ -97,13 +107,27 @@ export async function cloneIssue(
   actor: WorkspaceActor,
 ) {
   const source = await prisma.issue.findFirst({
-    where: { id: issueId, organizationId: actor.organizationId },
+    where: { id: issueId, organizationId: actor.organizationId, deletedAt: null },
     include: {
       ...cloneSourceInclude,
-      children: { include: cloneSourceInclude, orderBy: { rank: "asc" } },
+      children: {
+        where: { deletedAt: null },
+        include: cloneSourceInclude,
+        orderBy: { rank: "asc" },
+      },
     },
   });
   if (!source) return null;
+  const user = actorAccessUser(actor);
+  if (user) {
+    await assertProjectPermission(
+      source.projectId,
+      user,
+      actor.organizationId,
+      "edit",
+      "Issue not found",
+    );
+  }
 
   const workflow = await loadWorkflow(prisma, source.projectId);
   const statusKeys = new Set(workflow.statuses.map((status) => status.key));
@@ -148,7 +172,7 @@ export async function cloneIssue(
     }
   }
 
-  return getIssue(clone.id, actor.organizationId);
+  return getIssue(clone.id, actor.organizationId, actorAccessUser(actor));
 }
 
 /**
@@ -162,10 +186,10 @@ export async function moveIssue(
   actor: WorkspaceActor,
 ) {
   const issue = await prisma.issue.findFirst({
-    where: { id: issueId, organizationId: actor.organizationId },
+    where: { id: issueId, organizationId: actor.organizationId, deletedAt: null },
     include: {
       children: {
-        where: subtaskKindWhere(),
+        where: { deletedAt: null, AND: [subtaskKindWhere()] },
         select: { id: true },
         orderBy: { sequence: "asc" },
       },
@@ -176,11 +200,31 @@ export async function moveIssue(
     throw new IssueActionError("Move the parent issue to move its subtasks");
   }
 
+  const user = actorAccessUser(actor);
+  if (user) {
+    await assertProjectPermission(
+      issue.projectId,
+      user,
+      actor.organizationId,
+      "edit",
+      "Issue not found",
+    );
+  }
   const project = await prisma.project.findFirst({
-    where: { id: targetProjectId, organizationId: actor.organizationId },
+    where: { id: targetProjectId, organizationId: actor.organizationId, deletedAt: null },
     select: { id: true, key: true, name: true },
   });
   if (!project) throw new IssueActionError("The target project does not exist");
+  if (user) {
+    const target = await projectPermission(project.id, user, actor.organizationId);
+    if (!target.canView) throw new IssueActionError("The target project does not exist");
+    if (!target.canEdit) {
+      throw new IssueActionError(
+        "You don't have permission to create work in the target project",
+        403,
+      );
+    }
+  }
   if (project.id === issue.projectId) {
     throw new IssueActionError("The issue is already in that project");
   }
@@ -294,43 +338,25 @@ export async function moveIssue(
     { timeout: 20_000 },
   );
 
-  return getIssue(newId, actor.organizationId);
+  return getIssue(newId, actor.organizationId, actorAccessUser(actor));
 }
 
-async function deleteIssueUnhooked(
+/**
+ * Moves an issue (and its subtasks) to the trash for 60 days. Returns false
+ * when it does not exist or the user cannot see it.
+ */
+export async function deleteIssue(
   issueId: string,
   actor: WorkspaceActor,
   role: string,
 ) {
-  const issue = await prisma.issue.findFirst({
-    where: { id: issueId, organizationId: actor.organizationId },
-    select: { id: true, creatorId: true },
-  });
-  if (!issue) return false;
-  if (!canDeleteIssue(issue.creatorId, actor.id, role)) {
-    throw new IssueActionError(
-      "Only the reporter or a workspace owner can delete this issue",
-      403,
-    );
+  try {
+    return await trashIssue(issueId, actor, { id: actor.id, role });
+  } catch (error) {
+    if (error instanceof ProjectAccessError) {
+      if (error.status === 404) return false;
+      throw new IssueActionError(error.message, 403);
+    }
+    throw error;
   }
-
-  await prisma.$transaction([
-    prisma.issue.updateMany({
-      where: { parentId: issue.id },
-      data: { parentId: null },
-    }),
-    prisma.issueView.deleteMany({ where: { issueId: issue.id } }),
-    prisma.issue.delete({ where: { id: issue.id } }),
-  ]);
-  return true;
-}
-
-export async function deleteIssue(
-  ...args: Parameters<typeof deleteIssueUnhooked>
-) {
-  const result = await deleteIssueUnhooked(...args);
-  dispatchWebhook(args[1].organizationId, "issue_deleted", {
-    issueId: args[0],
-  });
-  return result;
 }

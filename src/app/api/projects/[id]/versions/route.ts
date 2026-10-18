@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse, projectGuard } from "../../../../../server/projectAccess";
 import {
   createVersion,
   createVersionSchema,
@@ -22,9 +23,13 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
   try {
     const { id } = await context.params;
+    const guard = await projectGuard(result.session, id, "view");
+    if (guard) return guard;
     const versions = await listVersions(id, session.workspace.id);
     return versions ? NextResponse.json(versions) : notFound("Project");
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(error, "Versions could not be loaded");
   }
 }
@@ -39,6 +44,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (!validation.success) return validationFailed(validation.error);
 
     const { id } = await context.params;
+    const guard = await projectGuard(result.session, id, "edit");
+    if (guard) return guard;
     const version = await createVersion(
       id,
       validation.data,
@@ -48,6 +55,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
       ? NextResponse.json(version, { status: 201 })
       : notFound("Project");
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(
       error,
       "Version could not be created",

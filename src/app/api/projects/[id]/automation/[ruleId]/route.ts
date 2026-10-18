@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse, projectGuard } from "../../../../../../server/projectAccess";
 import { recordAudit } from "../../../../../../server/audit";
 import {
   AutomationRuleError,
@@ -26,6 +27,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
   try {
     const { id, ruleId } = await context.params;
+    const guard = await projectGuard(result.session, id, "admin");
+    if (guard) return guard;
     const rule = await getAutomationRule(id, ruleId, session.workspace.id);
     if (!rule) return notFound("Automation rule");
     const runs = await listAutomationRuns(id, session.workspace.id, {
@@ -34,6 +37,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
     });
     return NextResponse.json({ rule, runs: runs?.runs ?? [] });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(error, "Automation rule could not be loaded");
   }
 }
@@ -50,6 +55,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     if (!validation.success) return validationFailed(validation.error);
 
     const { id, ruleId } = await context.params;
+    const guard = await projectGuard(result.session, id, "admin");
+    if (guard) return guard;
     const rule = await updateAutomationRule(
       id,
       ruleId,
@@ -65,6 +72,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     });
     return rule ? NextResponse.json(rule) : notFound("Automation rule");
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(error, "Automation rule could not be updated", [
       AutomationRuleError,
     ]);
@@ -78,6 +87,8 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
   try {
     const { id, ruleId } = await context.params;
+    const guard = await projectGuard(result.session, id, "admin");
+    if (guard) return guard;
     const deleted = await deleteAutomationRule(
       id,
       ruleId,
@@ -94,6 +105,8 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       ? NextResponse.json({ ok: true })
       : notFound("Automation rule");
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(error, "Automation rule could not be deleted");
   }
 }

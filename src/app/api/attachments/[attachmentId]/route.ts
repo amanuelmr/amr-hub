@@ -10,6 +10,7 @@ import {
   requireWorkspaceRole,
   requireWorkspaceSession,
 } from "../../../../server/session";
+import { accessUserFromSession, accessErrorResponse } from "../../../../server/projectAccess";
 import { routeError } from "../../issues/[id]/_lib/routeErrors";
 
 type RouteContext = {
@@ -27,6 +28,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const attachment = await getAttachmentContent(
       attachmentId,
       result.session.workspace.id,
+      accessUserFromSession(result.session),
     );
     if (!attachment) {
       return NextResponse.json(
@@ -47,6 +49,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
       },
     });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return routeError(
       error,
       "Failed to download attachment",
@@ -74,6 +78,8 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     }
     return NextResponse.json(issue);
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return routeError(
       error,
       "Failed to delete attachment",

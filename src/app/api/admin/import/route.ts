@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../../server/projectAccess";
 import {
   ImportProjectError,
   importRequestSchema,
@@ -32,6 +33,8 @@ export async function POST(request: NextRequest) {
       await runImport(validation.data, actorFromSession(result.session)),
     );
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     if (error instanceof SyntaxError) {
       return NextResponse.json({ error: "Request body must be valid JSON" }, { status: 400 });
     }

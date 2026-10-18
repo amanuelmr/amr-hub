@@ -178,6 +178,10 @@ export const listIssuesQuerySchema = z.object({
   sort: z.enum(["NEWEST", "OLDEST", "RANK"]).default("NEWEST"),
   cursor: z.string().trim().min(1).max(120).optional(),
   limit: z.coerce.number().int().min(1).max(500).optional(),
+  archived: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
 });
 
 export type ListIssuesQuery = z.infer<typeof listIssuesQuerySchema>;

@@ -10,6 +10,12 @@ import { listOrganizationMembers } from "./members";
 import { issueInclude, serializeIssue } from "./issues";
 import { listOrganizationWorkflows } from "./workflows";
 import { listAllCustomFields } from "./customFields";
+import {
+  jqlMentionsArchived,
+  visibleIssueWhere,
+  visibleProjectWhere,
+  type AccessUser,
+} from "./projectAccess";
 
 export class JqlQueryError extends Error {
   constructor(public detail: JqlError) {
@@ -25,10 +31,14 @@ export async function loadJqlContext(
   organizationId: string,
   userId: string,
   now = new Date(),
+  viewer?: AccessUser,
 ): Promise<JqlContext> {
   const [projects, cycles, members, membership, workflows, customFields] = await Promise.all([
     prisma.project.findMany({
-      where: { organizationId },
+      // Hidden projects resolve like unknown ones, so their keys don't leak.
+      where: viewer
+        ? visibleProjectWhere(viewer, organizationId, { includeArchived: true })
+        : { organizationId, deletedAt: null },
       select: { id: true, key: true, name: true },
     }),
     prisma.cycle.findMany({ where: { organizationId } }),
@@ -64,15 +74,23 @@ export async function loadJqlContext(
   };
 }
 
+/**
+ * Runs JQL over the issues the user can see. Archived work items (and
+ * archived projects) are only searched when the query mentions `archived`.
+ */
 export async function searchOrganizationIssues(
   organizationId: string,
-  userId: string,
+  user: AccessUser,
   options: { jql: string; limit?: number; cursor?: string | null },
 ) {
+  const archived = jqlMentionsArchived(options.jql);
   const [context, stored] = await Promise.all([
-    loadJqlContext(organizationId, userId),
+    loadJqlContext(organizationId, user.id, new Date(), user),
     prisma.issue.findMany({
-      where: { organizationId },
+      where: visibleIssueWhere(user, organizationId, {
+        includeArchived: archived,
+        includeArchivedProjects: archived,
+      }),
       include: issueInclude,
       orderBy: { createdAt: "desc" },
     }),

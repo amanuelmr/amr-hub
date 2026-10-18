@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse, accessUserFromSession, projectGuard } from "../../../server/projectAccess";
 import { createCycleSchema } from "../../../server/projectSchemas";
 import {
   createCycle,
@@ -22,10 +23,16 @@ export async function GET(request: NextRequest) {
   const projectId = request.nextUrl.searchParams.get("projectId") ?? undefined;
 
   try {
+    if (projectId) {
+      const denied = await projectGuard(session, projectId, "view");
+      if (denied) return denied;
+    }
     return NextResponse.json(
-      await listCycles(session.workspace.id, projectId),
+      await listCycles(session.workspace.id, projectId, accessUserFromSession(session)),
     );
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     console.error("Failed to load cycles", error);
     return NextResponse.json(
       { error: "Cycles could not be loaded" },
@@ -57,6 +64,8 @@ export async function POST(request: NextRequest) {
       { status: 201 },
     );
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     if (error instanceof SyntaxError) {
       return NextResponse.json(
         { error: "Request body must be valid JSON" },

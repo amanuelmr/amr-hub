@@ -1,8 +1,9 @@
 import { isDoneStatus } from "../app/data/workflow";
 import { z } from "zod";
 import prisma from "../../prisma/client";
-import { getIssue, inverseLinkType, type WorkspaceActor } from "./issues";
+import { getIssue, inverseLinkType, type WorkspaceActor, actorAccessUser } from "./issues";
 import { issueLinkTypeSchema } from "./issueSchemas";
+import { assertIssuePermission, projectPermission } from "./projectAccess";
 import { LINK_TYPE_LABELS, type IssueLinkType } from "../app/data/issues";
 import type { WatcherSummary } from "../app/components/issue/types";
 
@@ -76,17 +77,25 @@ export async function addIssueLink(
     throw new IssueActionError("An issue cannot be linked to itself");
   }
 
-  const found = await prisma.issue.count({
+  const found = await prisma.issue.findMany({
     where: {
       id: { in: [issueId, input.targetId] },
       organizationId: actor.organizationId,
+      deletedAt: null,
     },
+    select: { id: true, projectId: true },
   });
-  if (found !== 2) {
-    const exists = await prisma.issue.count({
-      where: { id: issueId, organizationId: actor.organizationId },
-    });
-    if (!exists) return null;
+  if (found.length !== 2) {
+    if (!found.some((issue) => issue.id === issueId)) return null;
+    throw new IssueActionError("The issue to link was not found");
+  }
+  // Linking across projects needs view access to both sides.
+  const user = actorAccessUser(actor);
+  const target = found.find((issue) => issue.id === input.targetId)!;
+  if (
+    user &&
+    !(await projectPermission(target.projectId, user, actor.organizationId)).canView
+  ) {
     throw new IssueActionError("The issue to link was not found");
   }
 
@@ -125,7 +134,7 @@ export async function addIssueLink(
     }),
   ]);
 
-  return getIssue(issueId, actor.organizationId);
+  return getIssue(issueId, actor.organizationId, actorAccessUser(actor));
 }
 
 export async function removeIssueLink(
@@ -155,7 +164,7 @@ export async function removeIssueLink(
     }),
   ]);
 
-  return getIssue(issueId, actor.organizationId);
+  return getIssue(issueId, actor.organizationId, actorAccessUser(actor));
 }
 
 async function requireIssue(issueId: string, organizationId: string) {
@@ -233,6 +242,41 @@ export async function setWatching(
       403,
     );
   }
+  if (userId !== actor.id && watching) {
+    // Adding someone else needs edit rights, and they must be able to see it.
+    await assertIssuePermission(
+      issueId,
+      { id: actor.id, role },
+      actor.organizationId,
+      "edit",
+    );
+    const member = await prisma.member.findUnique({
+      where: {
+        organizationId_userId: {
+          organizationId: actor.organizationId,
+          userId,
+        },
+      },
+      select: { role: true },
+    });
+    const canView = member
+      ? await assertIssuePermission(
+          issueId,
+          { id: userId, role: member.role },
+          actor.organizationId,
+          "view",
+        ).then(
+          () => true,
+          () => false,
+        )
+      : false;
+    if (!canView) {
+      throw new IssueActionError(
+        "That person can't see this work item, so they can't watch it",
+        400,
+      );
+    }
+  }
 
   if (watching) {
     await prisma.issueWatcher.upsert({
@@ -246,7 +290,7 @@ export async function setWatching(
 
   return {
     watchers: (await listWatchers(issueId, actor.organizationId)) ?? [],
-    issue: await getIssue(issueId, actor.organizationId),
+    issue: await getIssue(issueId, actor.organizationId, actorAccessUser(actor)),
   };
 }
 
@@ -276,7 +320,7 @@ export async function setVote(
     });
   }
 
-  return getIssue(issueId, actor.organizationId);
+  return getIssue(issueId, actor.organizationId, actorAccessUser(actor));
 }
 
 export async function recordIssueView(issueId: string, actor: WorkspaceActor) {

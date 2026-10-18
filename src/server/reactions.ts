@@ -1,6 +1,6 @@
 import prisma from "../../prisma/client";
 import { isAllowedReaction } from "../app/data/reactions";
-import { getIssue, type WorkspaceActor } from "./issues";
+import { getIssue, type WorkspaceActor, actorAccessUser } from "./issues";
 import { IssueActionError } from "./issueRelations";
 
 /**
@@ -49,5 +49,5 @@ export async function setCommentReaction(
     data: { updatedAt: new Date() },
   });
 
-  return getIssue(issueId, actor.organizationId);
+  return getIssue(issueId, actor.organizationId, actorAccessUser(actor));
 }

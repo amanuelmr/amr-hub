@@ -182,6 +182,25 @@ export const createProjectSchema = z
       .default(null),
     targetDate: targetDateSchema.nullable().default(null),
     boardType: boardTypeSchema.optional(),
+    accessLevel: z.enum(["OPEN", "LIMITED", "PRIVATE"]).optional(),
+  })
+  .strict();
+
+export const projectAccessUpdateSchema = z
+  .object({ accessLevel: z.enum(["OPEN", "LIMITED", "PRIVATE"]) })
+  .strict();
+
+export const addProjectMembersSchema = z
+  .object({
+    userIds: z.array(z.string().trim().min(1).max(120)).min(1).max(50),
+    role: z.enum(["ADMIN", "MEMBER", "VIEWER"]).default("MEMBER"),
+  })
+  .strict();
+
+export const updateProjectMemberSchema = z
+  .object({
+    userId: z.string().trim().min(1).max(120),
+    role: z.enum(["ADMIN", "MEMBER", "VIEWER"]),
   })
   .strict();
 

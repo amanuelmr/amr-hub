@@ -1,7 +1,7 @@
 import { z } from "zod";
 import prisma from "../../prisma/client";
 import { looksLikeHtml } from "../app/data/richText";
-import { getIssue, type WorkspaceActor } from "./issues";
+import { getIssue, type WorkspaceActor, actorAccessUser } from "./issues";
 import { IssueActionError } from "./issueRelations";
 import { hasRichContent, sanitizeCommentHtml, stripHtml } from "./richText";
 
@@ -89,7 +89,7 @@ export async function editComment(
     data: { body: prepareCommentBody(body), editedAt: new Date() },
   });
   await touchIssue(issueId);
-  return getIssue(issueId, actor.organizationId);
+  return getIssue(issueId, actor.organizationId, actorAccessUser(actor));
 }
 
 export async function deleteComment(
@@ -109,5 +109,5 @@ export async function deleteComment(
 
   await prisma.comment.delete({ where: { id: comment.id } });
   await touchIssue(issueId);
-  return getIssue(issueId, actor.organizationId);
+  return getIssue(issueId, actor.organizationId, actorAccessUser(actor));
 }

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { accessErrorResponse, accessUserFromSession } from "../../../server/projectAccess";
 import { z } from "zod";
 import {
   JqlQueryError,
@@ -38,11 +39,13 @@ export async function POST(request: Request) {
     return NextResponse.json(
       await searchOrganizationIssues(
         session.workspace.id,
-        session.user.id,
+        accessUserFromSession(session),
         validation.data,
       ),
     );
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     if (error instanceof SyntaxError) {
       return NextResponse.json(
         { error: "Request body must be valid JSON" },

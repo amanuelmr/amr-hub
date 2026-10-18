@@ -1,4 +1,5 @@
 import { isWorkflowValidationError } from "../../../../server/workflows";
+import { accessErrorResponse } from "../../../../server/projectAccess";
 import { NextRequest, NextResponse } from "next/server";
 import { rankIssuesSchema } from "../../../../server/projectSchemas";
 import {
@@ -34,6 +35,8 @@ export async function POST(request: NextRequest) {
       await rankIssues(validation.data, actorFromSession(result.session)),
     );
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     if (error instanceof SyntaxError) {
       return NextResponse.json(
         { error: "Request body must be valid JSON" },

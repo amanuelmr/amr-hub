@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse, projectGuard } from "../../../../../../server/projectAccess";
 import {
   deleteComponent,
   DuplicateComponentNameError,
@@ -23,6 +24,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     if (!validation.success) return validationFailed(validation.error);
 
     const { id, componentId } = await context.params;
+    const guard = await projectGuard(result.session, id, "admin");
+    if (guard) return guard;
     const component = await updateComponent(
       id,
       componentId,
@@ -31,6 +34,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     );
     return component ? NextResponse.json(component) : notFound("Component");
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(
       error,
       "Component could not be updated",
@@ -48,6 +53,8 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
   try {
     const { id, componentId } = await context.params;
+    const guard = await projectGuard(result.session, id, "admin");
+    if (guard) return guard;
     const moveTo = request.nextUrl.searchParams.get("moveTo") || null;
     const deleted = await deleteComponent(
       id,
@@ -57,6 +64,8 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     );
     return deleted ? NextResponse.json({ ok: true }) : notFound("Component");
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(error, "Component could not be deleted", [
       InvalidComponentInputError,
     ]);

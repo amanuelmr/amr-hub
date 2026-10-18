@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../../../server/projectAccess";
 import {
   createFilterSubscription,
   createSubscriptionSchema,
@@ -27,6 +28,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
       await listFilterSubscriptions(session.user.id, session.workspace.id, id),
     );
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     console.error("Failed to load filter subscriptions", error);
     return NextResponse.json(
       { error: "Subscriptions could not be loaded" },
@@ -73,6 +76,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     );
     return NextResponse.json(subscription, { status: 201 });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     if (error instanceof FilterNotFoundError) {
       return NextResponse.json({ error: error.message }, { status: 404 });
     }
@@ -110,6 +115,8 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     }
     return NextResponse.json({ removed });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     console.error("Failed to delete filter subscription", error);
     return NextResponse.json(
       { error: "Subscription could not be removed" },

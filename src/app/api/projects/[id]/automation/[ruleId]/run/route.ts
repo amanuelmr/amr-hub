@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse, projectGuard } from "../../../../../../../server/projectAccess";
 import { z } from "zod";
 import {
   AutomationRunError,
@@ -31,6 +32,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (!validation.success) return validationFailed(validation.error);
 
     const { id, ruleId } = await context.params;
+    const guard = await projectGuard(result.session, id, "admin");
+    if (guard) return guard;
     const runs = await runRuleNow(
       id,
       ruleId,
@@ -51,6 +54,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     });
     return NextResponse.json({ runs });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     if (error instanceof AutomationRunError) {
       return NextResponse.json(
         { error: error.message },

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { issueGuard, accessErrorResponse } from "../../../../../server/projectAccess";
 import { shareIssue, shareIssueSchema } from "../../../../../server/issueShare";
 import {
   actorFromSession,
@@ -24,6 +25,8 @@ export async function POST(request: NextRequest, context: IssueRouteContext) {
     const validation = shareIssueSchema.safeParse(await request.json());
     if (!validation.success) return validationFailed(validation.error);
     const { id } = await context.params;
+    const denied = await issueGuard(result.session, id, "view");
+    if (denied) return denied;
     const shared = await shareIssue(
       id,
       validation.data,
@@ -32,6 +35,8 @@ export async function POST(request: NextRequest, context: IssueRouteContext) {
     if (!shared) return issueNotFound();
     return NextResponse.json(shared);
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return routeError(error, "Failed to share issue", "Issue could not be shared");
   }
 }

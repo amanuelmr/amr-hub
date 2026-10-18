@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse, projectGuard } from "../../../../../../../server/projectAccess";
 import {
   InvalidTargetVersionError,
   releaseVersion,
@@ -25,6 +26,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (!validation.success) return validationFailed(validation.error);
 
     const { id, versionId } = await context.params;
+    const guard = await projectGuard(result.session, id, "edit");
+    if (guard) return guard;
     const version = await releaseVersion(
       id,
       versionId,
@@ -43,6 +46,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     });
     return NextResponse.json(version);
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(error, "Version could not be released", [
       InvalidTargetVersionError,
     ]);

@@ -238,13 +238,16 @@ export async function sendDueFilterSubscriptions(now = new Date()) {
     try {
       const membership = await prisma.member.findFirst({
         where: { organizationId: view.organizationId, userId: row.userId },
-        select: { id: true },
+        select: { id: true, role: true },
       });
       // Former members keep the row but get nothing.
       if (!membership || !row.user.email) continue;
 
       const jql = await jqlForView(view);
-      const result = await searchOrganizationIssues(view.organizationId, row.userId, {
+      const result = await searchOrganizationIssues(
+        view.organizationId,
+        { id: row.userId, role: membership.role },
+        {
         jql,
         limit: SUBSCRIPTION_EMAIL_LIMIT,
       });

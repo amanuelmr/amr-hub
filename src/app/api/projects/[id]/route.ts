@@ -10,6 +10,9 @@ import {
   updateProject,
 } from "../../../../server/projects";
 import {
+  accessUserFromSession,
+  projectGuard, accessErrorResponse } from "../../../../server/projectAccess";
+import {
   requireWorkspaceRole,
   requireWorkspaceSession,
 } from "../../../../server/session";
@@ -26,9 +29,15 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
   try {
     const { id } = await context.params;
-    const project = await getProject(id, session.workspace.id, session.user.id);
+    const project = await getProject(
+      id,
+      session.workspace.id,
+      accessUserFromSession(session),
+    );
     return project ? NextResponse.json(project) : notFound("Project");
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(error, "Project could not be loaded");
   }
 }
@@ -39,15 +48,18 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   const { session } = result;
 
   try {
+    const { id } = await context.params;
+    const denied = await projectGuard(session, id, "admin");
+    if (denied) return denied;
+
     const validation = updateProjectSchema.safeParse(await request.json());
     if (!validation.success) return validationFailed(validation.error);
 
-    const { id } = await context.params;
     const project = await updateProject(
       id,
       validation.data,
       session.workspace.id,
-      session.user.id,
+      accessUserFromSession(session),
     );
     await recordAudit({
       organizationId: session.workspace.id,
@@ -58,6 +70,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     });
     return project ? NextResponse.json(project) : notFound("Project");
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(
       error,
       "Project could not be updated",
@@ -67,28 +81,30 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   }
 }
 
+/** Moves the project to the trash; owners can restore it for 60 days. */
 export async function DELETE(request: NextRequest, context: RouteContext) {
-  const result = await requireWorkspaceRole(request, ["owner"], () =>
-    NextResponse.json(
-      { error: "Only workspace owners can delete projects" },
-      { status: 403 },
-    ),
-  );
+  const result = await requireWorkspaceRole(request, ["owner", "member"]);
   if ("response" in result) return result.response;
   const { session } = result;
 
   try {
     const { id } = await context.params;
+    const denied = await projectGuard(session, id, "admin");
+    if (denied) return denied;
+
     const deleted = await deleteProject(id, session.workspace.id);
+    if (!deleted) return notFound("Project");
     await recordAudit({
       organizationId: session.workspace.id,
       actor: { id: session.user.id, name: session.user.name },
-      action: "project.deleted",
+      action: "project.trashed",
       targetType: "project",
       targetId: id,
     });
-    return deleted ? NextResponse.json({ ok: true }) : notFound("Project");
+    return NextResponse.json({ ok: true });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(error, "Project could not be deleted");
   }
 }

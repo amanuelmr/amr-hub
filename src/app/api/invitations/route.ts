@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../server/projectAccess";
 import { createInvitationSchema } from "../../../server/invitationSchemas";
 import {
   createMemberInvitation,
@@ -31,6 +32,8 @@ export async function GET(request: NextRequest) {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     console.error("Failed to load workspace access", error);
     return NextResponse.json(
       { error: "Workspace access could not be loaded" },
@@ -81,6 +84,8 @@ export async function POST(request: NextRequest) {
     });
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     if (error instanceof InvitationError) {
       const messages = {
         ALREADY_INVITED: "A pending invitation already exists for this email",

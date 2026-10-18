@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse, accessUserFromSession } from "../../../../../server/projectAccess";
 import { GoalInputError, linkGoalIssues, unlinkGoalIssue } from "../../../../../server/goals";
 import { linkGoalIssuesSchema } from "../../../../../server/goalSchemas";
 import { requireWorkspaceRole } from "../../../../../server/session";
@@ -17,9 +18,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const validation = linkGoalIssuesSchema.safeParse(await request.json());
     if (!validation.success) return validationFailed(validation.error);
     const { id } = await context.params;
-    const goal = await linkGoalIssues(id, validation.data.issueIds, result.session.workspace.id);
+    const goal = await linkGoalIssues(
+      id,
+      validation.data.issueIds,
+      result.session.workspace.id,
+      accessUserFromSession(result.session),
+    );
     return goal ? NextResponse.json(goal) : notFound("Goal");
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(error, "Work items could not be linked", [GoalInputError]);
   }
 }
@@ -33,9 +41,16 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     const issueId = request.nextUrl.searchParams.get("issueId")?.trim();
     if (!issueId) throw new RequestError("issueId is required");
     const { id } = await context.params;
-    const goal = await unlinkGoalIssue(id, issueId, result.session.workspace.id);
+    const goal = await unlinkGoalIssue(
+      id,
+      issueId,
+      result.session.workspace.id,
+      accessUserFromSession(result.session),
+    );
     return goal ? NextResponse.json(goal) : notFound("Goal");
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(error, "Work item could not be unlinked");
   }
 }

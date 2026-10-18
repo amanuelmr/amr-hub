@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../server/projectAccess";
 import { listFilterSubscriptions } from "../../../server/filterSubscriptions";
 import {
   getNotificationSettings,
@@ -22,6 +23,8 @@ export async function GET(request: NextRequest) {
     ]);
     return NextResponse.json({ settings, subscriptions });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     console.error("Failed to load notification preferences", error);
     return NextResponse.json(
       { error: "Notification settings could not be loaded" },
@@ -61,6 +64,8 @@ export async function PUT(request: NextRequest) {
     );
     return NextResponse.json({ settings });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     console.error("Failed to save notification preferences", error);
     return NextResponse.json(
       { error: "Notification settings could not be saved" },

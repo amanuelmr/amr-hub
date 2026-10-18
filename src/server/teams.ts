@@ -6,6 +6,7 @@ import type {
 } from "../app/components/people/types";
 import { canEditTeam } from "./peopleLogic";
 import { countOpenIssues, loadWorkItems } from "./people";
+import { visibleIssueWhere } from "./projectAccess";
 import type { CreateTeamInput, UpdateTeamInput } from "./teamSchemas";
 
 export type TeamViewer = { userId: string; role: string };
@@ -85,7 +86,12 @@ export async function listTeams(
       include: teamInclude,
       orderBy: { name: "asc" },
     }),
-    countOpenIssues(organizationId, { teamId: { not: null } }, (row) => row.teamId),
+    countOpenIssues(
+      organizationId,
+      { teamId: { not: null } },
+      (row) => row.teamId,
+      { id: viewer.userId, role: viewer.role },
+    ),
   ]);
   return teams.map((team) => serializeTeam(team, viewer, counts.get(team.id) ?? 0));
 }
@@ -104,7 +110,13 @@ export async function getTeam(
 ): Promise<TeamDetail | null> {
   const team = await findTeam(id, organizationId);
   if (!team) return null;
-  const work = await loadWorkItems({ organizationId, teamId: team.id }, { take: 300 });
+  const work = await loadWorkItems(
+    {
+      ...visibleIssueWhere({ id: viewer.userId, role: viewer.role }, organizationId),
+      teamId: team.id,
+    },
+    { take: 300 },
+  );
   const open = work.filter((issue) => issue.statusCategory !== "DONE").length;
   return { ...serializeTeam(team, viewer, open), work };
 }

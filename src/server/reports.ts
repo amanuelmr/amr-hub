@@ -1,4 +1,5 @@
 import prisma from "../../prisma/client";
+import { projectPermission, type AccessUser } from "./projectAccess";
 import type { Cycle, Issue } from "../app/data/issues";
 import {
   buildBurndown,
@@ -29,12 +30,15 @@ function lean(items: SprintReport["completed"]) {
 export async function getSprintReport(
   cycleId: string,
   organizationId: string,
+  viewer: AccessUser,
   now = new Date(),
 ): Promise<SprintReportPayload | null> {
   const stored = await prisma.cycle.findFirst({
     where: { id: cycleId, organizationId },
   });
   if (!stored) return null;
+  const permissions = await projectPermission(stored.projectId, viewer, organizationId);
+  if (!permissions.canView) return null;
 
   const [projectCycles, storedIssues] = await Promise.all([
     prisma.cycle.findMany({
@@ -45,6 +49,7 @@ export async function getSprintReport(
       where: {
         organizationId,
         projectId: stored.projectId,
+        deletedAt: null,
         OR: [
           { cycleId: stored.id },
           {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse, projectGuard } from "../../../../../server/projectAccess";
 import {
   createComponent,
   createComponentSchema,
@@ -23,9 +24,13 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
   try {
     const { id } = await context.params;
+    const guard = await projectGuard(result.session, id, "view");
+    if (guard) return guard;
     const components = await listComponents(id, session.workspace.id);
     return components ? NextResponse.json(components) : notFound("Project");
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(error, "Components could not be loaded");
   }
 }
@@ -40,6 +45,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (!validation.success) return validationFailed(validation.error);
 
     const { id } = await context.params;
+    const guard = await projectGuard(result.session, id, "admin");
+    if (guard) return guard;
     const component = await createComponent(
       id,
       validation.data,
@@ -49,6 +56,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
       ? NextResponse.json(component, { status: 201 })
       : notFound("Project");
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(
       error,
       "Component could not be created",

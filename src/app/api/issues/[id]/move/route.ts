@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { issueGuard, accessErrorResponse } from "../../../../../server/projectAccess";
 import {
   moveIssue,
   moveIssueSchema,
@@ -22,6 +23,8 @@ export async function POST(request: NextRequest, context: IssueRouteContext) {
     const validation = moveIssueSchema.safeParse(await request.json());
     if (!validation.success) return validationFailed(validation.error);
     const { id } = await context.params;
+    const denied = await issueGuard(result.session, id, "edit");
+    if (denied) return denied;
     const issue = await moveIssue(
       id,
       validation.data.projectId,
@@ -30,6 +33,8 @@ export async function POST(request: NextRequest, context: IssueRouteContext) {
     if (!issue) return issueNotFound();
     return NextResponse.json(issue);
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return routeError(error, "Failed to move issue", "Issue could not be moved");
   }
 }

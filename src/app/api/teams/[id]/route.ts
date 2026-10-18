@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../../server/projectAccess";
 import { updateTeamSchema } from "../../../../server/teamSchemas";
 import { deleteTeam, getTeam, updateTeam } from "../../../../server/teams";
 import {
@@ -28,6 +29,8 @@ export async function GET(request: Request, context: RouteContext) {
     const team = await getTeam(id, session.workspace.id, teamViewer(session));
     return team ? NextResponse.json(team) : teamNotFound();
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return teamErrorResponse(error, "Team could not be loaded");
   }
 }
@@ -49,6 +52,8 @@ export async function PATCH(request: Request, context: RouteContext) {
     );
     return team ? NextResponse.json(team) : teamNotFound();
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return teamErrorResponse(error, "Team could not be updated");
   }
 }
@@ -63,6 +68,8 @@ export async function DELETE(request: Request, context: RouteContext) {
     const deleted = await deleteTeam(id, session.workspace.id, teamViewer(session));
     return deleted ? new NextResponse(null, { status: 204 }) : teamNotFound();
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return teamErrorResponse(error, "Team could not be deleted");
   }
 }

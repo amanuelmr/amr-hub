@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../server/projectAccess";
 import { createDashboardSchema } from "../../../server/dashboardSchemas";
 import { createDashboard, listDashboards } from "../../../server/dashboards";
 import { requireWorkspaceSession } from "../../../server/session";
@@ -15,6 +16,8 @@ export async function GET(request: NextRequest) {
       await listDashboards(session.user.id, session.workspace.id),
     );
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     console.error("Failed to load dashboards", error);
     return NextResponse.json(
       { error: "Dashboards could not be loaded" },
@@ -50,6 +53,8 @@ export async function POST(request: NextRequest) {
       { status: 201 },
     );
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     if (error instanceof SyntaxError) {
       return NextResponse.json(
         { error: "Request body must be valid JSON" },

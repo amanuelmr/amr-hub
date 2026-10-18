@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../../server/projectAccess";
 import { getPersonProfile } from "../../../../server/people";
 import { requireWorkspaceSession } from "../../../../server/session";
 
@@ -24,6 +25,8 @@ export async function GET(request: Request, context: RouteContext) {
     }
     return NextResponse.json(profile);
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     console.error("Failed to load profile", error);
     return NextResponse.json(
       { error: "Profile could not be loaded" },

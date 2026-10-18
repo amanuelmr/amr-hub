@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../../server/projectAccess";
 import prisma from "../../../../../prisma/client";
 import { requireWorkspaceSession } from "../../../../server/session";
 
@@ -35,6 +36,8 @@ export async function GET(request: NextRequest) {
       owners: owners.map((owner) => owner.user),
     });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     console.error("Failed to load workspace overview", error);
     return NextResponse.json(
       { error: "Workspace details could not be loaded" },

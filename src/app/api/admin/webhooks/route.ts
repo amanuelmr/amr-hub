@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../../server/projectAccess";
 import {
   createWebhook,
   createWebhookSchema,
@@ -22,6 +23,8 @@ export async function GET(request: NextRequest) {
   try {
     return NextResponse.json({ webhooks: await listWebhooks(result.session.workspace.id) });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     console.error("Failed to list webhooks", error);
     return NextResponse.json({ error: "Webhooks could not be loaded" }, { status: 500 });
   }
@@ -42,6 +45,8 @@ export async function POST(request: NextRequest) {
     const created = await createWebhook(validation.data, actorFromSession(result.session));
     return NextResponse.json(created, { status: 201 });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     if (error instanceof SyntaxError) {
       return NextResponse.json({ error: "Request body must be valid JSON" }, { status: 400 });
     }

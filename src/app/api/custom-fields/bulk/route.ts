@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../../server/projectAccess";
 import { bulkSetCustomFieldSchema } from "../../../../server/customFieldSchemas";
 import { updateIssue } from "../../../../server/issues";
 import {
@@ -41,6 +42,8 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json({ results });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(error, "Bulk change could not be completed");
   }
 }

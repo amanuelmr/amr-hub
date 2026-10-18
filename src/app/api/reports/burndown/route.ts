@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse, accessUserFromSession } from "../../../../server/projectAccess";
 import { getSprintReport } from "../../../../server/reports";
 import { requireWorkspaceSession } from "../../../../server/session";
 
@@ -18,12 +19,18 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const report = await getSprintReport(cycleId, result.session.workspace.id);
+    const report = await getSprintReport(
+      cycleId,
+      result.session.workspace.id,
+      accessUserFromSession(result.session),
+    );
     if (!report) {
       return NextResponse.json({ error: "Sprint not found" }, { status: 404 });
     }
     return NextResponse.json(report);
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     console.error("Failed to build sprint report", error);
     return NextResponse.json(
       { error: "Sprint report could not be built" },

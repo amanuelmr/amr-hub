@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../server/projectAccess";
 import {
   createCustomField,
   CustomFieldInputError,
@@ -34,6 +35,8 @@ export async function GET(request: NextRequest) {
         : await listAllCustomFields(session.workspace.id);
     return NextResponse.json(fields, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(error, "Custom fields could not be loaded");
   }
 }
@@ -53,6 +56,8 @@ export async function POST(request: NextRequest) {
     });
     return NextResponse.json(field, { status: 201 });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(
       error,
       "Custom field could not be created",

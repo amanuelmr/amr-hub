@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../../server/projectAccess";
 import { updateDashboardSchema } from "../../../../server/dashboardSchemas";
 import {
   deleteDashboard,
@@ -31,6 +32,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
     );
     return dashboard ? NextResponse.json(dashboard) : notFound();
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     console.error("Failed to load dashboard", error);
     return NextResponse.json(
       { error: "Dashboard could not be loaded" },
@@ -66,6 +69,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     );
     return dashboard ? NextResponse.json(dashboard) : notFound();
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     if (error instanceof SyntaxError) {
       return NextResponse.json(
         { error: "Request body must be valid JSON" },
@@ -95,6 +100,8 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     );
     return deleted ? NextResponse.json({ ok: true }) : notFound();
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     console.error("Failed to delete dashboard", error);
     return NextResponse.json(
       { error: "Dashboard could not be deleted" },

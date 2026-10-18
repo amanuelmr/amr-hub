@@ -14,6 +14,7 @@ import {
   type WorkEvent,
 } from "./peopleLogic";
 import { listTeams } from "./teams";
+import { visibleIssueWhere, type AccessUser } from "./projectAccess";
 
 const WORKED_ON_LIMIT = 40;
 const EVENT_SCAN = 200;
@@ -93,10 +94,14 @@ export async function countOpenIssues(
   organizationId: string,
   where: Prisma.IssueWhereInput,
   keyOf: (row: { assigneeId: string | null; teamId: string | null }) => string | null,
+  viewer?: AccessUser,
 ) {
+  const visible: Prisma.IssueWhereInput = viewer
+    ? visibleIssueWhere(viewer, organizationId)
+    : { organizationId, project: { deletedAt: null, archivedAt: null } };
   const [rows, statuses] = await Promise.all([
     prisma.issue.findMany({
-      where: { organizationId, ...liveIssueWhere, ...where },
+      where: { ...visible, ...liveIssueWhere, ...where },
       select: { assigneeId: true, teamId: true, status: true, projectId: true },
     }),
     prisma.workflowStatus.findMany({
@@ -154,14 +159,22 @@ function serializePerson(
   };
 }
 
-export async function listPeople(organizationId: string): Promise<PersonSummary[]> {
+export async function listPeople(
+  organizationId: string,
+  viewer?: AccessUser,
+): Promise<PersonSummary[]> {
   const [members, counts] = await Promise.all([
     prisma.member.findMany({
       where: { organizationId },
       include: memberInclude,
       orderBy: { user: { name: "asc" } },
     }),
-    countOpenIssues(organizationId, { assigneeId: { not: null } }, (row) => row.assigneeId),
+    countOpenIssues(
+      organizationId,
+      { assigneeId: { not: null } },
+      (row) => row.assigneeId,
+      viewer,
+    ),
   ]);
   return members.map((member) =>
     serializePerson(member, organizationId, counts.get(member.id) ?? 0),
@@ -179,9 +192,12 @@ export async function getPersonProfile(
   });
   if (!member) return null;
 
-  const inOrg = { organizationId, ...liveIssueWhere };
+  const inOrg = {
+    ...visibleIssueWhere({ id: viewer.userId, role: viewer.role }, organizationId),
+    ...liveIssueWhere,
+  };
   const [assigned, activity, comments, created, teams] = await Promise.all([
-    loadWorkItems({ organizationId, assigneeId: member.id }, { take: 300 }),
+    loadWorkItems({ ...inOrg, assigneeId: member.id }, { take: 300 }),
     prisma.activity.findMany({
       where: { actorId: userId, issue: inOrg },
       select: { issueId: true, createdAt: true, description: true },
@@ -226,7 +242,7 @@ export async function getPersonProfile(
   const merged = mergeWorkedOn(events, WORKED_ON_LIMIT);
   const touchedIds = [...new Set(events.map((event) => event.issueId))];
   const touched = await loadWorkItems(
-    { organizationId, id: { in: touchedIds } },
+    { ...inOrg, id: { in: touchedIds } },
     { take: touchedIds.length || 1 },
   );
   const byId = new Map(touched.map((issue) => [issue.id, issue]));

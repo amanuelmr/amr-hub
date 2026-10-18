@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../../../server/projectAccess";
 import { revokeApiToken } from "../../../../../server/apiTokens";
 import {
   actorFromSession,
@@ -26,6 +27,8 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     }
     return new NextResponse(null, { status: 204 });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     console.error("Failed to revoke API token", error);
     return NextResponse.json(
       { error: "The API token could not be revoked" },

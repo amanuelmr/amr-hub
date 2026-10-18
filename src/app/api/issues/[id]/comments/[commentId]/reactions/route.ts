@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { issueGuard, accessErrorResponse } from "../../../../../../../server/projectAccess";
 import { setCommentReaction } from "../../../../../../../server/reactions";
 import {
   actorFromSession,
@@ -27,6 +28,8 @@ async function changeReaction(
     const emoji =
       body?.emoji ?? request.nextUrl.searchParams.get("emoji") ?? undefined;
     const { id, commentId } = await context.params;
+    const denied = await issueGuard(result.session, id, "comment");
+    if (denied) return denied;
     const issue = await setCommentReaction(
       id,
       commentId,
@@ -37,6 +40,8 @@ async function changeReaction(
     if (!issue) return issueNotFound("Comment not found");
     return NextResponse.json(issue);
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return routeError(
       error,
       "Failed to update reaction",

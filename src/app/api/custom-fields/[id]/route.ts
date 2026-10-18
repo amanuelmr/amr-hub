@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../../server/projectAccess";
 import {
   CustomFieldInputError,
   deleteCustomField,
@@ -32,6 +33,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     );
     return field ? NextResponse.json(field) : notFound("Custom field");
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(
       error,
       "Custom field could not be updated",
@@ -56,6 +59,8 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     );
     return deleted ? NextResponse.json(deleted) : notFound("Custom field");
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(error, "Custom field could not be deleted");
   }
 }

@@ -53,6 +53,7 @@ export async function authenticateApiRequest(
         name: principal.user.name,
         organizationId: principal.organization.id,
         organizationKey: principal.organization.key,
+        role: principal.role,
       },
     },
   };

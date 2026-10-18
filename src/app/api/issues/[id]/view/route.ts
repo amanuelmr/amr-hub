@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { issueGuard, accessErrorResponse } from "../../../../../server/projectAccess";
 import { recordIssueView } from "../../../../../server/issueRelations";
 import {
   actorFromSession,
@@ -16,6 +17,8 @@ export async function POST(request: NextRequest, context: IssueRouteContext) {
 
   try {
     const { id } = await context.params;
+    const denied = await issueGuard(result.session, id, "view");
+    if (denied) return denied;
     const recorded = await recordIssueView(
       id,
       actorFromSession(result.session),
@@ -23,6 +26,8 @@ export async function POST(request: NextRequest, context: IssueRouteContext) {
     if (!recorded) return issueNotFound();
     return new NextResponse(null, { status: 204 });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return routeError(
       error,
       "Failed to record issue view",

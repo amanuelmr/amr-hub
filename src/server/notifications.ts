@@ -13,6 +13,7 @@ import {
   type IssueEmailItem,
 } from "./emailTemplates";
 import { loadServerEnvironment } from "./env";
+import { projectAudienceUserIds, visibleProjectWhere } from "./projectAccess";
 import {
   getNotificationSettings,
   getNotificationSettingsFor,
@@ -147,7 +148,15 @@ export async function notifyRecipients(
       where: { organizationId: input.organizationId, userId: { in: candidates } },
       select: { userId: true },
     });
-    const memberIds = members.map((member) => member.userId);
+    let memberIds = members.map((member) => member.userId);
+    // Private projects only notify people who can see them.
+    if (input.projectId) {
+      const audience = await projectAudienceUserIds(
+        input.projectId,
+        input.organizationId,
+      );
+      if (audience) memberIds = memberIds.filter((id) => audience.has(id));
+    }
     if (memberIds.length === 0) return;
 
     const settings = await getNotificationSettingsFor(memberIds);
@@ -234,6 +243,8 @@ async function sendImmediateEmails(
 export type NotificationListFilters = {
   cursor?: string;
   limit?: number;
+  /** Workspace role, so notifications about hidden projects drop out. */
+  role?: string;
 };
 
 export async function listNotifications(
@@ -247,6 +258,22 @@ export async function listNotifications(
     userId,
     organizationId,
     type: { in: inAppTypes(settings) },
+    // Trashed work items and projects the user can no longer see drop out.
+    AND: [
+      { OR: [{ issueId: null }, { issue: { deletedAt: null } }] },
+      {
+        OR: [
+          { projectId: null },
+          {
+            project: visibleProjectWhere(
+              { id: userId, role: filters.role ?? "member" },
+              organizationId,
+              { includeArchived: true },
+            ),
+          },
+        ],
+      },
+    ],
   };
 
   const [notifications, unreadCount] = await Promise.all([

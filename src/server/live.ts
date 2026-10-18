@@ -1,4 +1,5 @@
 import prisma from "../../prisma/client";
+import { visibleIssueWhere, type AccessUser } from "./projectAccess";
 
 export type LiveChange = {
   id: string;
@@ -40,6 +41,7 @@ export async function listLiveChanges(
   organizationId: string,
   sinceInput: Date | null,
   knownIds: string[],
+  viewer: AccessUser,
 ): Promise<LiveResponse> {
   const now = new Date();
   const response: LiveResponse = {
@@ -50,7 +52,11 @@ export async function listLiveChanges(
 
   if (knownIds.length > 0) {
     const existing = await prisma.issue.findMany({
-      where: { id: { in: knownIds }, organizationId, deletedAt: null },
+      // Trashed, archived or newly hidden issues read as deleted.
+      where: {
+        id: { in: knownIds },
+        ...visibleIssueWhere(viewer, organizationId, { includeArchivedProjects: true }),
+      },
       select: { id: true },
     });
     const present = new Set(existing.map((issue) => issue.id));
@@ -64,8 +70,7 @@ export async function listLiveChanges(
 
   const issues = await prisma.issue.findMany({
     where: {
-      organizationId,
-      deletedAt: null,
+      ...visibleIssueWhere(viewer, organizationId, { includeArchivedProjects: true }),
       OR: [
         { updatedAt: { gt: since } },
         { activity: { some: { createdAt: { gt: since } } } },

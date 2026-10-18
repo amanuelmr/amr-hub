@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse, accessUserFromSession } from "../../../server/projectAccess";
 import { listLiveChanges } from "../../../server/live";
 import { requireWorkspaceSession } from "../../../server/session";
 
@@ -38,10 +39,17 @@ export async function GET(request: NextRequest) {
 
   try {
     return NextResponse.json(
-      await listLiveChanges(result.session.workspace.id, since, ids),
+      await listLiveChanges(
+        result.session.workspace.id,
+        since,
+        ids,
+        accessUserFromSession(result.session),
+      ),
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     console.error("Failed to load live changes", error);
     return NextResponse.json(
       { error: "Live updates could not be loaded" },

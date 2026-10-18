@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse, projectGuard } from "../../../../../../server/projectAccess";
 import {
   CustomFieldInputError,
   deleteCustomField,
@@ -22,6 +23,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     const validation = updateCustomFieldSchema.safeParse(await request.json());
     if (!validation.success) return validationFailed(validation.error);
     const { id, fieldId } = await context.params;
+    const guard = await projectGuard(result.session, id, "admin");
+    if (guard) return guard;
     const field = await updateCustomField(
       session.workspace.id,
       fieldId,
@@ -31,6 +34,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     );
     return field ? NextResponse.json(field) : notFound("Custom field");
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(
       error,
       "Custom field could not be updated",
@@ -47,6 +52,8 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
   try {
     const { id, fieldId } = await context.params;
+    const guard = await projectGuard(result.session, id, "admin");
+    if (guard) return guard;
     const deleted = await deleteCustomField(
       session.workspace.id,
       fieldId,
@@ -55,6 +62,8 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     );
     return deleted ? NextResponse.json(deleted) : notFound("Custom field");
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(error, "Custom field could not be deleted");
   }
 }

@@ -1,6 +1,13 @@
 import type { Prisma } from "@prisma/client";
 import prisma from "../../prisma/client";
 import {
+  assertIssuePermission,
+  assertProjectPermission,
+  visibleIssueWhere,
+  visibleProjectWhere,
+  type AccessUser,
+} from "./projectAccess";
+import {
   computeGoalProgress,
   descendantGoalIds,
   isGoalStatus,
@@ -135,6 +142,7 @@ export async function listGoals(organizationId: string) {
 export async function getGoal(
   id: string,
   organizationId: string,
+  viewer?: AccessUser,
 ): Promise<GoalDetail | null> {
   const goal = await prisma.goal.findFirst({
     where: { id, organizationId },
@@ -146,7 +154,9 @@ export async function getGoal(
         include: { author: { select: { id: true, name: true } } },
       },
       issues: {
-        where: activeIssueWhere,
+        where: viewer
+          ? { ...activeIssueWhere, project: visibleProjectWhere(viewer, organizationId) }
+          : activeIssueWhere,
         orderBy: [{ projectId: "asc" }, { sequence: "asc" }],
         select: {
           id: true,
@@ -267,6 +277,7 @@ export async function updateGoal(
   id: string,
   input: UpdateGoalInput,
   organizationId: string,
+  viewer?: AccessUser,
 ) {
   const existing = await prisma.goal.findFirst({
     where: { id, organizationId },
@@ -289,7 +300,7 @@ export async function updateGoal(
       parentId: input.parentId,
     },
   });
-  return getGoal(id, organizationId);
+  return getGoal(id, organizationId, viewer);
 }
 
 export async function deleteGoal(id: string, organizationId: string) {
@@ -303,6 +314,7 @@ export async function addGoalUpdate(
   input: CreateGoalUpdateInput,
   authorId: string,
   organizationId: string,
+  viewer?: AccessUser,
 ) {
   const goal = await prisma.goal.findFirst({
     where: { id, organizationId },
@@ -315,13 +327,14 @@ export async function addGoalUpdate(
     }),
     prisma.goal.update({ where: { id }, data: { status: input.status } }),
   ]);
-  return getGoal(id, organizationId);
+  return getGoal(id, organizationId, viewer);
 }
 
 export async function linkGoalIssues(
   id: string,
   issueIds: string[],
   organizationId: string,
+  viewer?: AccessUser,
 ) {
   const goal = await prisma.goal.findFirst({
     where: { id, organizationId },
@@ -329,9 +342,19 @@ export async function linkGoalIssues(
   });
   if (!goal) return null;
   const found = await prisma.issue.findMany({
-    where: { id: { in: issueIds }, organizationId, deletedAt: null },
-    select: { id: true },
+    where: {
+      id: { in: issueIds },
+      ...(viewer
+        ? visibleIssueWhere(viewer, organizationId, { includeArchived: true })
+        : { organizationId, deletedAt: null }),
+    },
+    select: { id: true, projectId: true },
   });
+  if (viewer) {
+    for (const projectId of new Set(found.map((issue) => issue.projectId))) {
+      await assertProjectPermission(projectId, viewer, organizationId, "edit");
+    }
+  }
   if (found.length !== issueIds.length) {
     const known = new Set(found.map((issue) => issue.id));
     const missing = issueIds.filter((issueId) => !known.has(issueId));
@@ -341,22 +364,26 @@ export async function linkGoalIssues(
     where: { id: { in: issueIds }, organizationId },
     data: { goalId: id },
   });
-  return getGoal(id, organizationId);
+  return getGoal(id, organizationId, viewer);
 }
 
 export async function unlinkGoalIssue(
   id: string,
   issueId: string,
   organizationId: string,
+  viewer?: AccessUser,
 ) {
   const goal = await prisma.goal.findFirst({
     where: { id, organizationId },
     select: { id: true },
   });
   if (!goal) return null;
+  if (viewer) {
+    await assertIssuePermission(issueId, viewer, organizationId, "edit");
+  }
   await prisma.issue.updateMany({
     where: { id: issueId, organizationId, goalId: id },
     data: { goalId: null },
   });
-  return getGoal(id, organizationId);
+  return getGoal(id, organizationId, viewer);
 }

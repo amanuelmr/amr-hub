@@ -45,7 +45,7 @@ export class InvalidComponentInputError extends Error {
 }
 
 const componentInclude = {
-  _count: { select: { issues: true } },
+  _count: { select: { issues: { where: { issue: { deletedAt: null } } } } },
 } satisfies Prisma.ComponentInclude;
 
 type StoredComponent = Prisma.ComponentGetPayload<{

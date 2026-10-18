@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../../server/projectAccess";
 import {
   CustomFieldInputError,
   reorderCustomFields,
@@ -22,6 +23,8 @@ export async function POST(request: NextRequest) {
     const fields = await reorderCustomFields(session.workspace.id, null, validation.data.ids);
     return NextResponse.json(fields);
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(error, "Custom fields could not be reordered", [CustomFieldInputError]);
   }
 }

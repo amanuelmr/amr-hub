@@ -8,6 +8,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import prisma from "../../prisma/client";
+import { assertActorPermission } from "./projectAccess";
 import type { Cycle, Issue } from "../app/data/issues";
 import { parseBoardConfig } from "../app/data/projects";
 import {
@@ -197,6 +198,7 @@ export async function createSprint(
     select: { id: true, key: true },
   });
   if (!project) throw new UnknownProjectError();
+  await assertActorPermission(actor, project.id, "edit");
 
   try {
     const sprint = await prisma.$transaction((transaction) =>
@@ -225,6 +227,7 @@ export async function updateSprint(
   actor: WorkspaceActor,
 ): Promise<Cycle> {
   const sprint = await findSprint(id, actor.organizationId);
+  await assertActorPermission(actor, sprint.projectId, "edit");
   const start = updates.startDate
     ? parseCycleDate(updates.startDate, false)
     : sprint.startDate;
@@ -256,6 +259,7 @@ async function startSprintUnhooked(
   input: { name?: string; goal?: string | null; startDate: string; endDate: string },
   actor: WorkspaceActor,
 ): Promise<Cycle> {
+  await assertSprintEditable(id, actor);
   try {
     const sprint = await prisma.$transaction(async (transaction) => {
       const sprint = await transaction.cycle.findFirst({
@@ -286,7 +290,7 @@ async function startSprintUnhooked(
       );
       if (conflict) throw new SprintStateError(conflict);
       const issues = await transaction.issue.findMany({
-        where: { cycleId: sprint.id, organizationId: actor.organizationId },
+        where: { cycleId: sprint.id, organizationId: actor.organizationId, deletedAt: null },
         select: { kind: true, status: true, estimate: true },
       });
 
@@ -327,6 +331,7 @@ async function completeSprintUnhooked(
   input: CompleteSprintInput,
   actor: WorkspaceActor,
 ): Promise<SprintMutationResult> {
+  await assertSprintEditable(id, actor);
   const result = await prisma.$transaction(async (transaction) => {
     const sprint = await transaction.cycle.findFirst({
       where: { id, organizationId: actor.organizationId },
@@ -363,7 +368,7 @@ async function completeSprintUnhooked(
     }
 
     const issues = await transaction.issue.findMany({
-      where: { cycleId: sprint.id, organizationId: actor.organizationId },
+      where: { cycleId: sprint.id, organizationId: actor.organizationId, deletedAt: null },
       select: { id: true, kind: true, status: true, estimate: true },
     });
     const openIssues = issues.filter((issue) => !isDoneStatus(issue.status));
@@ -415,7 +420,17 @@ async function completeSprintUnhooked(
   };
 }
 
+/** Sprint changes need edit access to the sprint's project. */
+async function assertSprintEditable(id: string, actor: WorkspaceActor) {
+  const sprint = await prisma.cycle.findFirst({
+    where: { id, organizationId: actor.organizationId },
+    select: { projectId: true },
+  });
+  if (sprint) await assertActorPermission(actor, sprint.projectId, "edit");
+}
+
 export async function deleteSprint(id: string, actor: WorkspaceActor) {
+  await assertSprintEditable(id, actor);
   const movedIds = await prisma.$transaction(async (transaction) => {
     const sprint = await transaction.cycle.findFirst({
       where: { id, organizationId: actor.organizationId },
@@ -425,7 +440,7 @@ export async function deleteSprint(id: string, actor: WorkspaceActor) {
       throw new SprintStateError("Complete the active sprint before deleting it");
     }
     const issues = await transaction.issue.findMany({
-      where: { cycleId: sprint.id, organizationId: actor.organizationId },
+      where: { cycleId: sprint.id, organizationId: actor.organizationId, deletedAt: null },
       select: { id: true },
     });
     for (const issue of issues) {

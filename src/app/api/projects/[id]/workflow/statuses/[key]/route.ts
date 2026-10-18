@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse, projectGuard } from "../../../../../../../server/projectAccess";
 import { recordAudit } from "../../../../../../../server/audit";
 import { requireWorkspaceRole } from "../../../../../../../server/session";
 import {
@@ -21,6 +22,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     const validation = updateStatusSchema.safeParse(await request.json());
     if (!validation.success) return validationFailed(validation.error);
     const { id, key } = await context.params;
+    const guard = await projectGuard(result.session, id, "admin");
+    if (guard) return guard;
     const workflow = await updateStatus(
       id,
       decodeURIComponent(key),
@@ -36,6 +39,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     });
     return workflow ? NextResponse.json(workflow) : notFound("Status");
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(
       error,
       "Status could not be updated",
@@ -62,6 +67,8 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     );
     if (!validation.success) return validationFailed(validation.error);
     const { id, key } = await context.params;
+    const guard = await projectGuard(result.session, id, "admin");
+    if (guard) return guard;
     const workflow = await deleteStatus(
       id,
       decodeURIComponent(key),
@@ -77,6 +84,8 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     });
     return workflow ? NextResponse.json(workflow) : notFound("Status");
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(
       error,
       "Status could not be deleted",

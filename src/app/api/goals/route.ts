@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../server/projectAccess";
 import { createGoal, GoalInputError, listGoalPeople, listGoals } from "../../../server/goals";
 import { createGoalSchema } from "../../../server/goalSchemas";
 import { requireWorkspaceRole, requireWorkspaceSession } from "../../../server/session";
@@ -18,6 +19,8 @@ export async function GET(request: NextRequest) {
     ]);
     return NextResponse.json({ goals, people });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(error, "Goals could not be loaded");
   }
 }
@@ -32,6 +35,8 @@ export async function POST(request: NextRequest) {
     const goal = await createGoal(validation.data, result.session.workspace.id);
     return NextResponse.json(goal, { status: 201 });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(error, "Goal could not be created", [GoalInputError]);
   }
 }

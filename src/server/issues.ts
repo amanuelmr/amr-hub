@@ -42,12 +42,35 @@ import {
 } from "./workflows";
 import { parseCustomFieldValues } from "../app/data/customFields";
 import { resolveCustomFieldValues, type CustomFieldChange } from "./customFields";
+import {
+  accessibleProjectIds,
+  assertActorPermission,
+  projectAudienceUserIds,
+  projectPermission,
+  visibleIssueWhere,
+  type AccessUser,
+} from "./projectAccess";
+
+/** The access user behind an actor, or null for system actors (automation). */
+export function actorAccessUser(actor: WorkspaceActor): AccessUser | null {
+  return actor.role ? { id: actor.id, role: actor.role } : null;
+}
+
+function assertActorCan(
+  actor: WorkspaceActor,
+  projectId: string,
+  need: "comment" | "edit",
+) {
+  return assertActorPermission(actor, projectId, need, "Issue not found");
+}
 
 export type WorkspaceActor = {
   id: string;
   name: string;
   organizationId: string;
   organizationKey: string;
+  /** Workspace role (owner | member | viewer) for project access checks. */
+  role?: string;
 };
 
 const memberWithUser = {
@@ -92,7 +115,7 @@ export function serializeIssueRef(issue: StoredIssueRef): IssueRef {
 
 export const issueInclude = {
   parent: { select: issueRefSelect },
-  children: { select: { status: true } },
+  children: { where: { deletedAt: null }, select: { status: true } },
   fixVersion: { select: { id: true, name: true, status: true } },
   team: { select: { id: true, name: true } },
   goal: { select: { id: true, name: true, status: true } },
@@ -142,11 +165,18 @@ export type StoredIssue = Prisma.IssueGetPayload<{
 export const issueDetailInclude = {
   ...issueInclude,
   children: {
+    where: { deletedAt: null },
     select: issueRefSelect,
     orderBy: { rank: "asc" },
   },
-  outgoingLinks: { include: { target: { select: issueRefSelect } } },
-  incomingLinks: { include: { source: { select: issueRefSelect } } },
+  outgoingLinks: {
+    where: { target: { deletedAt: null } },
+    include: { target: { select: issueRefSelect } },
+  },
+  incomingLinks: {
+    where: { source: { deletedAt: null } },
+    include: { source: { select: issueRefSelect } },
+  },
   votes: { select: { userId: true } },
 } satisfies Prisma.IssueInclude;
 
@@ -196,13 +226,37 @@ export function serializeIssueDetail(issue: StoredIssueDetail): Issue {
   };
 }
 
-export async function getIssue(id: string, organizationId: string) {
+/**
+ * One issue by key. Trashed issues read as missing; archived ones stay
+ * reachable. With a viewer, issues in projects they cannot see read as
+ * missing and links/children into hidden projects are dropped.
+ */
+export async function getIssue(
+  id: string,
+  organizationId: string,
+  viewer?: AccessUser | null,
+) {
   const issue = await prisma.issue.findFirst({
-    where: { id, organizationId },
+    where: { id, organizationId, deletedAt: null },
     include: issueDetailInclude,
   });
+  if (!issue) return null;
+  if (!viewer) return serializeIssueDetail(issue);
 
-  return issue ? serializeIssueDetail(issue) : null;
+  const permissions = await projectPermission(issue.projectId, viewer, organizationId);
+  if (!permissions.canView) return null;
+  const visible = new Set(await accessibleProjectIds(organizationId, viewer));
+  return serializeIssueDetail({
+    ...issue,
+    parent: issue.parent && visible.has(issue.parent.projectId) ? issue.parent : null,
+    children: issue.children.filter((child) => visible.has(child.projectId)),
+    outgoingLinks: issue.outgoingLinks.filter((link) =>
+      visible.has(link.target.projectId),
+    ),
+    incomingLinks: issue.incomingLinks.filter((link) =>
+      visible.has(link.source.projectId),
+    ),
+  });
 }
 
 function serializeAssignee(
@@ -248,6 +302,7 @@ export function serializeIssue(issue: StoredIssue): Issue {
     startDate: issue.startDate?.toISOString() ?? null,
     rank: issue.rank,
     flagged: issue.flagged,
+    archivedAt: issue.archivedAt?.toISOString() ?? null,
     resolution: issue.resolution as IssueResolution | null,
     resolvedAt: issue.resolvedAt?.toISOString() ?? null,
     environment: issue.environment,
@@ -356,13 +411,21 @@ export type IssueListFilters = {
   sort?: "NEWEST" | "OLDEST" | "RANK";
   cursor?: string;
   limit?: number;
+  /** Only archived work items (the "Archived work items" list). */
+  archived?: boolean;
 };
 
 export async function listIssues(
   organizationId: string,
   filters: IssueListFilters = {},
+  user: AccessUser,
 ) {
-  const where: Prisma.IssueWhereInput = { organizationId };
+  // A project's own board/backlog still opens (read-only) once archived.
+  const where: Prisma.IssueWhereInput = visibleIssueWhere(user, organizationId, {
+    includeArchived: filters.archived === true,
+    includeArchivedProjects: Boolean(filters.projectId),
+  });
+  if (filters.archived) where.archivedAt = { not: null };
 
   if (filters.projectId) {
     where.projectId = filters.projectId;
@@ -453,8 +516,9 @@ async function createIssueUnhooked(
   await ensureWorkspaceLabels(actor.organizationId);
   await validateLabelIds(input.labelIds, actor.organizationId);
   const project = await validateProjectId(input.projectId, actor.organizationId);
+  await assertActorPermission(actor, project.id, "edit");
   await validateCycleId(input.cycleId, project.id);
-  await validateAssigneeId(input.assigneeId, actor.organizationId);
+  await validateAssigneeId(input.assigneeId, actor.organizationId, project.id);
   await validateIssueType(project.id, input.kind);
   if (input.status) await validateIssueStatus(project.id, null, input.status);
   const initialStatus = input.status ?? (await defaultCreateStatus(project.id));
@@ -608,7 +672,7 @@ export class UnknownProjectError extends Error {
 
 async function validateProjectId(projectId: string, organizationId: string) {
   const project = await prisma.project.findFirst({
-    where: { id: projectId, organizationId },
+    where: { id: projectId, organizationId, deletedAt: null },
     select: { id: true, key: true },
   });
 
@@ -668,7 +732,7 @@ async function validateParentId(
   }
 
   const parent = await prisma.issue.findFirst({
-    where: { id: parentId, organizationId },
+    where: { id: parentId, organizationId, deletedAt: null },
     select: { id: true, kind: true, parentId: true },
   });
   if (!parent) throw new InvalidParentError();
@@ -827,6 +891,7 @@ export class UnknownCycleError extends Error {
 async function validateAssigneeId(
   assigneeId: string | null | undefined,
   organizationId: string,
+  projectId: string,
 ) {
   if (!assigneeId) return null;
 
@@ -841,13 +906,20 @@ async function validateAssigneeId(
   if (!member) {
     throw new UnknownAssigneeError();
   }
+  // Private projects: only people who can see the project can be assigned.
+  const audience = await projectAudienceUserIds(projectId, organizationId);
+  if (audience && !audience.has(member.userId)) {
+    throw new UnknownAssigneeError(
+      "The selected assignee does not have access to this private project",
+    );
+  }
 
   return member.user.name;
 }
 
 export class UnknownAssigneeError extends Error {
-  constructor() {
-    super("The selected assignee is not a member of this workspace");
+  constructor(message = "The selected assignee is not a member of this workspace") {
+    super(message);
     this.name = "UnknownAssigneeError";
   }
 }
@@ -1153,10 +1225,11 @@ async function updateIssueUnhooked(
   actor: WorkspaceActor,
 ) {
   const existing = await prisma.issue.findFirst({
-    where: { id, organizationId: actor.organizationId },
+    where: { id, organizationId: actor.organizationId, deletedAt: null },
     select: { projectId: true, kind: true, status: true, customFields: true },
   });
   if (!existing) return null;
+  await assertActorCan(actor, existing.projectId, "edit");
   // Validated up front; merged onto the row's current values in the transaction.
   let customFieldPatch: Record<string, CustomFieldChange> | null = null;
   if (updates.customFields && Object.keys(updates.customFields).length > 0) {
@@ -1219,6 +1292,7 @@ async function updateIssueUnhooked(
   const nextAssigneeName = await validateAssigneeId(
     updates.assigneeId,
     actor.organizationId,
+    existing.projectId,
   );
 
   const result = await prisma.$transaction(async (transaction) => {
@@ -1447,13 +1521,16 @@ async function addCommentUnhooked(
   body: string,
   actor: WorkspaceActor,
 ) {
-  const exists = await prisma.issue.count({
+  const exists = await prisma.issue.findFirst({
     where: {
       id,
       organizationId: actor.organizationId,
+      deletedAt: null,
     },
+    select: { projectId: true },
   });
   if (!exists) return null;
+  await assertActorCan(actor, exists.projectId, "comment");
 
   const issue = await prisma.issue.update({
     where: { id },

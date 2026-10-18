@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../../../server/projectAccess";
 import { teamMembersSchema } from "../../../../../server/teamSchemas";
 import { addTeamMembers, removeTeamMembers } from "../../../../../server/teams";
 import {
@@ -37,6 +38,8 @@ async function change(
     );
     return team ? NextResponse.json(team) : teamNotFound();
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return teamErrorResponse(error, fallback);
   }
 }

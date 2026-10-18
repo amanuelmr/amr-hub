@@ -390,6 +390,7 @@ async function searchProjectIssues(
       projectId: ctx.projectId,
       organizationId: ctx.organizationId,
       deletedAt: null,
+      archivedAt: null,
     },
     include: issueInclude,
     orderBy: { rank: "asc" },
