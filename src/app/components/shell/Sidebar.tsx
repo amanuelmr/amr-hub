@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Filter,
   FolderKanban,
+  GanttChart,
   Gauge,
   House,
   LayoutDashboard,
@@ -266,6 +267,13 @@ export function Sidebar({
             label="Dashboards"
             icon={Gauge}
             isActive={isActive("/dashboards")}
+            onNavigate={onCloseDrawer}
+          />
+          <NavLink
+            href="/roadmap"
+            label="Roadmap"
+            icon={GanttChart}
+            isActive={isActive("/roadmap")}
             onNavigate={onCloseDrawer}
           />
           <NavLink

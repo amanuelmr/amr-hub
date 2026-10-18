@@ -1,7 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useState, type RefObject } from "react";
-import type { Dependency } from "../../../../server/dependencies";
+import type { Dependency } from "../../../server/dependencies";
 type Span = { start: string; end: string };
 
 type Arrow = {
