@@ -7,7 +7,7 @@ export async function POST(request: Request) {
   if ("response" in result) return result.response;
   const { session } = result;
 
-  await markAllNotificationsRead(session.user.id);
+  await markAllNotificationsRead(session.user.id, session.workspace.id);
 
   return NextResponse.json({ ok: true });
 }

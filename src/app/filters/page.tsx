@@ -3,13 +3,15 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { Filter, MoreHorizontal, Pencil, Plus, Search, Star, Trash2, X } from "lucide-react";
+import { Bell, BellRing, Filter, MoreHorizontal, Pencil, Plus, Search, Star, Trash2, X } from "lucide-react";
 import { apiRequest, useIssues } from "../IssueProvider";
 import { authClient } from "../../lib/auth-client";
 import type { SavedView } from "../data/issues";
 import { basicFiltersToJql, parseJql, searchIssuesWithJql } from "../data/jql";
 import { WorkspaceLoading } from "../components/WorkspaceLoading";
 import { useJqlContext } from "../components/search/useJqlContext";
+import { FilterSubscribeDialog } from "../components/FilterSubscribeDialog";
+import type { FilterSubscription } from "../data/notifications";
 
 type FilterRow = SavedView & { isMine: boolean };
 type Tab = "mine" | "starred" | "all";
@@ -58,6 +60,20 @@ export default function FiltersPage() {
   const [editError, setEditError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<FilterRow | null>(null);
+  const [subscribing, setSubscribing] = useState<FilterRow | null>(null);
+  const [subscriptions, setSubscriptions] = useState<FilterSubscription[]>([]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    apiRequest<{ subscriptions: FilterSubscription[] }>("/api/notification-preferences", {
+      signal: controller.signal,
+    })
+      .then((response) => setSubscriptions(response.subscriptions))
+      .catch(() => {
+        // Subscriptions are optional chrome on this page; the list still works.
+      });
+    return () => controller.abort();
+  }, []);
   const [ownerFilter, setOwnerFilter] = useState("ALL");
   // The table only renders after the client fetch, so reading storage in the
   // initializer can't cause a hydration mismatch.
@@ -308,6 +324,26 @@ export default function FiltersPage() {
                     </span>
                     <span role="cell">{count ?? "—"}</span>
                     <span role="cell" className="filters-actions">
+                      {(() => {
+                        const subscribed = subscriptions.some(
+                          (subscription) => subscription.savedViewId === view.id,
+                        );
+                        return (
+                          <button
+                            className={subscribed ? "icon-button filters-subscribe active" : "icon-button filters-subscribe"}
+                            type="button"
+                            aria-label={`${subscribed ? "Manage subscriptions for" : "Subscribe to"} ${view.name}`}
+                            title={subscribed ? "Subscribed — manage" : "Subscribe"}
+                            onClick={() => setSubscribing(view)}
+                          >
+                            {subscribed ? (
+                              <BellRing size={14} aria-hidden="true" />
+                            ) : (
+                              <Bell size={14} aria-hidden="true" />
+                            )}
+                          </button>
+                        );
+                      })()}
                       {view.isMine && !isViewer && (
                         <DropdownMenu.Root>
                           <DropdownMenu.Trigger asChild>
@@ -412,6 +448,22 @@ export default function FiltersPage() {
             </form>
           </section>
         </div>
+      )}
+
+      {subscribing && (
+        <FilterSubscribeDialog
+          filter={subscribing}
+          subscriptions={subscriptions.filter(
+            (subscription) => subscription.savedViewId === subscribing.id,
+          )}
+          onClose={() => setSubscribing(null)}
+          onChange={(next) =>
+            setSubscriptions((current) => [
+              ...current.filter((subscription) => subscription.savedViewId !== subscribing.id),
+              ...next,
+            ])
+          }
+        />
       )}
 
       {pendingDelete && (

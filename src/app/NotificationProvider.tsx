@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import type {
@@ -22,6 +23,8 @@ type NotificationContextValue = {
   isLoading: boolean;
   refresh: () => Promise<void>;
   markAsRead: (id: string) => Promise<void>;
+  /** Marks one notification read or unread (Jira's per-item toggle). */
+  setReadState: (id: string, isRead: boolean) => Promise<void>;
   markAllAsRead: () => Promise<void>;
 };
 
@@ -37,6 +40,11 @@ export function NotificationProvider({
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const notificationsRef = useRef<Notification[]>([]);
+
+  useEffect(() => {
+    notificationsRef.current = notifications;
+  }, [notifications]);
 
   const applyResponse = useCallback((response: NotificationListResponse) => {
     setNotifications(response.notifications);
@@ -83,24 +91,37 @@ export function NotificationProvider({
     };
   }, [refresh, applyResponse]);
 
-  const markAsRead = useCallback(async (id: string) => {
-    setNotifications((current) =>
-      current.map((notification) =>
-        notification.id === id
-          ? { ...notification, isRead: true }
-          : notification,
-      ),
-    );
-    setUnreadCount((current) => Math.max(0, current - 1));
+  const setReadState = useCallback(
+    async (id: string, isRead: boolean) => {
+      const target = notificationsRef.current.find(
+        (notification) => notification.id === id,
+      );
+      if (target && target.isRead !== isRead) {
+        setNotifications((current) =>
+          current.map((notification) =>
+            notification.id === id ? { ...notification, isRead } : notification,
+          ),
+        );
+        setUnreadCount((current) => Math.max(0, current + (isRead ? -1 : 1)));
+      }
 
-    try {
-      await apiRequest(`/api/notifications/${encodeURIComponent(id)}`, {
-        method: "PATCH",
-      });
-    } catch {
-      // The next poll reconciles state if this request failed.
-    }
-  }, []);
+      try {
+        await apiRequest(`/api/notifications/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ isRead }),
+        });
+      } catch {
+        // Reconcile with the server if the optimistic update failed.
+        void refresh();
+      }
+    },
+    [refresh],
+  );
+
+  const markAsRead = useCallback(
+    (id: string) => setReadState(id, true),
+    [setReadState],
+  );
 
   const markAllAsRead = useCallback(async () => {
     setNotifications((current) =>
@@ -122,9 +143,18 @@ export function NotificationProvider({
       isLoading,
       refresh,
       markAsRead,
+      setReadState,
       markAllAsRead,
     }),
-    [notifications, unreadCount, isLoading, refresh, markAsRead, markAllAsRead],
+    [
+      notifications,
+      unreadCount,
+      isLoading,
+      refresh,
+      markAsRead,
+      setReadState,
+      markAllAsRead,
+    ],
   );
 
   return (

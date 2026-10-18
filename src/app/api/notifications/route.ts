@@ -15,7 +15,10 @@ export async function GET(request: NextRequest) {
 
   try {
     return NextResponse.json(
-      await listNotifications(session.user.id, { cursor, limit }),
+      await listNotifications(session.user.id, session.workspace.id, {
+        cursor,
+        limit,
+      }),
     );
   } catch (error) {
     console.error("Failed to load notifications", error);

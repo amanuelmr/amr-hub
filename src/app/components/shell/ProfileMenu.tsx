@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { LogOut, Moon, Sun, UserRound } from "lucide-react";
+import { BellRing, LogOut, Moon, Sun, UserRound } from "lucide-react";
 import { authClient } from "../../../lib/auth-client";
 import { THEME_STORAGE_KEY } from "../ThemeToggle";
 
@@ -83,6 +83,13 @@ export function ProfileMenu() {
           <DropdownMenu.Item className="shell-menu-item" onSelect={() => router.push("/account")}>
             <UserRound size={15} aria-hidden="true" />
             Account settings
+          </DropdownMenu.Item>
+          <DropdownMenu.Item
+            className="shell-menu-item"
+            onSelect={() => router.push("/account/notifications")}
+          >
+            <BellRing size={15} aria-hidden="true" />
+            Notifications
           </DropdownMenu.Item>
           <DropdownMenu.Item
             className="shell-menu-item"
