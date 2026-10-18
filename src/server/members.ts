@@ -19,6 +19,7 @@ export async function listOrganizationMembers(
     id: member.id,
     name: member.user.name,
     email: member.user.email,
+    userId: member.userId,
   }));
 }
 

@@ -7,7 +7,7 @@ const jqlSchema = z
   .trim()
   .max(2000)
   .superRefine((value, context) => {
-    const parsed = parseJql(value);
+    const parsed = parseJql(value, undefined, { customFields: "any" });
     if (!parsed.ok) {
       context.addIssue({
         code: z.ZodIssueCode.custom,

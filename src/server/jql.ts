@@ -9,6 +9,7 @@ import {
 import { listOrganizationMembers } from "./members";
 import { issueInclude, serializeIssue } from "./issues";
 import { listOrganizationWorkflows } from "./workflows";
+import { listAllCustomFields } from "./customFields";
 
 export class JqlQueryError extends Error {
   constructor(public detail: JqlError) {
@@ -25,7 +26,7 @@ export async function loadJqlContext(
   userId: string,
   now = new Date(),
 ): Promise<JqlContext> {
-  const [projects, cycles, members, membership, workflows] = await Promise.all([
+  const [projects, cycles, members, membership, workflows, customFields] = await Promise.all([
     prisma.project.findMany({
       where: { organizationId },
       select: { id: true, key: true, name: true },
@@ -37,6 +38,7 @@ export async function loadJqlContext(
       select: { id: true },
     }),
     listOrganizationWorkflows(organizationId),
+    listAllCustomFields(organizationId),
   ]);
 
   return {
@@ -46,6 +48,7 @@ export async function loadJqlContext(
     projectsByKey: projectsByKeyFrom(projects),
     workflows,
     members,
+    customFields,
     cycles: cycles.map(
       (cycle): Cycle => ({
         id: cycle.id,

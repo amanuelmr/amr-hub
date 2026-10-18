@@ -16,6 +16,7 @@ import { AutomationSettings } from "./AutomationSettings";
 import { BoardSettings } from "./BoardSettings";
 import { DangerZone } from "./DangerZone";
 import { DetailsSettings } from "./DetailsSettings";
+import { FieldSettings } from "./FieldSettings";
 import { WorkflowSettings } from "./WorkflowSettings";
 import { WorkTypeSettings } from "./WorkTypeSettings";
 import { useProjectPeople, useWorkspaceRole } from "./adminUi";
@@ -23,6 +24,7 @@ import { useProjectPeople, useWorkspaceRole } from "./adminUi";
 const SECTIONS = [
   { value: "details", label: "Details" },
   { value: "types", label: "Work types" },
+  { value: "fields", label: "Fields" },
   { value: "workflow", label: "Workflow" },
   { value: "board", label: "Board" },
   { value: "automation", label: "Automation" },
@@ -148,6 +150,10 @@ function ProjectSettings() {
           <Tabs.Content value="types" className="panel pa-settings-panel">
             <h2>Work types</h2>
             <WorkTypeSettings projectId={project.id} readOnly={isViewer} />
+          </Tabs.Content>
+          <Tabs.Content value="fields" className="panel pa-settings-panel">
+            <h2>Fields</h2>
+            <FieldSettings projectId={project.id} readOnly={isViewer} />
           </Tabs.Content>
           <Tabs.Content value="workflow" className="panel pa-settings-panel">
             <h2>Workflow</h2>

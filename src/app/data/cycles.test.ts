@@ -59,6 +59,7 @@ function issue(overrides: Partial<Issue>): Issue {
     timeSpentMinutes: 0,
     childCount: 0,
     doneChildCount: 0,
+    customFields: {},
     ...overrides,
   };
 }

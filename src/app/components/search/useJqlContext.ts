@@ -7,6 +7,7 @@ import { useProjects } from "../../ProjectProvider";
 import { authClient } from "../../../lib/auth-client";
 import { projectsByKeyFrom, type JqlContext } from "../../data/jql";
 import { selectedIssueHref } from "../issue/selectedIssue";
+import { useCustomFields } from "../fields/customFieldStore";
 import type { ColumnLookups } from "./columns";
 
 /** Evaluation context for client-side JQL, evaluated at `now`. */
@@ -17,10 +18,12 @@ export function useJqlContext(now: Date): JqlContext {
   const { data: activeMember } = authClient.useActiveMember();
   const userId = session?.user.id ?? null;
   const memberId = activeMember?.id ?? null;
+  const { fields: customFields } = useCustomFields();
 
   return useMemo(
     () => ({
       now,
+      customFields,
       currentUserId: userId,
       currentMemberId: memberId,
       projectsByKey: projectsByKeyFrom(projects),
@@ -28,7 +31,7 @@ export function useJqlContext(now: Date): JqlContext {
       members,
       issuesById: new Map(issues.map((issue) => [issue.id, issue])),
     }),
-    [now, userId, memberId, projects, cycles, members, issues],
+    [now, userId, memberId, projects, cycles, members, issues, customFields],
   );
 }
 

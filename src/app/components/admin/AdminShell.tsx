@@ -7,6 +7,7 @@ import {
   Building2,
   Download,
   KeyRound,
+  ListPlus,
   ScrollText,
   Upload,
   Webhook,
@@ -16,6 +17,7 @@ import { useAdminRole } from "./adminClient";
 
 const NAV = [
   { href: "/admin", label: "General", icon: Building2, ownerOnly: false },
+  { href: "/admin/fields", label: "Custom fields", icon: ListPlus, ownerOnly: false },
   { href: "/admin/audit-log", label: "Audit log", icon: ScrollText, ownerOnly: true },
   { href: "/admin/api-tokens", label: "API tokens", icon: KeyRound, ownerOnly: false },
   { href: "/admin/api-docs", label: "REST API", icon: BookOpen, ownerOnly: false },

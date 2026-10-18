@@ -3,6 +3,7 @@ import { dispatchWebhook } from "./webhooks";
 import prisma from "../../prisma/client";
 import { notifyRecipients } from "./notifications";
 import { runAutomations } from "./automation";
+import { summarizeReactions } from "../app/data/reactions";
 import {
   extractCommentMentionIds,
   extractMentionedMemberIds,
@@ -39,6 +40,8 @@ import {
   validateIssueStatus,
   validateIssueType,
 } from "./workflows";
+import { parseCustomFieldValues } from "../app/data/customFields";
+import { resolveCustomFieldValues, type CustomFieldChange } from "./customFields";
 
 export type WorkspaceActor = {
   id: string;
@@ -100,6 +103,16 @@ export const issueInclude = {
   watchers: { select: { userId: true } },
   comments: {
     orderBy: { createdAt: "asc" },
+    include: {
+      reactions: {
+        select: {
+          emoji: true,
+          userId: true,
+          createdAt: true,
+          user: { select: { name: true } },
+        },
+      },
+    },
   },
   activity: {
     orderBy: { createdAt: "desc" },
@@ -201,6 +214,7 @@ function serializeAssignee(
     id: assignee.id,
     name: assignee.user.name,
     email: assignee.user.email,
+    userId: assignee.userId,
   };
 }
 
@@ -244,6 +258,7 @@ export function serializeIssue(issue: StoredIssue): Issue {
     doneChildCount: issue.children.filter((child) =>
       isDoneStatus(child.status),
     ).length,
+    customFields: parseCustomFieldValues(issue.customFields),
     watcherIds: issue.watchers.map((watcher) => watcher.userId),
     comments: issue.comments.map((comment) => ({
       id: comment.id,
@@ -252,6 +267,7 @@ export function serializeIssue(issue: StoredIssue): Issue {
       authorId: comment.authorId,
       createdAt: comment.createdAt.toISOString(),
       editedAt: comment.editedAt?.toISOString() ?? null,
+      reactions: summarizeReactions(comment.reactions),
     })),
     activity: issue.activity.map((event) => ({
       id: event.id,
@@ -447,6 +463,20 @@ async function createIssueUnhooked(
   await validateComponentIds(input.componentIds, project.id);
   await validateTeamId(input.teamId, actor.organizationId);
   await validateGoalId(input.goalId, actor.organizationId);
+  // Custom fields: required ones are enforced when the caller sends values.
+  let customFieldsJson = "{}";
+  if (input.customFields !== undefined) {
+    const resolved = await resolveCustomFieldValues({
+      organizationId: actor.organizationId,
+      projectId: project.id,
+      kind: input.kind,
+      current: {},
+      input: input.customFields,
+      mode: "create",
+    });
+    if (!resolved.ok) throw new InvalidCustomFieldValueError(resolved.error);
+    customFieldsJson = JSON.stringify(resolved.values);
+  }
 
   const issue = await prisma.$transaction(async (transaction) => {
     const latestIssue = await transaction.issue.findFirst({
@@ -467,6 +497,8 @@ async function createIssueUnhooked(
       componentIds,
       status,
       originalEstimateMinutes,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      customFields: _customFields,
       ...fields
     } = input;
     const watcherIds = new Set([actor.id]);
@@ -486,6 +518,7 @@ async function createIssueUnhooked(
         rank: (lastRanked?.rank ?? 0) + 1000,
         organizationId: actor.organizationId,
         creatorId: actor.id,
+        customFields: customFieldsJson,
         status: status ?? initialStatus,
         ...(isDoneStatus(status ?? initialStatus)
           ? { resolution: "DONE", resolvedAt: new Date() }
@@ -590,6 +623,17 @@ export class InvalidParentError extends Error {
   constructor(message = "The selected parent issue is not valid") {
     super(message);
     this.name = "InvalidParentError";
+  }
+}
+
+/**
+ * A custom field value failed validation. Extends InvalidParentError so the
+ * existing issue routes already answer 400 with the message.
+ */
+export class InvalidCustomFieldValueError extends InvalidParentError {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidCustomFieldValueError";
   }
 }
 
@@ -1059,6 +1103,50 @@ function buildActivity(
   return events;
 }
 
+function dateKey(value: Date | string | null | undefined) {
+  if (!value) return null;
+  return (value instanceof Date ? value.toISOString() : value).slice(0, 10);
+}
+
+/** Update keys whose value actually differs from the stored issue. */
+export function changedIssueFields(
+  current: Pick<StoredIssue, "labels" | "components" | "customFields"> &
+    Record<string, unknown>,
+  updates: IssueUpdates,
+) {
+  const sameIds = (a: string[], b: string[]) =>
+    [...a].sort().join(",") === [...b].sort().join(",");
+  return Object.entries(updates)
+    .filter(([key, value]) => {
+      if (value === undefined) return false;
+      switch (key) {
+        case "labelIds":
+          return !sameIds(
+            current.labels.map(({ labelId }) => labelId),
+            value as string[],
+          );
+        case "componentIds":
+          return !sameIds(
+            current.components.map(({ component }) => component.id),
+            value as string[],
+          );
+        case "dueDate":
+        case "startDate":
+          return dateKey(current[key] as Date | null) !== dateKey(value as string | null);
+        case "customFields": {
+          const stored = JSON.parse(current.customFields || "{}") as Record<string, unknown>;
+          return Object.entries(value as Record<string, unknown>).some(
+            ([fieldId, next]) =>
+              JSON.stringify(stored[fieldId] ?? null) !== JSON.stringify(next ?? null),
+          );
+        }
+        default:
+          return (current[key] ?? null) !== (value ?? null);
+      }
+    })
+    .map(([key]) => key);
+}
+
 async function updateIssueUnhooked(
   id: string,
   updates: IssueUpdates,
@@ -1066,9 +1154,25 @@ async function updateIssueUnhooked(
 ) {
   const existing = await prisma.issue.findFirst({
     where: { id, organizationId: actor.organizationId },
-    select: { projectId: true, kind: true, status: true },
+    select: { projectId: true, kind: true, status: true, customFields: true },
   });
   if (!existing) return null;
+  // Validated up front; merged onto the row's current values in the transaction.
+  let customFieldPatch: Record<string, CustomFieldChange> | null = null;
+  if (updates.customFields && Object.keys(updates.customFields).length > 0) {
+    const resolved = await resolveCustomFieldValues({
+      organizationId: actor.organizationId,
+      projectId: existing.projectId,
+      kind: updates.kind ?? existing.kind,
+      current: parseCustomFieldValues(existing.customFields),
+      input: updates.customFields,
+      mode: "update",
+    });
+    if (!resolved.ok) throw new InvalidCustomFieldValueError(resolved.error);
+    customFieldPatch = Object.fromEntries(
+      resolved.changes.map((change) => [change.field.id, change]),
+    );
+  }
 
   const workflow = await loadWorkflow(prisma, existing.projectId);
   if (updates.kind !== undefined && updates.kind !== existing.kind) {
@@ -1157,11 +1261,37 @@ async function updateIssueUnhooked(
         user: { connect: { id: actor.id } },
       });
     }
+    let nextCustomFields: string | undefined;
+    if (customFieldPatch) {
+      const merged = parseCustomFieldValues(current.customFields);
+      for (const change of Object.values(customFieldPatch)) {
+        if (change.value === null) delete merged[change.field.id];
+        else merged[change.field.id] = change.value;
+        activity.push({
+          type: "CUSTOM_FIELD_CHANGED",
+          description: change.description,
+          actor: actor.name,
+          user: { connect: { id: actor.id } },
+        });
+      }
+      nextCustomFields = JSON.stringify(merged);
+    }
     const activityTypes = activity.map((event) => event.type);
     const changed = activity.length > 0;
     const previousStatus = current.status as IssueStatus;
-    if (!changed) return { issue: current, activityTypes, previousStatus };
-    const { dueDate, startDate, labelIds, componentIds, ...fields } = updates;
+    const changedFields = changedIssueFields(current, updates);
+    if (!changed) {
+      return { issue: current, activityTypes, previousStatus, changedFields };
+    }
+    const {
+      dueDate,
+      startDate,
+      labelIds,
+      componentIds,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      customFields: _customFields,
+      ...fields
+    } = updates;
     const isRankOnly =
       activity.length === 1 && activity[0].description === "ranked the issue";
     if (isRankOnly) {
@@ -1190,6 +1320,9 @@ async function updateIssueUnhooked(
       data: {
         ...fields,
         ...resolutionFields,
+        ...(nextCustomFields !== undefined
+          ? { customFields: nextCustomFields }
+          : {}),
         ...(dueDate !== undefined
           ? { dueDate: dueDate ? parseDueDate(dueDate) : null }
           : {}),
@@ -1223,7 +1356,7 @@ async function updateIssueUnhooked(
       include: issueInclude,
     });
 
-    return { issue, activityTypes, previousStatus };
+    return { issue, activityTypes, previousStatus, changedFields };
   });
 
   if (!result) return null;
@@ -1297,6 +1430,7 @@ async function updateIssueUnhooked(
         ? result.previousStatus
         : undefined,
       toStatus: updates.status,
+      changedFields: result.changedFields,
     });
     const refreshed = await prisma.issue.findUnique({
       where: { id: issue.id },

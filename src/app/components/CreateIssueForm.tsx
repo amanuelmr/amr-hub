@@ -31,6 +31,13 @@ import {
   mapTypeByLevel,
 } from "../data/workflow";
 import { useWorkflow } from "../WorkflowProvider";
+import {
+  applicableFields,
+  isEmptyFieldValue,
+  type CustomFieldValue,
+} from "../data/customFields";
+import { CustomFieldInput } from "./fields/CustomFieldInput";
+import { useCustomFields } from "./fields/customFieldStore";
 
 type FormErrors = {
   title?: string;
@@ -38,6 +45,7 @@ type FormErrors = {
   projectId?: string;
   parentId?: string;
   originalEstimate?: string;
+  customFields?: Record<string, string>;
 };
 
 export type CreateIssueDefaults = {
@@ -99,6 +107,10 @@ export function CreateIssueForm({
   const [components, setComponents] = useState<IssueComponentRef[] | null>(
     null,
   );
+  const [customValues, setCustomValues] = useState<
+    Record<string, CustomFieldValue | null>
+  >({});
+  const { fields: customFieldDefs } = useCustomFields();
   const [createAnother, setCreateAnother] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -127,6 +139,7 @@ export function CreateIssueForm({
   );
   const selectedCycleId =
     cycleId ?? findPlanningCycle(projectCycles)?.id ?? "";
+  const customFields = applicableFields(customFieldDefs, selectedProjectId, kind);
   const parentOptions =
     isEpicLevel(kind)
       ? []
@@ -178,6 +191,13 @@ export function CreateIssueForm({
     if (originalEstimate.trim() && originalMinutes === null) {
       nextErrors.originalEstimate = 'Use a duration like "2d 4h".';
     }
+    const customErrors: Record<string, string> = {};
+    for (const field of customFields) {
+      if (field.required && isEmptyFieldValue(customValues[field.id])) {
+        customErrors[field.id] = `${field.name} is required.`;
+      }
+    }
+    if (Object.keys(customErrors).length > 0) nextErrors.customFields = customErrors;
 
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors);
@@ -205,6 +225,11 @@ export function CreateIssueForm({
         startDate: startDate || null,
         originalEstimateMinutes: originalMinutes,
         environment: kind === "BUG" && environment.trim() ? environment.trim() : null,
+        customFields: Object.fromEntries(
+          customFields
+            .filter((field) => !isEmptyFieldValue(customValues[field.id]))
+            .map((field) => [field.id, customValues[field.id] ?? null]),
+        ),
       });
       const keepOpen = allowCreateAnother && createAnother;
       if (keepOpen) {
@@ -431,6 +456,38 @@ export function CreateIssueForm({
             ))}
           </select>
         </label>
+
+        {customFields.map((field) => {
+          const fieldError = errors.customFields?.[field.id];
+          return (
+            <div className="form-field cf-form-field" key={field.id}>
+              <span>
+                {field.name} {field.required && required}
+              </span>
+              <CustomFieldInput
+                field={field}
+                value={customValues[field.id]}
+                members={members}
+                invalid={Boolean(fieldError)}
+                onChange={(value) => {
+                  setCustomValues((current) => ({ ...current, [field.id]: value }));
+                  setErrors((current) =>
+                    current.customFields?.[field.id]
+                      ? {
+                          ...current,
+                          customFields: { ...current.customFields, [field.id]: "" },
+                        }
+                      : current,
+                  );
+                }}
+              />
+              {field.description && (
+                <small className="field-meta">{field.description}</small>
+              )}
+              {error(fieldError || undefined)}
+            </div>
+          );
+        })}
 
         <label className="form-field">
           <span>Priority</span>

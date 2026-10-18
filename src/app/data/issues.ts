@@ -1,9 +1,11 @@
+import type { CommentReactionSummary } from "./reactions";
 import type {
   BuiltinKind,
   BuiltinStatus,
   StatusCategory,
 } from "./workflow";
 import { STATUS_CATEGORY } from "./workflow";
+import type { CustomFieldValue } from "./customFields";
 
 export { STATUS_CATEGORY };
 export type { BuiltinKind, BuiltinStatus, StatusCategory };
@@ -83,6 +85,7 @@ export type IssueComment = {
   authorId?: string | null;
   createdAt: string;
   editedAt?: string | null;
+  reactions?: CommentReactionSummary[];
 };
 
 export type IssueActivityType =
@@ -112,7 +115,8 @@ export type IssueActivityType =
   | "PROJECT_MOVED"
   | "AUTOMATION"
   | "TEAM_CHANGED"
-  | "GOAL_CHANGED";
+  | "GOAL_CHANGED"
+  | "CUSTOM_FIELD_CHANGED";
 
 export type IssueActivity = {
   id: string;
@@ -132,6 +136,8 @@ export type WorkspaceMember = {
   id: string;
   name: string;
   email: string;
+  /** The member's user id, for profile links (/people/[userId]). */
+  userId?: string;
 };
 
 export type SavedViewStatus = "ALL" | "ACTIVE" | IssueStatus;
@@ -212,6 +218,8 @@ export type Issue = {
   timeSpentMinutes: number;
   childCount: number;
   doneChildCount: number;
+  /** Custom field values keyed by field id (empty values are omitted). */
+  customFields: Record<string, CustomFieldValue>;
   /** Detail-only collections (present on single-issue reads). */
   children?: IssueRef[];
   links?: IssueLinkSummary[];
@@ -243,6 +251,8 @@ export type NewIssueInput = Pick<
   startDate?: string | null;
   originalEstimateMinutes?: number | null;
   environment?: string | null;
+  /** Keyed by field id (or name); when present, required fields are enforced. */
+  customFields?: Record<string, CustomFieldValue | null>;
 };
 
 export type IssueUpdates = Partial<
@@ -272,6 +282,8 @@ export type IssueUpdates = Partial<
   componentIds?: string[];
   teamId?: string | null;
   goalId?: string | null;
+  /** Partial: only the given keys change; null clears a value. */
+  customFields?: Record<string, CustomFieldValue | null>;
 };
 
 export const WORKSPACE_LABELS: WorkspaceLabel[] = [
