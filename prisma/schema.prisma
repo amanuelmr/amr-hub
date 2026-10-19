@@ -160,6 +160,11 @@ model SavedView {
   stars         FilterStar[]
   subscriptions FilterSubscription[]
 
+  description String?
+  /// JSON list of share targets: {type: WORKSPACE|PROJECT|TEAM|USER, id?}. Empty = private.
+  viewers     String  @default("[]")
+  editors     String  @default("[]")
+
   @@unique([organizationId, userId, name])
   @@index([owner])
   @@index([labelId])

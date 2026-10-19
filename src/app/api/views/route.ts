@@ -35,7 +35,11 @@ export async function GET(request: NextRequest) {
   try {
     const all = request.nextUrl.searchParams.get("scope") === "all";
     return NextResponse.json(
-      await listSavedViews(session.user.id, session.workspace.id, { all }),
+      await listSavedViews(
+        { id: session.user.id, role: session.workspace.role },
+        session.workspace.id,
+        { all },
+      ),
     );
   } catch (error) {
     const denied = accessErrorResponse(error);

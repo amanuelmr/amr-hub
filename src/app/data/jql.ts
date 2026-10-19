@@ -66,6 +66,7 @@ export type BuiltinJqlField =
   | "flagged"
   | "archived"
   | "watcher"
+  | "lastviewed"
   | "resolution"
   | "storypoints"
   | "rank";
@@ -143,6 +144,8 @@ export type JqlContext = {
   workflows?: Record<string, ProjectWorkflow>;
   /** Custom field definitions; defaults to registerJqlCustomFields(). */
   customFields?: JqlCustomField[];
+  /** The viewer's recently viewed issue keys, most recent first (issueHistory()). */
+  viewedIssueIds?: string[];
 };
 
 type FieldType =
@@ -213,6 +216,8 @@ export const JQL_FIELD_SPECS: Record<BuiltinJqlField, FieldSpec> = {
   flagged: { name: "flagged", type: "flag", operators: EQ, sortable: true },
   archived: { name: "archived", type: "flag", operators: EQ, sortable: true },
   watcher: { name: "watcher", type: "user", operators: EQ, sortable: false },
+  // Sort-only, like Jira: ORDER BY lastViewed DESC lists recently viewed first.
+  lastviewed: { name: "lastViewed", type: "date", operators: [], sortable: true },
   resolution: { name: "resolution", type: "enum", operators: EQ, sortable: true },
   storypoints: { name: "\"story points\"", type: "number", operators: ORD, sortable: true },
   rank: { name: "rank", type: "number", operators: ORD, sortable: true },
@@ -265,6 +270,7 @@ const FIELD_ALIASES: Record<string, BuiltinJqlField> = {
   archived: "archived",
   watcher: "watcher",
   watchers: "watcher",
+  lastviewed: "lastviewed",
   resolution: "resolution",
   storypoints: "storypoints",
   storypoint: "storypoints",
@@ -385,7 +391,7 @@ export function jqlFieldSpec(
   return customFieldSpec(findJqlCustomField(field, fields), field);
 }
 
-type FunctionCategory = "user" | "date" | "sprint" | "version";
+type FunctionCategory = "user" | "date" | "sprint" | "version" | "issue";
 
 const FUNCTIONS: Record<string, FunctionCategory> = {
   currentuser: "user",
@@ -403,6 +409,8 @@ const FUNCTIONS: Record<string, FunctionCategory> = {
   futuresprints: "sprint",
   releasedversions: "version",
   unreleasedversions: "version",
+  issuehistory: "issue",
+  watchedissues: "issue",
 };
 
 const FUNCTION_FIELD_TYPES: Record<FunctionCategory, FieldType[]> = {
@@ -410,6 +418,7 @@ const FUNCTION_FIELD_TYPES: Record<FunctionCategory, FieldType[]> = {
   date: ["date"],
   sprint: ["sprint"],
   version: ["version"],
+  issue: ["key"],
 };
 
 const RESERVED = new Set([
@@ -1428,6 +1437,10 @@ function operandMatches(
     case "closedsprints":
     case "futuresprints":
       return !!issue.cycleId && sprintIdsFor(operand.name, ctx).has(issue.cycleId);
+    case "issuehistory":
+      return (ctx.viewedIssueIds ?? []).includes(issue.id);
+    case "watchedissues":
+      return !!ctx.currentUserId && (issue.watcherIds ?? []).includes(ctx.currentUserId);
     case "releasedversions":
       return issue.fixVersion?.status === "RELEASED";
     case "unreleasedversions":
@@ -1815,6 +1828,11 @@ function sortValue(field: JqlField, issue: Issue, ctx: JqlContext): SortValue {
       return epicIdOf(issue, ctx);
     case "summary":
       return issue.title.toLowerCase();
+    case "lastviewed": {
+      const viewed = ctx.viewedIssueIds ?? [];
+      const index = viewed.indexOf(issue.id);
+      return index === -1 ? null : viewed.length - index;
+    }
     case "created":
     case "updated":
     case "resolved":
@@ -1974,6 +1992,14 @@ export type BasicFilters = {
   labelName?: string | null;
   /** A member name, "UNASSIGNED", or empty for any. */
   assignee?: string | null;
+  /** Work type display name. */
+  typeName?: string | null;
+  /** Reporter name or email. */
+  reporter?: string | null;
+  /** A sprint name, or "OPEN" for openSprints(). */
+  sprint?: string | null;
+  /** Relative date such as "-1w": created within that window. */
+  createdWithin?: string | null;
   sort?: "NEWEST" | "OLDEST";
 };
 
@@ -1981,6 +2007,7 @@ export type BasicFilters = {
 export function basicFiltersToJql(filters: BasicFilters) {
   const clauses: string[] = [];
   if (filters.projectKey) clauses.push(`project = ${quoteJqlValue(filters.projectKey)}`);
+  if (filters.typeName) clauses.push(`type = ${quoteJqlValue(filters.typeName)}`);
   if (filters.status === "ACTIVE") {
     clauses.push("statusCategory != Done");
   } else if (filters.status && filters.status !== "ALL") {
@@ -1994,6 +2021,10 @@ export function basicFiltersToJql(filters: BasicFilters) {
   if (filters.labelName) clauses.push(`labels = ${quoteJqlValue(filters.labelName)}`);
   if (filters.assignee === "UNASSIGNED") clauses.push("assignee IS EMPTY");
   else if (filters.assignee) clauses.push(`assignee = ${quoteJqlValue(filters.assignee)}`);
+  if (filters.reporter) clauses.push(`reporter = ${quoteJqlValue(filters.reporter)}`);
+  if (filters.sprint === "OPEN") clauses.push("sprint in openSprints()");
+  else if (filters.sprint) clauses.push(`sprint = ${quoteJqlValue(filters.sprint)}`);
+  if (filters.createdWithin) clauses.push(`created >= ${filters.createdWithin}`);
   if (filters.text?.trim()) {
     clauses.push(`text ~ ${quoteJqlValue(filters.text.trim())}`);
   }

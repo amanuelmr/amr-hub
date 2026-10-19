@@ -8,6 +8,9 @@ import {
   type SavedViewStatus,
 } from "../app/data/issues";
 import { UnknownLabelError, type WorkspaceActor } from "./issues";
+import { canViewFilter, parseShares } from "../app/data/filters";
+import { filterAudience } from "./filters";
+import type { AccessUser } from "./projectAccess";
 
 /** A saved view plus ownership info the Filters directory needs. */
 export type SavedFilter = SavedView & { isMine: boolean };
@@ -46,20 +49,37 @@ function serializeSavedView(
   };
 }
 
-/** Own + system views by default; `all` adds every member's filters (Jira "All filters"). */
+/**
+ * Own + system views by default; `all` adds other members' filters that are
+ * shared with the viewer (never their private ones).
+ */
 export async function listSavedViews(
-  userId: string,
+  user: AccessUser,
   organizationId: string,
   options: { all?: boolean } = {},
 ) {
   const views = await prisma.savedView.findMany({
     where: options.all
       ? { organizationId }
-      : { organizationId, OR: [{ userId }, { userId: null }] },
+      : { organizationId, OR: [{ userId: user.id }, { userId: null }] },
     orderBy: [{ owner: "asc" }, { name: "asc" }],
   });
+  const audience = options.all ? await filterAudience(user, organizationId) : null;
 
-  return views.map((view) => serializeSavedView(view, userId));
+  return views
+    .filter(
+      (view) =>
+        !audience ||
+        canViewFilter(
+          {
+            ownerId: view.userId,
+            viewers: parseShares(view.viewers),
+            editors: parseShares(view.editors),
+          },
+          audience,
+        ),
+    )
+    .map((view) => serializeSavedView(view, user.id));
 }
 
 export type CreateSavedViewInput =
