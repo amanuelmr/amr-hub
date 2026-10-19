@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   DndContext,
   DragOverlay,
@@ -74,7 +74,15 @@ import {
   hasActiveFilters,
   toggleValue,
 } from "../../../components/board/FilterControls";
-import { CompleteSprintDialog } from "../../../components/board/SprintDialogs";
+import {
+  CompleteSprintDialog,
+  DialogFooter,
+  FormError,
+  PlanningDialog,
+} from "../../../components/board/SprintDialogs";
+import { useProjectBoards } from "../../../components/board/useProjectBoards";
+import { DEFAULT_BOARD_ID } from "../../../data/projects";
+import { parseJql, searchIssuesWithJql } from "../../../data/jql";
 import { usePlanningActions } from "../../../components/board/sprintApi";
 import { useWorkflow } from "../../../WorkflowProvider";
 import {
@@ -280,6 +288,10 @@ export default function ProjectBoardPage() {
   const meId = activeMember?.id ?? null;
   const planning = usePlanningActions();
   const { open: openIssue } = useSelectedIssue();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const { boards, create: createBoard } = useProjectBoards(projectId);
+  const [boardDialogOpen, setBoardDialogOpen] = useState(false);
   const workflow = useWorkflow(projectId);
   const defaultKind =
     workflow.types.find((type) => type.key === "STORY")?.key ??
@@ -322,7 +334,14 @@ export default function ProjectBoardPage() {
 
   const project = projects.find((candidate) => candidate.id === projectId);
   const boardType = project?.boardType ?? "SCRUM";
-  const config = project?.boardConfig ?? DEFAULT_BOARD_CONFIG;
+  const boardId = searchParams.get("board") ?? DEFAULT_BOARD_ID;
+  const currentBoard = boards?.find((board) => board.id === boardId) ?? null;
+  const isDefaultBoard = !currentBoard || currentBoard.isDefault;
+  // The default board follows the project (kept live by the provider).
+  const config = isDefaultBoard
+    ? (project?.boardConfig ?? DEFAULT_BOARD_CONFIG)
+    : currentBoard.config;
+  const canAdminBoards = project?.permissions?.canAdmin ?? false;
   const columns = resolveBoardColumns(config, boardType);
   const quickFilters = compileQueries(config.quickFilters, now);
   const laneQueries = compileQueries(config.swimlaneQueries, now);
@@ -377,10 +396,19 @@ export default function ProjectBoardPage() {
           ),
         ]
       : planningBoardIssues;
+  // An extra board shows only the project work its JQL filter matches.
+  const boardFilter = currentBoard?.filterJql
+    ? searchIssuesWithJql(boardIssues, currentBoard.filterJql, jqlContext)
+    : null;
+  const filteredBoardIssues = boardFilter
+    ? boardFilter.ok
+      ? boardFilter.issues
+      : []
+    : boardIssues;
 
   const columnOf = (issue: Issue) =>
     columnForStatus(columns, issue.status, boardType);
-  const onBoard = boardIssues.filter((issue) => columnOf(issue) !== null);
+  const onBoard = filteredBoardIssues.filter((issue) => columnOf(issue) !== null);
   const visible = onBoard.filter(
     (issue) =>
       matchesFilters(issue, filters, meId) &&
@@ -621,6 +649,63 @@ export default function ProjectBoardPage() {
           : `${project.key} board`
       : `${project.key} board`;
 
+  const boardSwitcher = boards && (boards.length > 1 || canAdminBoards) && (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <button className="board-switcher" type="button" aria-label="Switch board">
+          {currentBoard?.name ?? `${project.key} board`}
+          <ChevronDown size={14} aria-hidden="true" />
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content className="planning-menu" align="start" sideOffset={4}>
+          <DropdownMenu.Label className="planning-menu-label">Boards in {project.name}</DropdownMenu.Label>
+          {boards.map((board) => (
+            <DropdownMenu.Item
+              key={board.id}
+              className="planning-menu-item"
+              onSelect={() =>
+                router.push(
+                  board.isDefault
+                    ? `/projects/${projectId}/board`
+                    : `/projects/${projectId}/board?board=${encodeURIComponent(board.id)}`,
+                )
+              }
+            >
+              <span className="board-switcher-item">
+                {board.name}
+                {board.filterJql && <small>{board.filterJql}</small>}
+              </span>
+            </DropdownMenu.Item>
+          ))}
+          {canAdminBoards && (
+            <>
+              <DropdownMenu.Separator className="planning-menu-separator" />
+              <DropdownMenu.Item
+                className="planning-menu-item"
+                onSelect={() => setBoardDialogOpen(true)}
+              >
+                <Plus size={14} aria-hidden="true" />
+                Create board
+              </DropdownMenu.Item>
+            </>
+          )}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
+
+  const boardDialog = boardDialogOpen && (
+    <CreateBoardDialog
+      projectKey={project.key}
+      onClose={() => setBoardDialogOpen(false)}
+      onCreate={async (input) => {
+        const id = await createBoard(input);
+        router.push(`/projects/${projectId}/board?board=${encodeURIComponent(id)}`);
+      }}
+    />
+  );
+
   const boardMenu = (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
@@ -631,7 +716,9 @@ export default function ProjectBoardPage() {
       <DropdownMenu.Portal>
         <DropdownMenu.Content className="planning-menu" align="end" sideOffset={4}>
           <DropdownMenu.Item className="planning-menu-item" asChild>
-            <Link href={`/projects/${projectId}/settings?tab=board`}>
+            <Link
+              href={`/projects/${projectId}/settings?tab=board&board=${encodeURIComponent(boardId)}`}
+            >
               <Settings2 size={14} aria-hidden="true" />
               Board settings
             </Link>
@@ -654,8 +741,10 @@ export default function ProjectBoardPage() {
       <div className="page board-page">
         <div className="board-titlebar">
           <h2 className="board-name">{boardName}</h2>
+          {boardSwitcher}
           {boardMenu}
         </div>
+        {boardDialog}
         <section className="empty-state board-empty">
           <Rows3 size={22} aria-hidden="true" />
           <h2>No active sprint</h2>
@@ -717,7 +806,15 @@ export default function ProjectBoardPage() {
     >
       <div className="board-titlebar">
         <h2 className="board-name">{boardName}</h2>
+        {boardSwitcher}
       </div>
+      {boardFilter && !boardFilter.ok && (
+        <p className="form-submit-error" role="alert">
+          This board&apos;s filter is no longer valid JQL: {boardFilter.error.message}. Fix it in
+          the board settings.
+        </p>
+      )}
+      {boardDialog}
 
       {boardType === "SCRUM" && activeSprints.length > 1 && (
         <div className="board-sprint-chips" role="group" aria-label="Active sprints">
@@ -1125,5 +1222,80 @@ export default function ProjectBoardPage() {
       )}
       {issueActions.dialogs}
     </div>
+  );
+}
+
+function CreateBoardDialog({
+  projectKey,
+  onClose,
+  onCreate,
+}: {
+  projectKey: string;
+  onClose: () => void;
+  onCreate: (input: { name: string; filterJql: string | null }) => Promise<void>;
+}) {
+  const [name, setName] = useState("");
+  const [filterJql, setFilterJql] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (name.trim().length < 2) {
+      setError("Give the board a name of at least 2 characters.");
+      return;
+    }
+    const jql = filterJql.trim();
+    if (jql) {
+      const parsed = parseJql(jql, new Date(), { customFields: "any" });
+      if (!parsed.ok) {
+        setError(`The filter is not valid JQL: ${parsed.error.message}`);
+        return;
+      }
+    }
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      await onCreate({ name: name.trim(), filterJql: jql || null });
+      onClose();
+    } catch (createError) {
+      setError(
+        createError instanceof Error ? createError.message : "The board could not be created",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <PlanningDialog
+      open
+      onOpenChange={(open) => !open && onClose()}
+      title="Create board"
+      description={`A board shows ${projectKey} work with its own columns, swimlanes and quick filters. Use a filter to show only part of the project.`}
+    >
+      <form onSubmit={submit}>
+        <label className="form-field">
+          <span>Board name</span>
+          <input
+            value={name}
+            maxLength={60}
+            placeholder="e.g. Payments team"
+            onChange={(event) => setName(event.target.value)}
+          />
+        </label>
+        <label className="form-field">
+          <span>Filter (JQL, optional)</span>
+          <input
+            value={filterJql}
+            maxLength={2000}
+            placeholder="component = Payments"
+            onChange={(event) => setFilterJql(event.target.value)}
+          />
+        </label>
+        <FormError error={error} />
+        <DialogFooter onCancel={onClose} submitLabel="Create board" isSubmitting={isSubmitting} />
+      </form>
+    </PlanningDialog>
   );
 }

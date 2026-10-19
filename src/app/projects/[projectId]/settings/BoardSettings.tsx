@@ -34,6 +34,7 @@ import {
   type BoardSwimlanes,
   type CardColorStrategy,
   type Project,
+  type ProjectBoard,
 } from "../../../data/projects";
 import {
   addColumn,
@@ -282,15 +283,22 @@ function ColumnRow({
 export function BoardSettings({
   project,
   readOnly,
+  board,
+  onSaveBoard,
 }: {
   project: Project;
   readOnly: boolean;
+  /** An extra board being edited; omit for the project's default board. */
+  board?: ProjectBoard;
+  onSaveBoard?: (config: BoardConfig) => Promise<void>;
 }) {
   const { updateProject } = useProjects();
+  const isExtraBoard = !!board && !board.isDefault;
+  const initialConfig = isExtraBoard ? board.config : project.boardConfig;
   const workflow = useWorkflow(project.id);
   const statusOrder = workflow.statuses.map((status) => status.key);
   const nameOf = (status: IssueStatus) => statusName(status, workflow.statuses);
-  const [config, setConfig] = useState<BoardConfig>(project.boardConfig);
+  const [config, setConfig] = useState<BoardConfig>(initialConfig);
   const [newColumnName, setNewColumnName] = useState("");
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(
     null,
@@ -351,21 +359,28 @@ export function BoardSettings({
     }
     setIsSaving(true);
     setMessage(null);
-    const saved = await updateProject(project.id, {
-      boardConfig: {
-        ...config,
-        columns: config.columns.map((column) => ({
-          ...column,
-          name: column.name.trim(),
-        })),
-        quickFilters: config.quickFilters.map(trimQuery),
-        swimlaneQueries: config.swimlaneQueries.map(trimQuery),
-        cardColors: {
-          ...config.cardColors,
-          queries: config.cardColors.queries.map(trimQuery),
-        },
+    const cleaned: BoardConfig = {
+      ...config,
+      columns: config.columns.map((column) => ({
+        ...column,
+        name: column.name.trim(),
+      })),
+      quickFilters: config.quickFilters.map(trimQuery),
+      swimlaneQueries: config.swimlaneQueries.map(trimQuery),
+      cardColors: {
+        ...config.cardColors,
+        queries: config.cardColors.queries.map(trimQuery),
       },
-    });
+    };
+    let saved: boolean;
+    if (isExtraBoard && onSaveBoard) {
+      saved = await onSaveBoard(cleaned).then(
+        () => true,
+        () => false,
+      );
+    } else {
+      saved = await updateProject(project.id, { boardConfig: cleaned });
+    }
     setIsSaving(false);
     setMessage(
       saved
@@ -783,7 +798,7 @@ export function BoardSettings({
           <button
             className="secondary-button"
             type="button"
-            onClick={() => setConfig(project.boardConfig)}
+            onClick={() => setConfig(initialConfig)}
           >
             Reset
           </button>

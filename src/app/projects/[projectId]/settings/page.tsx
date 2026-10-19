@@ -13,7 +13,7 @@ import { ArrowLeft } from "lucide-react";
 import { useProjects } from "../../../ProjectProvider";
 import { WorkspaceLoading } from "../../../components/WorkspaceLoading";
 import { AutomationSettings } from "./AutomationSettings";
-import { BoardSettings } from "./BoardSettings";
+import { BoardsAdmin } from "./BoardsAdmin";
 import { AccessSettings } from "./AccessSettings";
 import { DangerZone } from "./DangerZone";
 import { ArchivedIssuesSettings, TrashSettings } from "./TrashSettings";
@@ -173,12 +173,7 @@ function ProjectSettings() {
           </Tabs.Content>
           <Tabs.Content value="board" className="panel pa-settings-panel">
             <h2>Board</h2>
-            <BoardSettings
-              // Remount when the server changes the mapping (e.g. a new status).
-              key={`${project.id}-board-${JSON.stringify(project.boardConfig)}`}
-              project={project}
-              readOnly={readOnly}
-            />
+            <BoardsAdmin project={project} readOnly={readOnly} />
           </Tabs.Content>
           {canAdmin && (
             <>

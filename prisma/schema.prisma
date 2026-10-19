@@ -227,6 +227,8 @@ model Project {
   members             ProjectMember[]
   forms               Form[]
 
+  boards Board[]
+
   @@unique([organizationId, key])
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -940,4 +942,21 @@ model AutomationRunLog {
   rule      AutomationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
 
   @@index([ruleId, createdAt])
+}
+
+/// An extra board on a project (Jira allows several per project). The
+/// project's own boardConfig stays the default board; extra boards carry
+/// their own config JSON and an optional JQL filter narrowing their issues.
+model Board {
+  id        String   @id @default(cuid())
+  name      String
+  filterJql String?
+  config    String
+  position  Int      @default(0)
+  projectId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
 }

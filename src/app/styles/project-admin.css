@@ -1464,3 +1464,26 @@ td.pa-actions-cell {
     overflow-x: auto;
   }
 }
+
+/* Several boards per project */
+.boards-admin {
+  display: grid;
+  gap: 16px;
+}
+
+.boards-admin-picker select {
+  max-width: 320px;
+}
+
+.boards-admin-details {
+  display: grid;
+  gap: 10px;
+  padding-bottom: 16px;
+  border-bottom: 1px dashed var(--gray-300);
+}
+
+.boards-admin-details h3 {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}

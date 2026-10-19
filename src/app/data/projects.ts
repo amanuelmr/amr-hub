@@ -283,3 +283,15 @@ export const PROJECT_COLORS = [
   "#7c3aed",
   "#0891b2",
 ];
+
+/** A board on a project; the project's own config is the default board. */
+export type ProjectBoard = {
+  id: string;
+  name: string;
+  /** JQL narrowing the project's issues shown on this board. */
+  filterJql: string | null;
+  isDefault: boolean;
+  config: BoardConfig;
+};
+
+export const DEFAULT_BOARD_ID = "default";
