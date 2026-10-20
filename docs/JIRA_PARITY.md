@@ -23,8 +23,8 @@ Out of scope by decision: Rovo / AI, paid plans, Confluence, Marketplace apps, J
 | Create project from Scrum / Kanban template | ✅ 🌐 | |
 | Projects directory: search, type filter, star | ✅ 🌐 | |
 | Project details (name, key, lead, avatar colour) | ✅ | |
-| Access: Open / Limited / Private and project roles | ✅ 🔌 | Access tab not seen in browser |
-| Archive and trash (restore within 60 days) | ✅ 🔌 | Screens not seen in browser |
+| Access: Open / Limited / Private and project roles | ✅ 🌐 | |
+| Archive and trash (restore within 60 days) | ✅ 🌐 | |
 | Change project key | ❌ | Jira allows it; ours is fixed |
 
 ## 3. Work items (issues)
@@ -57,7 +57,7 @@ Out of scope by decision: Rovo / AI, paid plans, Confluence, Marketplace apps, J
 |---|---|---|
 | Columns from workflow, drag and drop, WIP limits | ✅ 🌐 | |
 | Swimlanes: assignee, epic, priority, subtasks, queries | ✅ 🌐 | |
-| Quick filters (built-in and JQL), card layout, card colours | ✅ 🔌 | Settings screens not seen in browser |
+| Quick filters (built-in and JQL), card layout, card colours | ✅ 🌐 | |
 | Card actions menu, insights panel, parallel sprints, Kanban release | ✅ 🔌 | |
 | Several boards per project with a JQL filter | ✅ 🌐 | |
 
@@ -77,10 +77,10 @@ Out of scope by decision: Rovo / AI, paid plans, Confluence, Marketplace apps, J
 | Timeline with drag, zoom, sprint row | ✅ 🌐 | |
 | Dependency arrows with date conflicts | ✅ 🌐 | |
 | Cross-project roadmap (from Plans) | ✅ 🌐 | |
-| Calendar | ✅ | Not re-checked after later changes |
+| Calendar | ✅ 🌐 | |
 | List view with inline edit and custom field columns | ✅ 🌐 | |
 | Summary page | ✅ 🌐 | |
-| Forms | ✅ 🔌 | Builder not seen in browser |
+| Forms | ✅ 🌐 | Forms list checked; builder not opened |
 
 ## 8. Search and filters
 
@@ -99,16 +99,16 @@ Out of scope by decision: Rovo / AI, paid plans, Confluence, Marketplace apps, J
 
 | Jira feature | Status | Notes |
 |---|---|---|
-| Dashboards with configurable gadgets | ✅ | Not re-checked after later changes |
-| Dashboard sharing (viewers and editors), stars, copy, change owner | ✅ 🔌 | Same sharing model as filters; screens not yet seen in browser |
-| Reports: burndown, burnup, velocity, sprint report, CFD, control chart, created vs resolved, pie, version, epic, time tracking, workload | ✅ | Not re-checked after later changes |
+| Dashboards with configurable gadgets | ✅ 🌐 | |
+| Dashboard sharing (viewers and editors), stars, copy, change owner | ✅ 🌐 | Same sharing model as filters |
+| Reports: burndown, burnup, velocity, sprint report, CFD, control chart, created vs resolved, pie, version, epic, time tracking, workload | ✅ 🌐 | Burndown checked; it now uses the sprint start snapshot for commitment |
 
 ## 10. Releases and components
 
 | Jira feature | Status | Notes |
 |---|---|---|
-| Versions: create, release, archive, release notes | ✅ 🔌 | |
-| Components with lead | ✅ 🔌 | |
+| Versions: create, release, archive, release notes | ✅ 🌐 | |
+| Components with lead | ✅ 🌐 | |
 
 ## 11. Configuration
 
@@ -117,14 +117,14 @@ Out of scope by decision: Rovo / AI, paid plans, Confluence, Marketplace apps, J
 | Custom workflows: statuses, categories, transitions | ✅ 🔌 | |
 | Custom work types with hierarchy levels | ✅ 🔌 | |
 | Custom fields (12 types, global or per project) | ✅ 🌐 | |
-| Automation: triggers, conditions, actions, smart values, run log, scheduled rules | ✅ 🔌 | Rule builder not seen in browser |
+| Automation: triggers, conditions, actions, smart values, run log, scheduled rules | ✅ 🌐 | Rules list checked; builder not opened |
 
 ## 12. Collaboration and notifications
 
 | Jira feature | Status | Notes |
 |---|---|---|
 | Notification inbox (Direct / Watching) | ✅ 🔌 | |
-| Notification preferences (in app / email, daily digest) | ✅ 🔌 | |
+| Notification preferences (in app / email, daily digest) | ✅ 🌐 | |
 | Live updates when others edit | ✅ 🔌 | Needs a second real account to check by hand |
 
 ## 13. People, teams and goals
@@ -156,7 +156,7 @@ Work in this order; each step is finished, checked in the browser and committed 
    - Server-side stars with a starred count.
    - A filter details panel on the Search page.
    - Basic mode with Type and "+ More".
-2. ✅ **Dashboard sharing.** Done (screens still need a browser look).
-3. **Browser pass over screens only tested through the API:** access, trash, archive, automation builder, board settings, forms, reactions, notifications, calendar, reports, dashboards. Fix what's broken or unlike Jira.
+2. ✅ **Dashboard sharing.** Done.
+3. ✅ **Browser pass done.** Fixed the burndown commitment. Not opened yet: form builder, automation rule builder, reactions (need a comment). Was: access, trash, archive, automation builder, board settings, forms, reactions, notifications, calendar, reports, dashboards. Fix what's broken or unlike Jira.
 4. **Mobile pass at phone width** for the main screens.
 5. **Remaining gaps, if wanted:** issue-level security, user groups, changing a project key.

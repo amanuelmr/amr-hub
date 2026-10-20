@@ -405,10 +405,14 @@ export function buildBurndown(
   const end = Math.max(plannedEnd, completed ?? 0, start);
   const keys = eachDayKey(start, end);
   const cap = Math.min(now.getTime(), completed ?? Number.POSITIVE_INFINITY);
-  const committed = timelines.reduce(
-    (total, timeline) => total + pointsInCycleAt(timeline, cycle.id, start),
-    0,
-  );
+  // The snapshot taken when the sprint started is authoritative (as in
+  // Jira); history reconstruction is only a fallback for older sprints.
+  const committed =
+    cycle.committedPoints ??
+    timelines.reduce(
+      (total, timeline) => total + pointsInCycleAt(timeline, cycle.id, start),
+      0,
+    );
   const lastIndex = Math.max(1, keys.length - 1);
 
   const points = keys.map<BurndownPoint>((key, index) => {
