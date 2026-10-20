@@ -24,7 +24,9 @@ export async function PATCH(request: NextRequest, context: FilterRouteContext) {
       auth.actor.organizationId,
     );
     if (!changed) return filterNotFound();
-    return NextResponse.json(await getFilter(id, auth.actor, auth.actor.organizationId));
+    // The previous owner may no longer see a private filter.
+    const filter = await getFilter(id, auth.actor, auth.actor.organizationId);
+    return filter ? NextResponse.json(filter) : new NextResponse(null, { status: 204 });
   } catch (error) {
     return filterError(error, "Filter owner could not be changed");
   }

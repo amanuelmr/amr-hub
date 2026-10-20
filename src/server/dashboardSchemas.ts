@@ -48,18 +48,36 @@ export const gadgetsSchema = z.array(gadgetSchema).max(30);
 export type Gadget = z.infer<typeof gadgetSchema>;
 export type GadgetConfig = z.infer<typeof gadgetConfigSchema>;
 
+const shareSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("WORKSPACE") }).strict(),
+  z.object({ type: z.literal("PROJECT"), id: z.string().trim().min(1).max(120) }).strict(),
+  z.object({ type: z.literal("TEAM"), id: z.string().trim().min(1).max(120) }).strict(),
+  z.object({ type: z.literal("USER"), id: z.string().trim().min(1).max(120) }).strict(),
+]);
+const sharesSchema = z.array(shareSchema).max(50);
+
 export const createDashboardSchema = z
   .object({
     name: z.string().trim().min(1).max(80),
+    description: z.string().trim().max(1000).nullable().optional(),
     gadgets: gadgetsSchema.optional(),
+    viewers: sharesSchema.optional(),
+    editors: sharesSchema.optional(),
   })
   .strict();
 
 export const updateDashboardSchema = z
   .object({
     name: z.string().trim().min(1).max(80).optional(),
+    description: z.string().trim().max(1000).nullable().optional(),
     gadgets: gadgetsSchema.optional(),
+    viewers: sharesSchema.optional(),
+    editors: sharesSchema.optional(),
   })
+  .strict();
+
+export const changeDashboardOwnerSchema = z
+  .object({ userId: z.string().trim().min(1).max(120) })
   .strict();
 
 /** Reads the stored JSON column, dropping anything that no longer validates. */
