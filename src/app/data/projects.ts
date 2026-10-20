@@ -123,6 +123,28 @@ export const DEFAULT_BOARD_CONFIG: BoardConfig = {
   parallelSprints: false,
 };
 
+/** Appends a column holding only the new status (board "+ column"). */
+export function addColumnForStatus(
+  config: BoardConfig,
+  key: string,
+  name: string,
+): BoardConfig {
+  const taken = new Set(config.columns.map((column) => column.id));
+  const base = `col-${key.split(":").at(-1) ?? "status"}`;
+  let id = base;
+  for (let suffix = 2; taken.has(id); suffix += 1) id = `${base}-${suffix}`;
+  return {
+    ...config,
+    columns: [
+      ...config.columns.map((column) => ({
+        ...column,
+        statuses: column.statuses.filter((status) => status !== key),
+      })),
+      { id, name, statuses: [key], wipLimit: null },
+    ],
+  };
+}
+
 export function parseBoardConfig(raw: string | null | undefined): BoardConfig {
   if (!raw) return DEFAULT_BOARD_CONFIG;
   try {

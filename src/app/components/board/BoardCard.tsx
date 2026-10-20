@@ -28,7 +28,25 @@ export type CardDisplay = {
   fields: CardField[];
   /** Left color bar from the board's card color strategy. */
   color: string | null;
+  /** Whole days in the current status, shown as Jira's dots when set. */
+  daysInColumn?: number | null;
+  /** View settings "Compact cards": title, key and assignee only. */
+  compact?: boolean;
 };
+
+/** Jira's days-in-column dots: more dots the longer an item sits still. */
+function DaysInColumn({ days }: { days: number }) {
+  const filled = days >= 14 ? 4 : days >= 7 ? 3 : days >= 3 ? 2 : days >= 1 ? 1 : 0;
+  if (filled === 0) return null;
+  const label = `${days} ${days === 1 ? "day" : "days"} in this column`;
+  return (
+    <span className="board-card-days" title={label} aria-label={label} role="img">
+      {[0, 1, 2, 3].map((dot) => (
+        <span key={dot} className={dot < filled ? "on" : undefined} />
+      ))}
+    </span>
+  );
+}
 
 const DEFAULT_DISPLAY: CardDisplay = {
   fields: DEFAULT_BOARD_CONFIG.cardFields,
@@ -58,7 +76,9 @@ export function BoardCardBody({
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const show = (field: CardField) => display.fields.includes(field);
+  const show = (field: CardField) =>
+    display.fields.includes(field) &&
+    (!display.compact || field === "assignee");
   const epic = show("epic") ? epicOf(issue) : null;
   const labels = show("labels") ? issue.labels.slice(0, 2) : [];
   const components = show("components") ? issue.components.slice(0, 2) : [];
@@ -138,6 +158,7 @@ export function BoardCardBody({
             {formatShortDate(issue.dueDate)}
           </span>
         )}
+        {display.daysInColumn != null && <DaysInColumn days={display.daysInColumn} />}
         <span className="board-card-meta-end">
           {show("storyPoints") && issue.estimate !== null && (
             <PointsBadge points={issue.estimate} />
@@ -199,6 +220,7 @@ export function SortableBoardCard({
         issue.flagged ? "flagged" : "",
         isDragging ? "dragging" : "",
         display.color ? "colored" : "",
+        display.compact ? "compact" : "",
       ]
         .filter(Boolean)
         .join(" ")}
