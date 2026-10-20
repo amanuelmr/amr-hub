@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse, projectGuard } from "../../../../../../server/projectAccess";
 import {
   deleteVersion,
   DuplicateVersionNameError,
@@ -23,6 +24,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     if (!validation.success) return validationFailed(validation.error);
 
     const { id, versionId } = await context.params;
+    const guard = await projectGuard(result.session, id, "edit");
+    if (guard) return guard;
     const version = await updateVersion(
       id,
       versionId,
@@ -31,6 +34,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     );
     return version ? NextResponse.json(version) : notFound("Version");
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(
       error,
       "Version could not be updated",
@@ -48,6 +53,8 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
   try {
     const { id, versionId } = await context.params;
+    const guard = await projectGuard(result.session, id, "edit");
+    if (guard) return guard;
     const moveTo = request.nextUrl.searchParams.get("moveTo") || null;
     const deleted = await deleteVersion(
       id,
@@ -57,6 +64,8 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     );
     return deleted ? NextResponse.json({ ok: true }) : notFound("Version");
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(error, "Version could not be deleted", [
       InvalidTargetVersionError,
     ]);

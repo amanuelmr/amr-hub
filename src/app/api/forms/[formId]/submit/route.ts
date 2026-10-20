@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../../../server/projectAccess";
 import { FormSubmissionError, submitForm } from "../../../../../server/forms";
 import { submitFormSchema } from "../../../../../server/formSchemas";
 import { actorFromSession, requireWorkspaceSession } from "../../../../../server/session";
@@ -24,6 +25,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     );
     return created ? NextResponse.json(created, { status: 201 }) : notFound("Form");
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     if (error instanceof FormSubmissionError) {
       return NextResponse.json(
         { error: error.message, fields: error.fields },

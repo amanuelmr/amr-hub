@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import prisma from "../../prisma/client";
 import {
+  addColumnForStatus,
   parseBoardConfig,
   type BoardConfig,
 } from "../app/data/projects";
@@ -84,6 +85,8 @@ export const createStatusSchema = z
     name: nameSchema,
     category: categorySchema,
     color: colorSchema.nullable().optional(),
+    /** Jira team-managed "+ column": map the status to a new board column. */
+    boardColumn: z.boolean().optional(),
   })
   .strict();
 
@@ -486,11 +489,10 @@ export async function createStatus(
         projectId,
       },
     });
-    const config = addStatusToBoard(
-      parseBoardConfig(project.boardConfig),
-      key,
-      input.category,
-    );
+    const current = parseBoardConfig(project.boardConfig);
+    const config = input.boardColumn
+      ? addColumnForStatus(current, key, input.name)
+      : addStatusToBoard(current, key, input.category);
     await transaction.project.update({
       where: { id: projectId },
       data: { boardConfig: JSON.stringify(config) },
@@ -577,6 +579,7 @@ export async function deleteStatus(
         where: { projectId, status: key },
         data: {
           status: replacementKey,
+          statusChangedAt: new Date(),
           ...(leavingDone ? { resolution: null, resolvedAt: null } : {}),
           ...(enteringDone ? { resolution: "DONE", resolvedAt: new Date() } : {}),
         },

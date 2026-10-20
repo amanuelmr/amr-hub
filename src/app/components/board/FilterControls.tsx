@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { Check, ChevronDown, Search, X } from "lucide-react";
+import { Check, ChevronDown, Search, UserRound, X } from "lucide-react";
 import type { IssueKind, WorkspaceMember } from "../../data/issues";
 import { useWorkflows } from "../../WorkflowProvider";
 import { KindIcon } from "../IssueVisuals";
@@ -78,7 +78,7 @@ export function AssigneeStack({
             title={entry.name}
             onClick={() => onToggle(entry.id)}
           >
-            {entry.id === UNASSIGNED ? "?" : initials(entry.name)}
+            {entry.id === UNASSIGNED ? <UserRound size={14} aria-hidden="true" /> : initials(entry.name)}
             <span className="sr-only">{entry.name}</span>
           </button>
         );
@@ -107,7 +107,7 @@ export function AssigneeStack({
                   onToggle={() => onToggle(entry.id)}
                 >
                   <span className="avatar avatar-small" aria-hidden="true">
-                    {entry.id === UNASSIGNED ? "?" : initials(entry.name)}
+                    {entry.id === UNASSIGNED ? <UserRound size={14} aria-hidden="true" /> : initials(entry.name)}
                   </span>
                   {entry.name}
                 </FilterCheckItem>
@@ -270,7 +270,9 @@ export function hasActiveFilters(filters: IssueFilters) {
     filters.assigneeIds.length > 0 ||
     filters.epicId !== null ||
     filters.labelId !== null ||
-    filters.kinds.length > 0
+    filters.kinds.length > 0 ||
+    filters.quickFilterIds.length > 0 ||
+    filters.versionId !== null
   );
 }
 
@@ -278,4 +280,45 @@ export function toggleValue(list: string[], value: string) {
   return list.includes(value)
     ? list.filter((item) => item !== value)
     : [...list, value];
+}
+
+/**
+ * Jira's quick filter buttons: the board's saved JQL quick filters as toggle
+ * buttons (AND-combined). Broken queries are shown disabled with the error.
+ */
+export function QuickFilterButtons({
+  filters,
+  queries,
+  setFilters,
+}: {
+  filters: IssueFilters;
+  queries: { id: string; name: string; error: string | null }[];
+  setFilters: FilterSetter;
+}) {
+  if (queries.length === 0) return null;
+  return (
+    <div className="planning-quick-filters" role="group" aria-label="Quick filters">
+      {queries.map((query) => {
+        const active = filters.quickFilterIds.includes(query.id);
+        return (
+          <button
+            key={query.id}
+            type="button"
+            className={active ? "planning-quick-filter active" : "planning-quick-filter"}
+            aria-pressed={active}
+            disabled={!!query.error && !active}
+            title={query.error ? `Invalid JQL: ${query.error}` : undefined}
+            onClick={() =>
+              setFilters((current) => ({
+                ...current,
+                quickFilterIds: toggleValue(current.quickFilterIds, query.id),
+              }))
+            }
+          >
+            {query.name}
+          </button>
+        );
+      })}
+    </div>
+  );
 }

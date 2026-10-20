@@ -9,7 +9,7 @@ import { issueUrl, type IssueDetailController } from "./useIssueDetail";
 import type { AttachmentSummary } from "./types";
 
 const MAX_BYTES = 10 * 1024 * 1024;
-const INLINE_TYPES = [
+export const INLINE_TYPES = [
   "image/png",
   "image/jpeg",
   "image/gif",
@@ -25,22 +25,30 @@ export function useAttachmentUpload(
 ) {
   const [isUploading, setIsUploading] = useState(false);
 
-  const upload = async (fileList: FileList | File[]) => {
+  /**
+   * Uploads files as issue attachments; resolves to the newly created ones.
+   * With `throwOnError` (inline editor images) failures reject instead of
+   * showing the view's error banner.
+   */
+  const upload = async (
+    fileList: FileList | File[],
+    { throwOnError = false }: { throwOnError?: boolean } = {},
+  ): Promise<AttachmentSummary[]> => {
     const files = [...fileList];
-    if (files.length === 0) return;
+    if (files.length === 0) return [];
+    const fail = (message: string) => {
+      if (throwOnError) throw new Error(message);
+      controller.setActionError(message);
+      return [];
+    };
     const tooLarge = files.find((file) => file.size > MAX_BYTES);
-    if (tooLarge) {
-      controller.setActionError(`${tooLarge.name} is larger than 10 MB`);
-      return;
-    }
-    if (files.length > 10) {
-      controller.setActionError("Attach up to 10 files at a time");
-      return;
-    }
+    if (tooLarge) return fail(`${tooLarge.name} is larger than 10 MB`);
+    if (files.length > 10) return fail("Attach up to 10 files at a time");
+    const before = new Set(controller.attachments.map((item) => item.id));
     const formData = new FormData();
     files.forEach((file) => formData.append("files", file));
     setIsUploading(true);
-    await controller.run(async () => {
+    const send = async () => {
       const response = await fetch(issueUrl(issue.id, "/attachments"), {
         method: "POST",
         body: formData,
@@ -48,14 +56,20 @@ export function useAttachmentUpload(
       const payload = (await response.json().catch(() => ({}))) as {
         error?: string;
         issue?: Issue;
+        attachments?: AttachmentSummary[];
       };
       if (!response.ok) {
         throw new Error(payload.error ?? "Attachments could not be uploaded");
       }
       controller.applyIssue(payload.issue);
       await controller.refreshAttachments();
-    });
-    setIsUploading(false);
+      return (payload.attachments ?? []).filter((item) => !before.has(item.id));
+    };
+    try {
+      return throwOnError ? await send() : ((await controller.run(send)) ?? []);
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   return { upload, isUploading };
@@ -68,6 +82,7 @@ export function IssueAttachments({
   currentUserId,
   isOwner,
   onAttach,
+  onPreview,
   controller,
 }: {
   attachments: AttachmentSummary[];
@@ -75,6 +90,8 @@ export function IssueAttachments({
   currentUserId: string | null;
   isOwner: boolean;
   onAttach: () => void;
+  /** Opens an image attachment in the lightbox. */
+  onPreview?: (attachment: AttachmentSummary) => void;
   controller: IssueDetailController;
 }) {
   const remove = async (attachment: AttachmentSummary) => {
@@ -120,6 +137,11 @@ export function IssueAttachments({
                 target="_blank"
                 rel="noreferrer"
                 className="issue-attachment-preview"
+                onClick={(event) => {
+                  if (!isImage || !onPreview) return;
+                  event.preventDefault();
+                  onPreview(attachment);
+                }}
               >
                 {isImage ? (
                   // eslint-disable-next-line @next/next/no-img-element

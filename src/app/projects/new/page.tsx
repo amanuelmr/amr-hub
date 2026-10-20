@@ -35,7 +35,13 @@ const BOARD_TEMPLATES: {
 ];
 import { useProjects } from "../../ProjectProvider";
 import { authClient } from "../../../lib/auth-client";
-import { PROJECT_COLORS, type BoardType } from "../../data/projects";
+import {
+  PROJECT_ACCESS_LABELS,
+  PROJECT_ACCESS_LEVELS,
+  PROJECT_COLORS,
+  type BoardType,
+  type ProjectAccessLevel,
+} from "../../data/projects";
 
 type FormErrors = {
   name?: string;
@@ -67,6 +73,7 @@ export default function NewProjectPage() {
   const [color, setColor] = useState<string>(PROJECT_COLORS[0]);
   const [targetDate, setTargetDate] = useState("");
   const [boardType, setBoardType] = useState<BoardType>("SCRUM");
+  const [accessLevel, setAccessLevel] = useState<ProjectAccessLevel>("OPEN");
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -101,6 +108,7 @@ export default function NewProjectPage() {
         color,
         targetDate: targetDate || null,
         boardType,
+        accessLevel,
       });
       router.push(`/projects/${project.id}`);
     } catch (error) {
@@ -224,6 +232,34 @@ export default function NewProjectPage() {
                 </small>
               )}
             </label>
+
+            <fieldset className="form-field">
+              <legend>Access</legend>
+              <div className="pac-levels" role="radiogroup" aria-label="Project access">
+                {PROJECT_ACCESS_LEVELS.map((level) => (
+                  <label
+                    key={level}
+                    className={accessLevel === level ? "pac-level is-selected" : "pac-level"}
+                  >
+                    <input
+                      type="radio"
+                      name="access-level"
+                      value={level}
+                      checked={accessLevel === level}
+                      onChange={() => setAccessLevel(level)}
+                    />
+                    <span>
+                      <strong>{PROJECT_ACCESS_LABELS[level].label}</strong>
+                      <small>{PROJECT_ACCESS_LABELS[level].description}</small>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <span className="field-meta">
+                You&apos;ll be the project&apos;s administrator. Change access
+                and add people later in Project settings → Access.
+              </span>
+            </fieldset>
 
             <label className="form-field">
               <span>Description</span>

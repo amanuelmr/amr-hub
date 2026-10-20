@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import prisma from "../../../../../../../prisma/client";
+import { visibleIssueWhere, type AccessUser } from "../../../../../../server/projectAccess";
 import { updateIssueSchema } from "../../../../../../server/issueSchemas";
 import { updateIssue } from "../../../../../../server/issues";
 import {
@@ -30,9 +31,15 @@ const transitionBodySchema = z.union([
     .passthrough(),
 ]);
 
-async function findIssue(key: string, organizationId: string) {
+async function findIssue(key: string, organizationId: string, user: AccessUser) {
   return prisma.issue.findFirst({
-    where: { id: key, organizationId },
+    where: {
+      id: key,
+      ...visibleIssueWhere(user, organizationId, {
+        includeArchived: true,
+        includeArchivedProjects: true,
+      }),
+    },
     select: { id: true, projectId: true, status: true },
   });
 }
@@ -44,7 +51,10 @@ export async function GET(request: Request, route: RouteContext) {
   const key = (await route.params).key.toUpperCase();
 
   try {
-    const issue = await findIssue(key, auth.context.organization.id);
+    const issue = await findIssue(key, auth.context.organization.id, {
+      id: auth.context.user.id,
+      role: auth.context.role,
+    });
     if (!issue) return apiError(404, NOT_FOUND);
     const { statuses } = await resolveTransitionStatus(issue.projectId, issue.status);
     return NextResponse.json({
@@ -74,7 +84,10 @@ export async function POST(request: Request, route: RouteContext) {
     const data = body.data as { status?: string; transition?: { id?: string; name?: string } };
     const requested = data.status ?? data.transition?.id ?? data.transition?.name ?? "";
 
-    const issue = await findIssue(key, context.organization.id);
+    const issue = await findIssue(key, context.organization.id, {
+      id: context.user.id,
+      role: context.role,
+    });
     if (!issue) return apiError(404, NOT_FOUND);
 
     const { key: statusKey, statuses } = await resolveTransitionStatus(issue.projectId, requested);

@@ -21,6 +21,11 @@ import {
   requireWorkspaceRole,
   requireWorkspaceSession,
 } from "../../../server/session";
+import {
+  accessErrorResponse,
+  accessUserFromSession,
+  projectGuard,
+} from "../../../server/projectAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -43,10 +48,20 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    if (validation.data.projectId) {
+      const denied = await projectGuard(session, validation.data.projectId, "view");
+      if (denied) return denied;
+    }
     return NextResponse.json(
-      await listIssues(session.workspace.id, validation.data),
+      await listIssues(
+        session.workspace.id,
+        validation.data,
+        accessUserFromSession(session),
+      ),
     );
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     console.error("Failed to load issues", error);
     return NextResponse.json(
       { error: "Issues could not be loaded" },
@@ -78,6 +93,8 @@ export async function POST(request: NextRequest) {
       { status: 201 },
     );
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     if (error instanceof SyntaxError) {
       return NextResponse.json(
         { error: "Request body must be valid JSON" },

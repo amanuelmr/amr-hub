@@ -4,9 +4,19 @@ import { Prisma } from "@prisma/client";
 import prisma from "../../prisma/client";
 import type { WorkspaceActor } from "./issues";
 import { doneStatusWhere, seedProjectWorkflow } from "./workflows";
+import {
+  isProjectRole,
+  projectAudienceUserIds,
+  resolveProjectPermissions,
+  visibleProjectWhere,
+  type AccessUser,
+} from "./projectAccess";
 
 import {
   parseBoardConfig,
+  type ProjectAccessLevel,
+  type ProjectMemberEntry,
+  type ProjectRole,
   type BoardType,
   type NewProjectInput,
   type Project,
@@ -32,17 +42,23 @@ type StoredProject = {
   boardType: string;
   leadUserId: string | null;
   boardConfig: string | null;
+  accessLevel: string;
+  archivedAt: Date | null;
+  deletedAt: Date | null;
 };
+
+const liveIssues = { deletedAt: null, archivedAt: null } as const;
 
 async function serializeProject(
   project: StoredProject,
-  userId?: string,
+  user?: AccessUser,
 ): Promise<Project> {
-  const [issueCount, doneIssueCount, activeCycle, lead, star] =
+  const userId = user?.id;
+  const [issueCount, doneIssueCount, activeCycle, lead, star, membership] =
     await Promise.all([
-      prisma.issue.count({ where: { projectId: project.id } }),
+      prisma.issue.count({ where: { projectId: project.id, ...liveIssues } }),
       prisma.issue.count({
-        where: { projectId: project.id, AND: [doneStatusWhere()] },
+        where: { projectId: project.id, ...liveIssues, AND: [doneStatusWhere()] },
       }),
       prisma.cycle.findFirst({
         where: { projectId: project.id, state: "ACTIVE" },
@@ -61,7 +77,14 @@ async function serializeProject(
             select: { userId: true },
           })
         : null,
+      userId
+        ? prisma.projectMember.findUnique({
+            where: { projectId_userId: { projectId: project.id, userId } },
+            select: { role: true },
+          })
+        : null,
     ]);
+  const myRole = membership && isProjectRole(membership.role) ? membership.role : null;
 
   return {
     id: project.id,
@@ -81,33 +104,61 @@ async function serializeProject(
     boardConfig: parseBoardConfig(project.boardConfig),
     leadName: lead?.name ?? null,
     starred: Boolean(star),
+    accessLevel: project.accessLevel as ProjectAccessLevel,
+    archivedAt: project.archivedAt?.toISOString() ?? null,
+    myRole,
+    ...(user
+      ? {
+          permissions: resolveProjectPermissions({
+            accessLevel: project.accessLevel,
+            workspaceRole: user.role,
+            projectRole: myRole,
+            isLead: project.leadUserId === user.id,
+            archived: project.archivedAt !== null,
+            deleted: project.deletedAt !== null,
+          }),
+        }
+      : {}),
   };
 }
 
+/**
+ * Projects the user can see. Archived projects are left out unless
+ * `archived` is "include" (all) or "only" (the Archived projects filter).
+ */
 export async function listProjects(
   organizationId: string,
-  userId?: string,
+  user: AccessUser,
+  options: { archived?: "exclude" | "include" | "only" } = {},
 ): Promise<Project[]> {
+  const archived = options.archived ?? "exclude";
   const projects = await prisma.project.findMany({
-    where: { organizationId },
+    where: {
+      ...visibleProjectWhere(user, organizationId, {
+        includeArchived: archived !== "exclude",
+      }),
+      ...(archived === "only" ? { archivedAt: { not: null } } : {}),
+    },
     orderBy: { createdAt: "asc" },
   });
 
-  return Promise.all(
-    projects.map((project) => serializeProject(project, userId)),
-  );
+  return Promise.all(projects.map((project) => serializeProject(project, user)));
 }
 
+/** A project the user can see (archived ones included: they open read-only). */
 export async function getProject(
   id: string,
   organizationId: string,
-  userId?: string,
+  user: AccessUser,
 ) {
   const project = await prisma.project.findFirst({
-    where: { id, organizationId },
+    where: {
+      id,
+      ...visibleProjectWhere(user, organizationId, { includeArchived: true }),
+    },
   });
 
-  return project ? serializeProject(project, userId) : null;
+  return project ? serializeProject(project, user) : null;
 }
 
 export class UnknownProjectLeadError extends Error {
@@ -125,11 +176,22 @@ export type ProjectPerson = {
   role: string;
 };
 
+/**
+ * Workspace people who can be assigned or mentioned on the project: everyone
+ * for Open/Limited projects; project members, the lead and owners for Private.
+ */
 export async function listProjectPeople(
   organizationId: string,
+  projectId?: string,
 ): Promise<ProjectPerson[]> {
+  const audience = projectId
+    ? await projectAudienceUserIds(projectId, organizationId)
+    : null;
   const members = await prisma.member.findMany({
-    where: { organizationId },
+    where: {
+      organizationId,
+      ...(audience ? { userId: { in: [...audience] } } : {}),
+    },
     include: { user: { select: { name: true, email: true } } },
     orderBy: { user: { name: "asc" } },
   });
@@ -161,7 +223,7 @@ export async function setProjectStar(
   starred: boolean,
 ) {
   const project = await prisma.project.findFirst({
-    where: { id: projectId, organizationId },
+    where: { id: projectId, organizationId, deletedAt: null },
     select: { id: true },
   });
   if (!project) return null;
@@ -178,11 +240,180 @@ export async function setProjectStar(
   return { starred };
 }
 
+/** Moves a project to the trash (Jira keeps it 60 days before purging). */
 export async function deleteProject(id: string, organizationId: string) {
-  const result = await prisma.project.deleteMany({
-    where: { id, organizationId },
+  const result = await prisma.project.updateMany({
+    where: { id, organizationId, deletedAt: null },
+    data: { deletedAt: new Date() },
   });
   return result.count > 0;
+}
+
+/** Archives (read-only, hidden) or restores a project. */
+export async function setProjectArchived(
+  id: string,
+  organizationId: string,
+  archived: boolean,
+) {
+  const result = await prisma.project.updateMany({
+    where: { id, organizationId, deletedAt: null },
+    data: { archivedAt: archived ? new Date() : null },
+  });
+  return result.count > 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Project access: level + people                                      */
+/* ------------------------------------------------------------------ */
+
+export class ProjectPeopleError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ProjectPeopleError";
+  }
+}
+
+export type ProjectAccessSettings = {
+  accessLevel: ProjectAccessLevel;
+  leadUserId: string | null;
+  members: ProjectMemberEntry[];
+};
+
+export async function getProjectAccess(
+  projectId: string,
+  organizationId: string,
+): Promise<ProjectAccessSettings | null> {
+  const project = await prisma.project.findFirst({
+    where: { id: projectId, organizationId, deletedAt: null },
+    select: {
+      accessLevel: true,
+      leadUserId: true,
+      members: {
+        include: { user: { select: { name: true, email: true, image: true } } },
+        orderBy: { createdAt: "asc" },
+      },
+    },
+  });
+  if (!project) return null;
+  const workspaceMembers = await prisma.member.findMany({
+    where: {
+      organizationId,
+      userId: { in: project.members.map((member) => member.userId) },
+    },
+    select: { userId: true, role: true },
+  });
+  const workspaceRoles = new Map(
+    workspaceMembers.map((member) => [member.userId, member.role]),
+  );
+  return {
+    accessLevel: project.accessLevel as ProjectAccessLevel,
+    leadUserId: project.leadUserId,
+    members: project.members
+      // People who left the workspace keep no project access.
+      .filter((member) => workspaceRoles.has(member.userId))
+      .map((member) => ({
+        userId: member.userId,
+        name: member.user.name,
+        email: member.user.email,
+        image: member.user.image,
+        role: (isProjectRole(member.role) ? member.role : "MEMBER") as ProjectRole,
+        workspaceRole: workspaceRoles.get(member.userId) ?? "member",
+        isLead: member.userId === project.leadUserId,
+        addedAt: member.createdAt.toISOString(),
+      })),
+  };
+}
+
+export async function setProjectAccessLevel(
+  projectId: string,
+  organizationId: string,
+  accessLevel: ProjectAccessLevel,
+) {
+  const current = await prisma.project.findFirst({
+    where: { id: projectId, organizationId, deletedAt: null },
+    select: { accessLevel: true },
+  });
+  if (!current) return null;
+  await prisma.project.update({
+    where: { id: projectId },
+    data: { accessLevel },
+  });
+  return { previous: current.accessLevel as ProjectAccessLevel, accessLevel };
+}
+
+export async function addProjectMembers(
+  projectId: string,
+  organizationId: string,
+  userIds: string[],
+  role: ProjectRole,
+) {
+  const unique = [...new Set(userIds)];
+  const members = await prisma.member.findMany({
+    where: { organizationId, userId: { in: unique } },
+    select: { userId: true },
+  });
+  if (members.length !== unique.length) {
+    throw new ProjectPeopleError("Everyone you add must be a member of this workspace");
+  }
+  for (const userId of unique) {
+    await prisma.projectMember.upsert({
+      where: { projectId_userId: { projectId, userId } },
+      create: { projectId, userId, role },
+      update: { role },
+    });
+  }
+  return unique;
+}
+
+/** Changes a role; refuses to demote the last administrator. */
+export async function updateProjectMemberRole(
+  projectId: string,
+  userId: string,
+  role: ProjectRole,
+) {
+  const existing = await prisma.projectMember.findUnique({
+    where: { projectId_userId: { projectId, userId } },
+  });
+  if (!existing) return null;
+  if (existing.role === "ADMIN" && role !== "ADMIN") {
+    await ensureAnotherAdmin(projectId, userId);
+  }
+  await prisma.projectMember.update({
+    where: { projectId_userId: { projectId, userId } },
+    data: { role },
+  });
+  return { previous: existing.role, role };
+}
+
+export async function removeProjectMember(projectId: string, userId: string) {
+  const existing = await prisma.projectMember.findUnique({
+    where: { projectId_userId: { projectId, userId } },
+  });
+  if (!existing) return null;
+  if (existing.role === "ADMIN") await ensureAnotherAdmin(projectId, userId);
+  await prisma.projectMember.delete({
+    where: { projectId_userId: { projectId, userId } },
+  });
+  return { role: existing.role };
+}
+
+async function ensureAnotherAdmin(projectId: string, leavingUserId: string) {
+  const [otherAdmins, project] = await Promise.all([
+    prisma.projectMember.count({
+      where: { projectId, role: "ADMIN", userId: { not: leavingUserId } },
+    }),
+    prisma.project.findUnique({
+      where: { id: projectId },
+      select: { leadUserId: true },
+    }),
+  ]);
+  const leadIsAnotherAdmin =
+    project?.leadUserId !== null &&
+    project?.leadUserId !== undefined &&
+    project.leadUserId !== leavingUserId;
+  if (otherAdmins === 0 && !leadIsAnotherAdmin) {
+    throw new ProjectPeopleError("A project needs at least one administrator");
+  }
 }
 
 export class DuplicateProjectKeyError extends Error {
@@ -213,6 +444,7 @@ async function createProjectUnhooked(
           description: input.description,
           color: input.color,
           boardType: input.boardType ?? "SCRUM",
+          accessLevel: input.accessLevel ?? "OPEN",
           leadUserId: actor.id,
           organizationId: actor.organizationId,
           targetDate: input.targetDate
@@ -222,10 +454,14 @@ async function createProjectUnhooked(
       });
       // Every new project starts with Jira's default workflow and work types.
       await seedProjectWorkflow(transaction, created.id);
+      // Jira: whoever creates a project administers it.
+      await transaction.projectMember.create({
+        data: { projectId: created.id, userId: actor.id, role: "ADMIN" },
+      });
       return created;
     });
 
-    return serializeProject(project, actor.id);
+    return serializeProject(project, { id: actor.id, role: actor.role ?? "member" });
   } catch (error) {
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -243,10 +479,10 @@ export async function updateProject(
   id: string,
   updates: ProjectUpdates,
   organizationId: string,
-  userId?: string,
+  user: AccessUser,
 ) {
   const current = await prisma.project.findFirst({
-    where: { id, organizationId },
+    where: { id, organizationId, deletedAt: null },
   });
   if (!current) return null;
 
@@ -283,7 +519,7 @@ export async function updateProject(
     throw error;
   }
 
-  return serializeProject(project, userId);
+  return serializeProject(project, user);
 }
 
 export async function createProject(

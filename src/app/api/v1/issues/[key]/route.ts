@@ -26,7 +26,7 @@ export async function GET(request: Request, route: RouteContext) {
 
   try {
     const [issue, projects] = await Promise.all([
-      getIssue(key, context.organization.id),
+      getIssue(key, context.organization.id, { id: context.user.id, role: context.role }),
       projectLookup(context.organization.id),
     ]);
     if (!issue) return apiError(404, "Issue does not exist or you do not have permission to see it.");

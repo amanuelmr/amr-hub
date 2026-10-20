@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../server/projectAccess";
 import { createTeamSchema } from "../../../server/teamSchemas";
 import { createTeam, listTeams } from "../../../server/teams";
 import {
@@ -25,6 +26,8 @@ export async function GET(request: Request) {
       await listTeams(session.workspace.id, teamViewer(session), { memberUserId }),
     );
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return teamErrorResponse(error, "Teams could not be loaded");
   }
 }
@@ -44,6 +47,8 @@ export async function POST(request: Request) {
     );
     return NextResponse.json(team, { status: 201 });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return teamErrorResponse(error, "Team could not be created");
   }
 }

@@ -1,5 +1,55 @@
 import { isValidStatusKey } from "../app/data/workflow";
+import { parseJql } from "../app/data/jql";
+import {
+  CARD_EXTRA_FIELDS,
+  DEFAULT_BOARD_CONFIG,
+  MAX_CARD_EXTRA_FIELDS,
+  type CardField,
+} from "../app/data/projects";
 import { z } from "zod";
+
+const CARD_FIELDS = [
+  "epic",
+  "storyPoints",
+  "priority",
+  "assignee",
+  "dueDate",
+  "labels",
+  "components",
+  "fixVersion",
+  "subtasks",
+] as const satisfies readonly CardField[];
+
+const jqlSchema = z
+  .string()
+  .trim()
+  .min(1, { message: "Enter a JQL query" })
+  .max(2000)
+  .superRefine((value, context) => {
+    const parsed = parseJql(value);
+    if (!parsed.ok) {
+      context.addIssue({
+        code: "custom",
+        message: `Invalid JQL: ${parsed.error.message}`,
+      });
+    }
+  });
+
+const boardQuerySchema = z
+  .object({
+    id: z.string().trim().min(1).max(60),
+    name: z.string().trim().min(1).max(60),
+    jql: jqlSchema,
+    color: z
+      .string()
+      .trim()
+      .regex(/^#[0-9a-fA-F]{6}$/)
+      .optional(),
+  })
+  .strict();
+
+const uniqueIds = (queries: { id: string }[]) =>
+  new Set(queries.map((query) => query.id)).size === queries.length;
 
 const boardTypeSchema = z.enum(["SCRUM", "KANBAN"]);
 
@@ -24,9 +74,51 @@ export const boardConfigSchema = z
       )
       .min(1)
       .max(12),
-    swimlanes: z.enum(["NONE", "ASSIGNEE", "EPIC", "PRIORITY"]),
+    swimlanes: z.enum(["NONE", "ASSIGNEE", "EPIC", "PRIORITY", "QUERY", "SUBTASKS"]),
     showBacklogColumn: z.boolean(),
     estimation: z.enum(["STORY_POINTS", "TIME"]),
+    cardFields: z
+      .array(z.enum(CARD_FIELDS))
+      .max(CARD_FIELDS.length)
+      .transform((fields) => [...new Set(fields)])
+      .refine(
+        (fields) =>
+          fields.filter((field) => CARD_EXTRA_FIELDS.includes(field)).length <=
+          MAX_CARD_EXTRA_FIELDS,
+        { message: `Choose at most ${MAX_CARD_EXTRA_FIELDS} extra card fields` },
+      )
+      .default(DEFAULT_BOARD_CONFIG.cardFields),
+    cardColors: z
+      .object({
+        strategy: z.enum(["NONE", "ISSUE_TYPE", "PRIORITY", "ASSIGNEE", "QUERY"]),
+        queries: z
+          .array(boardQuerySchema)
+          .max(20)
+          .refine(uniqueIds, { message: "Query ids must be unique" })
+          .refine((queries) => queries.every((query) => !!query.color), {
+            message: "Every card color query needs a color",
+          }),
+      })
+      .strict()
+      .default(DEFAULT_BOARD_CONFIG.cardColors),
+    quickFilters: z
+      .array(boardQuerySchema)
+      .max(20)
+      .refine(uniqueIds, { message: "Quick filter ids must be unique" })
+      .default([]),
+    swimlaneQueries: z
+      .array(boardQuerySchema)
+      .max(20)
+      .refine(uniqueIds, { message: "Swimlane ids must be unique" })
+      .default([]),
+    kanbanDoneDays: z
+      .number()
+      .int()
+      .min(1)
+      .max(365)
+      .nullable()
+      .default(DEFAULT_BOARD_CONFIG.kanbanDoneDays),
+    parallelSprints: z.boolean().default(false),
   })
   .strict()
   .refine(
@@ -90,6 +182,25 @@ export const createProjectSchema = z
       .default(null),
     targetDate: targetDateSchema.nullable().default(null),
     boardType: boardTypeSchema.optional(),
+    accessLevel: z.enum(["OPEN", "LIMITED", "PRIVATE"]).optional(),
+  })
+  .strict();
+
+export const projectAccessUpdateSchema = z
+  .object({ accessLevel: z.enum(["OPEN", "LIMITED", "PRIVATE"]) })
+  .strict();
+
+export const addProjectMembersSchema = z
+  .object({
+    userIds: z.array(z.string().trim().min(1).max(120)).min(1).max(50),
+    role: z.enum(["ADMIN", "MEMBER", "VIEWER"]).default("MEMBER"),
+  })
+  .strict();
+
+export const updateProjectMemberSchema = z
+  .object({
+    userId: z.string().trim().min(1).max(120),
+    role: z.enum(["ADMIN", "MEMBER", "VIEWER"]),
   })
   .strict();
 

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../../../server/projectAccess";
 import {
   deleteWebhook,
   updateWebhook,
@@ -32,6 +33,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     if (!webhook) return NextResponse.json({ error: "Webhook not found" }, { status: 404 });
     return NextResponse.json(webhook);
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     if (error instanceof SyntaxError) {
       return NextResponse.json({ error: "Request body must be valid JSON" }, { status: 400 });
     }
@@ -56,6 +59,8 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     if (!deleted) return NextResponse.json({ error: "Webhook not found" }, { status: 404 });
     return new NextResponse(null, { status: 204 });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     console.error("Failed to delete webhook", error);
     return NextResponse.json({ error: "The webhook could not be deleted" }, { status: 500 });
   }

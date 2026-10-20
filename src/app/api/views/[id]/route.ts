@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../../server/projectAccess";
 import { updateSavedViewSchema } from "../../../../server/savedViewSchemas";
 import {
   deleteSavedView,
@@ -47,6 +48,8 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     return NextResponse.json(view);
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     if (error instanceof SyntaxError) {
       return NextResponse.json(
         { error: "Request body must be valid JSON" },
@@ -89,6 +92,8 @@ export async function DELETE(request: Request, context: RouteContext) {
 
     return new NextResponse(null, { status: 204 });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     console.error("Failed to delete saved view", error);
     return NextResponse.json(
       { error: "Saved view could not be deleted" },

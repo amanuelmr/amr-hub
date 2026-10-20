@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { ZodError } from "zod";
+import { accessErrorResponse } from "../../../server/projectAccess";
 
 export class RequestError extends Error {
   constructor(
@@ -29,6 +30,8 @@ export function errorResponse(
   domainErrors: { new (...args: never[]): Error }[] = [],
   conflictErrors: { new (...args: never[]): Error }[] = [],
 ) {
+  const denied = accessErrorResponse(error);
+  if (denied) return denied;
   if (error instanceof SyntaxError) {
     return NextResponse.json(
       { error: "Request body must be valid JSON" },

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../../server/projectAccess";
 import {
   acceptInvitationSchema,
   invitationTokenSchema,
@@ -32,6 +33,8 @@ export async function GET(request: NextRequest) {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     if (error instanceof InvitationError) return unavailableResponse();
     console.error("Failed to verify invitation", error);
     return NextResponse.json(
@@ -63,6 +66,8 @@ export async function POST(request: NextRequest) {
       },
     );
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     if (error instanceof InvitationError) {
       return error.code === "EMAIL_IN_USE"
         ? NextResponse.json(

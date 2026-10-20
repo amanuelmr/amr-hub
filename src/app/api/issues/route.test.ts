@@ -115,7 +115,7 @@ describe("/api/issues organization boundary", () => {
       status: "ALL",
       priority: "ALL",
       sort: "NEWEST",
-    });
+    }, { id: "owner-1", role: "owner" });
   });
 
   it("rejects an unsupported status filter", async () => {
@@ -148,7 +148,7 @@ describe("/api/issues organization boundary", () => {
       limit: 20,
       cursor: "AMR-9",
       assigneeId: "UNASSIGNED",
-    });
+    }, { id: "owner-1", role: "owner" });
   });
 
   it("creates issues with the active organization and issue key", async () => {

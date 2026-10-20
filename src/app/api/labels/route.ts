@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../server/projectAccess";
 import { listLabels } from "../../../server/issues";
 import { requireWorkspaceSession } from "../../../server/session";
 
@@ -12,6 +13,8 @@ export async function GET(request: Request) {
   try {
     return NextResponse.json(await listLabels(session.workspace.id));
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     console.error("Failed to load labels", error);
     return NextResponse.json(
       { error: "Labels could not be loaded" },

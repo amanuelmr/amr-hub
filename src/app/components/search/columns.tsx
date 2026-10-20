@@ -7,12 +7,28 @@ import {
   type Cycle,
   type Issue,
 } from "../../data/issues";
-import type { JqlField } from "../../data/jql";
+import { customFieldJqlKey, type JqlField } from "../../data/jql";
+import {
+  formatFieldValue,
+  isEmptyFieldValue,
+  isMultiValueField,
+  type CustomFieldDefinition,
+} from "../../data/customFields";
+import {
+  getCustomFieldSnapshot,
+  loadCustomFields,
+  subscribeCustomFields,
+} from "../fields/customFieldStore";
 import { KindIcon, PriorityBadge, StatusBadge } from "../IssueVisuals";
 import { IssueLabelChip } from "../IssueLabelChip";
 import { statusName, typeName } from "../../data/workflow";
 
-export type ColumnId =
+/** A custom field column: `cf:<field id>`. */
+export type CustomColumnId = `cf:${string}`;
+
+export type ColumnId = BuiltinColumnId | CustomColumnId;
+
+type BuiltinColumnId =
   | "key"
   | "type"
   | "summary"
@@ -88,7 +104,7 @@ function DateCell({ value }: { value: string | null }) {
   );
 }
 
-export const COLUMNS: ColumnDef[] = [
+const BUILTIN_COLUMNS: ColumnDef[] = [
   {
     id: "type",
     label: "Type",
@@ -273,7 +289,82 @@ export const COLUMNS: ColumnDef[] = [
   },
 ];
 
-export const COLUMNS_BY_ID = new Map(COLUMNS.map((column) => [column.id, column]));
+/** Built-in columns followed by one per workspace custom field (kept in sync). */
+export const COLUMNS: ColumnDef[] = [...BUILTIN_COLUMNS];
+
+class ColumnRegistry extends Map<ColumnId, ColumnDef> {
+  /** Custom columns count as known before the field list loads (saved layouts). */
+  override has(id: ColumnId) {
+    return super.has(id) || (typeof id === "string" && id.startsWith("cf:"));
+  }
+}
+
+export const COLUMNS_BY_ID: Map<ColumnId, ColumnDef> = new ColumnRegistry(
+  COLUMNS.map((column) => [column.id, column]),
+);
+
+export function customColumnId(fieldId: string): CustomColumnId {
+  return `cf:${fieldId}`;
+}
+
+function CustomFieldCell({ field, issue }: { field: CustomFieldDefinition; issue: Issue }) {
+  const value = issue.customFields?.[field.id];
+  if (isEmptyFieldValue(value)) return <span className="search-muted">—</span>;
+  const { members } = getCustomFieldSnapshot();
+  const display = formatFieldValue(field, value, members);
+  if (field.type === "URL") {
+    return (
+      <a className="search-cf-link" href={display} target="_blank" rel="noreferrer noopener">
+        {display}
+      </a>
+    );
+  }
+  if (isMultiValueField(field.type)) {
+    return (
+      <span className="search-labels">
+        {display.split(", ").map((item) => (
+          <span className="search-chip" key={item}>
+            {item}
+          </span>
+        ))}
+      </span>
+    );
+  }
+  if (field.type === "USER") return <Person name={display} />;
+  return <span className="search-cf-text" title={display}>{display}</span>;
+}
+
+export function customFieldColumn(field: CustomFieldDefinition): ColumnDef {
+  const width =
+    field.type === "NUMBER"
+      ? "90px"
+      : field.type === "DATE"
+        ? "110px"
+        : "minmax(120px, 0.8fr)";
+  return {
+    id: customColumnId(field.id),
+    label: field.name,
+    sortField: customFieldJqlKey(field.id),
+    width,
+    render: (issue) => <CustomFieldCell field={field} issue={issue} />,
+    text: (issue) =>
+      formatFieldValue(field, issue.customFields?.[field.id], getCustomFieldSnapshot().members),
+  };
+}
+
+function syncCustomColumns() {
+  const { fields } = getCustomFieldSnapshot();
+  const custom = fields.map(customFieldColumn);
+  COLUMNS.splice(0, COLUMNS.length, ...BUILTIN_COLUMNS, ...custom);
+  COLUMNS_BY_ID.clear();
+  for (const column of COLUMNS) COLUMNS_BY_ID.set(column.id, column);
+}
+
+if (typeof window !== "undefined") {
+  subscribeCustomFields(syncCustomColumns);
+  syncCustomColumns();
+  void loadCustomFields();
+}
 
 export const DEFAULT_COLUMNS: ColumnId[] = [
   "type",

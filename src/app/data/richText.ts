@@ -1,4 +1,5 @@
-const HTML_TAG_PATTERN = /<(p|br|strong|em|s|u|ul|ol|li|a|code|pre|blockquote|h1|h2|h3|span)\b/i;
+const HTML_TAG_PATTERN =
+  /<(p|br|hr|strong|em|s|u|ul|ol|li|a|code|pre|blockquote|h1|h2|h3|h4|span|img|table|div)\b/i;
 
 export function looksLikeHtml(value: string): boolean {
   return HTML_TAG_PATTERN.test(value);
@@ -74,4 +75,33 @@ export function insertMention(
     body: `${before}${inserted}${after}`,
     cursor: before.length + inserted.length,
   };
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/**
+ * Comments used to be stored as plain text with `@[Name](id)` mentions; the
+ * editor now stores rich HTML. This converts an old comment for editing.
+ */
+export function legacyCommentToHtml(body: string): string {
+  if (looksLikeHtml(body)) return body;
+  return body
+    .split(/\n{2,}/)
+    .map((paragraph) => {
+      const inner = parseCommentBody(paragraph)
+        .map((part) =>
+          part.type === "mention"
+            ? `<span data-type="mention" data-id="${escapeHtml(part.memberId)}" data-label="${escapeHtml(part.name)}">@${escapeHtml(part.name)}</span>`
+            : escapeHtml(part.value).replace(/\n/g, "<br>"),
+        )
+        .join("");
+      return `<p>${inner}</p>`;
+    })
+    .join("");
 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../../server/projectAccess";
 import { updateSprintSchema } from "../../../../server/projectSchemas";
 import { deleteSprint, updateSprint } from "../../../../server/sprints";
 import {
@@ -24,6 +25,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       await updateSprint(id, validation.data, actorFromSession(result.session)),
     );
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return sprintErrorResponse(error, "update");
   }
 }
@@ -38,6 +41,8 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       await deleteSprint(id, actorFromSession(result.session)),
     );
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return sprintErrorResponse(error, "delete");
   }
 }

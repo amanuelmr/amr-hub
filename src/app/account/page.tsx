@@ -1,7 +1,9 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import Link from "next/link";
 import {
+  BellRing,
   Check,
   Copy,
   KeyRound,
@@ -240,6 +242,21 @@ export default function AccountPage() {
             <ShieldCheck size={14} aria-hidden="true" />
             {activeMember?.role === "owner" ? "Owner" : "Member"}
           </span>
+        </section>
+
+        <section className="account-section">
+          <header>
+            <span>
+              <BellRing size={17} aria-hidden="true" />
+            </span>
+            <div>
+              <h2>Notifications</h2>
+              <p>Choose which updates reach you in app and by email, and manage filter subscriptions.</p>
+            </div>
+          </header>
+          <Link className="secondary-button" href="/account/notifications">
+            Manage notifications
+          </Link>
         </section>
 
         <section className="account-section">

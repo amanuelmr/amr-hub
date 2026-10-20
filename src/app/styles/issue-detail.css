@@ -1546,3 +1546,8 @@
 .issue-detail-sublink:hover {
   text-decoration: underline;
 }
+
+.issue-person-link:hover {
+  color: var(--green-600);
+  text-decoration: underline;
+}

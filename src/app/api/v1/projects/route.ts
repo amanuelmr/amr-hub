@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "../../../../../prisma/client";
 import { apiError, authenticateApiRequest } from "../../../../server/publicApi";
+import { visibleProjectWhere } from "../../../../server/projectAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,10 @@ export async function GET(request: Request) {
 
   try {
     const projects = await prisma.project.findMany({
-      where: { organizationId: context.organization.id, deletedAt: null },
+      where: visibleProjectWhere(
+        { id: context.user.id, role: context.role },
+        context.organization.id,
+      ),
       include: {
         lead: { select: { id: true, name: true, email: true } },
         workflowStatuses: {

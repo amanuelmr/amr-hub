@@ -2,6 +2,11 @@ import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import type { Cycle, NewCycleInput, SprintState } from "../app/data/issues";
 import prisma from "../../prisma/client";
+import {
+  assertActorPermission,
+  visibleProjectWhere,
+  type AccessUser,
+} from "./projectAccess";
 import type { WorkspaceActor } from "./issues";
 
 export type StoredCycle = {
@@ -38,10 +43,15 @@ export function serializeCycle(cycle: StoredCycle): Cycle {
 
 export async function listCycles(
   organizationId: string,
-  projectId?: string,
+  projectId: string | undefined,
+  viewer: AccessUser,
 ): Promise<Cycle[]> {
   const cycles = await prisma.cycle.findMany({
-    where: { organizationId, ...(projectId ? { projectId } : {}) },
+    where: {
+      organizationId,
+      ...(projectId ? { projectId } : {}),
+      project: visibleProjectWhere(viewer, organizationId, { includeArchived: true }),
+    },
     orderBy: { startDate: "asc" },
   });
 
@@ -75,6 +85,7 @@ export async function createCycle(
     select: { id: true },
   });
   if (!project) throw new UnknownProjectError();
+  await assertActorPermission(actor, project.id, "edit");
 
   try {
     const cycle = await prisma.cycle.create({

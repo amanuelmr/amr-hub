@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse, projectGuard } from "../../../../../../../server/projectAccess";
 import { recordAudit } from "../../../../../../../server/audit";
 import { requireWorkspaceRole } from "../../../../../../../server/session";
 import {
@@ -22,6 +23,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     const validation = updateTransitionSchema.safeParse(await request.json());
     if (!validation.success) return validationFailed(validation.error);
     const { id, transitionId } = await context.params;
+    const guard = await projectGuard(result.session, id, "admin");
+    if (guard) return guard;
     const workflow = await updateTransition(
       id,
       transitionId,
@@ -37,6 +40,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     });
     return workflow ? NextResponse.json(workflow) : notFound("Transition");
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(
       error,
       "Transition could not be updated",
@@ -52,6 +57,8 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
   try {
     const { id, transitionId } = await context.params;
+    const guard = await projectGuard(result.session, id, "admin");
+    if (guard) return guard;
     const workflow = await deleteTransition(
       id,
       transitionId,
@@ -66,6 +73,8 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     });
     return workflow ? NextResponse.json(workflow) : notFound("Transition");
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(error, "Transition could not be deleted");
   }
 }

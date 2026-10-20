@@ -55,6 +55,7 @@ function makeIssue(overrides: Partial<Issue> & { id: string }): Issue {
     timeSpentMinutes: 0,
     childCount: 0,
     doneChildCount: 0,
+    customFields: {},
     watcherIds: [],
     comments: [],
     activity: [],

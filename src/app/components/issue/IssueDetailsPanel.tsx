@@ -30,6 +30,7 @@ import {
   type IssueDetailController,
 } from "./useIssueDetail";
 import { TimeTrackingBar } from "./IssueTimeTracking";
+import { IssueCustomFields } from "../fields/IssueCustomFields";
 import {
   ISSUE_ESTIMATES,
   PRIORITY_LABELS,
@@ -287,6 +288,14 @@ export function IssueDetailsPanel({
                     Assign to me
                   </button>
                 )}
+              {issue.assignee?.userId && (
+                <Link
+                  className="issue-detail-sublink"
+                  href={`/people/${issue.assignee.userId}`}
+                >
+                  View profile
+                </Link>
+              )}
             </div>
           </DetailField>
 
@@ -295,7 +304,16 @@ export function IssueDetailsPanel({
               <span className="avatar avatar-small">
                 {issue.creator ? initials(issue.creator.name) : "?"}
               </span>
-              {issue.creator?.name ?? "Unknown"}
+              {issue.creator ? (
+                <Link
+                  className="issue-person-link"
+                  href={`/people/${issue.creator.id}`}
+                >
+                  {issue.creator.name}
+                </Link>
+              ) : (
+                "Unknown"
+              )}
             </span>
           </DetailField>
 
@@ -581,6 +599,13 @@ export function IssueDetailsPanel({
               />
             </DetailField>
           )}
+
+          <IssueCustomFields
+            issue={issue}
+            members={members}
+            readOnly={readOnly}
+            onUpdate={update}
+          />
         </div>
       )}
       {isOpen && (

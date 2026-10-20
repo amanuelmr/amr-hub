@@ -1,3 +1,5 @@
+import { serializeCustomField } from "./customFields";
+import type { CustomFieldDefinition } from "../app/data/customFields";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import prisma from "../../prisma/client";
@@ -39,6 +41,10 @@ export const importRowSchema = z.object({
   parentKey: cell,
   sprint: cell,
   fixVersion: cell,
+  customFields: z
+    .record(z.string().trim().min(1).max(120), z.string().max(20000))
+    .refine((values) => Object.keys(values).length <= 50, "Too many custom fields")
+    .optional(),
 });
 
 export const importRequestSchema = z
@@ -69,6 +75,7 @@ export type ImportProjectContext = {
   priorities: ImportOption[];
   sprints: Array<{ id: string; name: string }>;
   versions: Array<{ id: string; name: string }>;
+  customFields: CustomFieldDefinition[];
   defaults: { status: string; kind: string; priority: string };
 };
 
@@ -91,6 +98,13 @@ export async function loadProjectImportContext(
   });
   if (!project) return null;
 
+  const customFields = (
+    await prisma.customField.findMany({
+      where: { organizationId, OR: [{ projectId: null }, { projectId: project.id }] },
+      orderBy: { position: "asc" },
+    })
+  ).map((field) => serializeCustomField(field));
+
   const statuses: ImportOption[] = project.workflowStatuses.length
     ? project.workflowStatuses
     : ISSUE_STATUSES.map((key) => ({ key, name: STATUS_LABELS[key] }));
@@ -105,6 +119,7 @@ export async function loadProjectImportContext(
     priorities: PRIORITY_OPTIONS,
     sprints: project.cycles,
     versions: project.versions,
+    customFields,
     defaults: {
       status: statuses.some((s) => s.key === "OPEN") ? "OPEN" : statuses[0]?.key ?? "OPEN",
       kind: kinds.some((k) => k.key === "TASK") ? "TASK" : kinds[0]?.key ?? "TASK",
@@ -213,6 +228,7 @@ export async function runImport(
       email: member.email ?? "",
     })),
     sprints: projectContext.sprints,
+    customFields: projectContext.customFields,
     existingKeys,
     defaults: projectContext.defaults,
   };
@@ -274,6 +290,11 @@ export async function runImport(
             fixVersionId: row.fixVersion
               ? versionIds.get(row.fixVersion.toLowerCase()) ?? null
               : null,
+            // Only rows that carry custom values send them, so a required
+            // field the file never mentions doesn't block the import.
+            ...(Object.keys(row.customFields).length > 0
+              ? { customFields: row.customFields }
+              : {}),
           } as NewIssueInput,
           actor,
         );

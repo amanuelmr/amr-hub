@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createCommentSchema } from "../../../../../server/issueSchemas";
+import { issueGuard, accessErrorResponse } from "../../../../../server/projectAccess";
+import {
+  commentBodySchema,
+  prepareCommentBody,
+} from "../../../../../server/comments";
+import { IssueActionError } from "../../../../../server/issueRelations";
 import { addComment } from "../../../../../server/issues";
 import {
   actorFromSession,
@@ -16,7 +21,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
   const { session } = result;
 
   try {
-    const validation = createCommentSchema.safeParse(await request.json());
+    const validation = commentBodySchema.safeParse(await request.json());
 
     if (!validation.success) {
       return NextResponse.json(
@@ -29,9 +34,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     const { id } = await context.params;
+    const denied = await issueGuard(result.session, id, "comment");
+    if (denied) return denied;
     const issue = await addComment(
       id,
-      validation.data.body,
+      prepareCommentBody(validation.data.body),
       actorFromSession(session),
     );
 
@@ -41,10 +48,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     return NextResponse.json(issue, { status: 201 });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     if (error instanceof SyntaxError) {
       return NextResponse.json(
         { error: "Request body must be valid JSON" },
         { status: 400 },
+      );
+    }
+
+    if (error instanceof IssueActionError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status },
       );
     }
 

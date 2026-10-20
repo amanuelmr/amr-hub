@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse, accessUserFromSession } from "../../../../../server/projectAccess";
 import { addGoalUpdate } from "../../../../../server/goals";
 import { createGoalUpdateSchema } from "../../../../../server/goalSchemas";
 import { requireWorkspaceRole } from "../../../../../server/session";
@@ -22,9 +23,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
       validation.data,
       session.user.id,
       session.workspace.id,
+      accessUserFromSession(session),
     );
     return goal ? NextResponse.json(goal, { status: 201 }) : notFound("Goal");
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(error, "Status update could not be posted");
   }
 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../../../server/projectAccess";
 import { completeSprintSchema } from "../../../../../server/projectSchemas";
 import { completeSprint } from "../../../../../server/sprints";
 import {
@@ -24,6 +25,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
       await completeSprint(id, validation.data, actorFromSession(result.session)),
     );
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return sprintErrorResponse(error, "complete");
   }
 }

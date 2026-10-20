@@ -100,11 +100,11 @@ function optionalDate(value: string | null | undefined) {
 }
 
 type StoredVersion = Prisma.VersionGetPayload<{
-  include: { issues: { select: { status: true } } };
+  include: { issues: { where: { deletedAt: null }; select: { status: true } } };
 }>;
 
 const versionInclude = {
-  issues: { select: { status: true } },
+  issues: { where: { deletedAt: null }, select: { status: true } },
 } satisfies Prisma.VersionInclude;
 
 function serializeVersion(version: StoredVersion): ProjectVersion {

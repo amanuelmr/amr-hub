@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { accessErrorResponse, accessUserFromSession } from "../../../server/projectAccess";
 import { getRecentlyViewed, getYourWork } from "../../../server/yourWork";
 import { requireWorkspaceSession } from "../../../server/session";
 
@@ -17,14 +18,16 @@ export async function GET(request: Request) {
         20,
       );
       return NextResponse.json({
-        recent: await getRecentlyViewed(session.user.id, session.workspace.id, limit),
+        recent: await getRecentlyViewed(accessUserFromSession(session), session.workspace.id, limit),
       });
     }
 
     return NextResponse.json(
-      await getYourWork(session.user.id, session.workspace.id),
+      await getYourWork(accessUserFromSession(session), session.workspace.id),
     );
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     console.error("Failed to load your work", error);
     return NextResponse.json(
       { error: "Your work could not be loaded" },

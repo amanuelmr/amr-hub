@@ -1,0 +1,399 @@
+/* Custom fields: settings manager, issue details group, inputs, bulk dialog. */
+
+.cf-manager {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.cf-intro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cf-intro p {
+  flex: 1 1 260px;
+  max-width: 640px;
+  margin: 0;
+}
+
+.cf-empty {
+  padding: 22px 16px;
+  border: 1px dashed var(--gray-300);
+  border-radius: var(--radius);
+  text-align: center;
+}
+
+.cf-empty h3 {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.cf-empty p {
+  margin: 0;
+}
+
+.cf-list,
+.cf-option-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cf-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.cf-row.dragging {
+  position: relative;
+  z-index: 2;
+  box-shadow: 3px 3px 0 var(--gray-300);
+}
+
+.cf-option-list .cf-row {
+  padding: 4px 6px;
+}
+
+.cf-drag-handle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: var(--gray-500);
+  background: transparent;
+  cursor: grab;
+  touch-action: none;
+}
+
+.cf-drag-handle:hover {
+  background: var(--gray-100);
+}
+
+.cf-row-text {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cf-row-text strong {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.cf-row-text .pa-muted,
+.cf-row-description {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.cf-row-description {
+  color: var(--ink-secondary);
+}
+
+.cf-usage {
+  flex: 0 0 auto;
+  color: var(--gray-500);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.cf-badge {
+  padding: 1px 5px;
+  border: 1px solid var(--gray-300);
+  border-radius: 2px;
+  color: var(--gray-500);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.cf-badge-required {
+  border-color: var(--red-300);
+  color: var(--red-600);
+}
+
+.cf-global-hint {
+  margin: 16px 0 0;
+  font-size: 12px;
+}
+
+/* Field dialog */
+
+.cf-dialog {
+  max-height: min(90vh, 760px);
+  overflow-y: auto;
+}
+
+.cf-form {
+  display: grid;
+  gap: 14px;
+}
+
+.cf-form .form-field textarea {
+  min-height: 64px;
+}
+
+.cf-options {
+  display: grid;
+  gap: 8px;
+}
+
+.cf-option-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.form-field .cf-option-input,
+.form-field .cf-option-add input {
+  height: 32px;
+}
+
+.cf-option-input.disabled {
+  color: var(--gray-500);
+  text-decoration: line-through;
+}
+
+.cf-option-add {
+  display: flex;
+  gap: 8px;
+}
+
+.cf-option-add input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cf-types {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.cf-type-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 6px 12px;
+}
+
+/* Choice inputs (radio, checkbox) inside forms */
+
+.cf-choice-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.cf-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.form-field .cf-choice input,
+.cf-choice input {
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--blue-500);
+}
+
+.cf-input {
+  display: block;
+  min-width: 0;
+}
+
+/* Labels input */
+
+.cf-labels {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.cf-label-list {
+  display: contents;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cf-label-list .issue-chip {
+  gap: 4px;
+}
+
+.cf-label-list button {
+  padding: 0 2px;
+  border: 0;
+  color: var(--gray-500);
+  background: transparent;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.cf-labels input {
+  flex: 1 1 100px;
+  min-width: 80px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--gray-200);
+  border-radius: 4px;
+  color: var(--ink);
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.form-field .cf-labels input {
+  height: 32px;
+}
+
+/* Issue details group */
+
+.cf-details-group {
+  display: contents;
+}
+
+.cf-details-heading {
+  margin: 10px 0 2px;
+  padding-top: 10px;
+  border-top: 1px solid var(--gray-200);
+  color: var(--gray-500);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cf-property > div {
+  min-width: 0;
+}
+
+.cf-property .issue-inline-input input {
+  width: 100%;
+}
+
+.cf-inline input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+}
+
+.cf-url-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.cf-url,
+.search-cf-link {
+  overflow: hidden;
+  color: var(--blue-600);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-cf-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cf-paragraph-view {
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cf-paragraph-view:hover:not(:disabled) {
+  border-color: var(--gray-300);
+  background: var(--gray-50);
+}
+
+.cf-paragraph-view:disabled {
+  cursor: default;
+}
+
+.cf-paragraph-view .issue-description {
+  margin: 0;
+  font-size: 13px;
+}
+
+.cf-paragraph-editor {
+  display: grid;
+  gap: 6px;
+}
+
+.cf-paragraph-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.cf-bulk-dialog .form-field {
+  margin: 12px 0;
+}
+
+@media (max-width: 640px) {
+  .cf-row {
+    flex-wrap: wrap;
+  }
+
+  .cf-row-text {
+    flex-basis: calc(100% - 40px);
+  }
+
+  .cf-usage {
+    margin-left: 34px;
+  }
+}

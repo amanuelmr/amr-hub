@@ -13,6 +13,12 @@ import {
 } from "./issues";
 import { stripHtml } from "./richText";
 import {
+  CUSTOM_FIELD_TYPE_LABELS,
+  isEmptyFieldValue,
+  type CustomFieldDefinition,
+  type CustomFieldValue,
+} from "./customFields";
+import {
   isBuiltinKind,
   isBuiltinStatus,
   isEpicLevel,
@@ -30,7 +36,7 @@ import {
  * evaluate identically. Dates are computed in UTC and weeks start on Monday.
  */
 
-export type JqlField =
+export type BuiltinJqlField =
   | "project"
   | "key"
   | "issuetype"
@@ -58,10 +64,19 @@ export type JqlField =
   | "due"
   | "startdate"
   | "flagged"
+  | "archived"
   | "watcher"
+  | "lastviewed"
   | "resolution"
   | "storypoints"
   | "rank";
+
+/** A custom field reference: `cf[<field id>]` (or `cf[<name>]` when parsed leniently). */
+export type CustomJqlField = `cf[${string}]`;
+export type JqlField = BuiltinJqlField | CustomJqlField;
+
+/** What JQL needs to know about a custom field. */
+export type JqlCustomField = Pick<CustomFieldDefinition, "id" | "name" | "type" | "options">;
 
 export type JqlOperator =
   | "="
@@ -127,6 +142,10 @@ export type JqlContext = {
   issuesById?: Map<string, Issue>;
   /** Per-project workflows so custom statuses/types match by name. */
   workflows?: Record<string, ProjectWorkflow>;
+  /** Custom field definitions; defaults to registerJqlCustomFields(). */
+  customFields?: JqlCustomField[];
+  /** The viewer's recently viewed issue keys, most recent first (issueHistory()). */
+  viewedIssueIds?: string[];
 };
 
 type FieldType =
@@ -141,7 +160,9 @@ type FieldType =
   | "text"
   | "date"
   | "flag"
-  | "number";
+  | "number"
+  /** An unresolved custom field (lenient parsing): any operator, any function. */
+  | "custom";
 
 const EQ: JqlOperator[] = ["=", "!=", "in", "not in", "is", "is not"];
 const ORD: JqlOperator[] = [...EQ, ">", ">=", "<", "<="];
@@ -155,7 +176,7 @@ type FieldSpec = {
   sortable: boolean;
 };
 
-export const JQL_FIELD_SPECS: Record<JqlField, FieldSpec> = {
+export const JQL_FIELD_SPECS: Record<BuiltinJqlField, FieldSpec> = {
   project: { name: "project", type: "project", operators: EQ, sortable: true },
   key: { name: "key", type: "key", operators: ORD, sortable: true },
   issuetype: { name: "issuetype", type: "enum", operators: EQ, sortable: true },
@@ -193,13 +214,16 @@ export const JQL_FIELD_SPECS: Record<JqlField, FieldSpec> = {
   due: { name: "due", type: "date", operators: ORD, sortable: true },
   startdate: { name: "startDate", type: "date", operators: ORD, sortable: true },
   flagged: { name: "flagged", type: "flag", operators: EQ, sortable: true },
+  archived: { name: "archived", type: "flag", operators: EQ, sortable: true },
   watcher: { name: "watcher", type: "user", operators: EQ, sortable: false },
+  // Sort-only, like Jira: ORDER BY lastViewed DESC lists recently viewed first.
+  lastviewed: { name: "lastViewed", type: "date", operators: [], sortable: true },
   resolution: { name: "resolution", type: "enum", operators: EQ, sortable: true },
   storypoints: { name: "\"story points\"", type: "number", operators: ORD, sortable: true },
   rank: { name: "rank", type: "number", operators: ORD, sortable: true },
 };
 
-const FIELD_ALIASES: Record<string, JqlField> = {
+const FIELD_ALIASES: Record<string, BuiltinJqlField> = {
   project: "project",
   key: "key",
   issue: "key",
@@ -243,8 +267,10 @@ const FIELD_ALIASES: Record<string, JqlField> = {
   duedate: "due",
   startdate: "startdate",
   flagged: "flagged",
+  archived: "archived",
   watcher: "watcher",
   watchers: "watcher",
+  lastviewed: "lastviewed",
   resolution: "resolution",
   storypoints: "storypoints",
   storypoint: "storypoints",
@@ -253,11 +279,119 @@ const FIELD_ALIASES: Record<string, JqlField> = {
   rank: "rank",
 };
 
-export function resolveJqlField(text: string): JqlField | null {
+export function resolveJqlField(text: string): BuiltinJqlField | null {
   return FIELD_ALIASES[text.toLowerCase().replace(/[\s_-]+/g, "")] ?? null;
 }
 
-type FunctionCategory = "user" | "date" | "sprint" | "version";
+/* ------------------------------------------------------------------ */
+/* Custom fields                                                       */
+/* ------------------------------------------------------------------ */
+
+let registeredCustomFields: JqlCustomField[] = [];
+
+/**
+ * Client-side default for contexts that do not pass `customFields` (the
+ * browser loads the workspace's fields once). Never call this on the server:
+ * the server passes fields per organisation through the context instead.
+ */
+export function registerJqlCustomFields(fields: JqlCustomField[]) {
+  registeredCustomFields = fields;
+}
+
+export function registeredJqlCustomFields() {
+  return registeredCustomFields;
+}
+
+function customFieldsOf(ctx: Pick<JqlContext, "customFields">) {
+  return ctx.customFields ?? registeredCustomFields;
+}
+
+export function isCustomJqlField(field: JqlField): field is CustomJqlField {
+  return field.startsWith("cf[");
+}
+
+export function customFieldJqlKey(id: string): CustomJqlField {
+  return `cf[${id}]`;
+}
+
+function customRef(field: CustomJqlField) {
+  return field.slice(3, -1);
+}
+
+export function findJqlCustomField(field: CustomJqlField, fields: JqlCustomField[]) {
+  const ref = customRef(field);
+  const wanted = ref.trim().toLowerCase();
+  return (
+    fields.find((candidate) => candidate.id === ref) ??
+    fields.find((candidate) => candidate.name.trim().toLowerCase() === wanted) ??
+    null
+  );
+}
+
+/**
+ * Resolves field text: system fields first, then `cf[id]`, then a custom
+ * field name. With "any", unknown names are accepted as custom references.
+ */
+export function resolveJqlFieldText(
+  text: string,
+  fields: JqlCustomField[] | "any" = registeredCustomFields,
+): JqlField | null {
+  const builtin = resolveJqlField(text);
+  if (builtin) return builtin;
+  const known = fields === "any" ? [] : fields;
+  const bracket = /^cf\[([^\]]+)\]$/i.exec(text.trim());
+  if (bracket) {
+    const ref = bracket[1].trim();
+    if (fields === "any" || known.some((field) => field.id === ref)) return `cf[${ref}]`;
+    return null;
+  }
+  const wanted = text.trim().toLowerCase();
+  const byName = known.find((field) => field.name.trim().toLowerCase() === wanted);
+  if (byName) return customFieldJqlKey(byName.id);
+  return fields === "any" && wanted ? `cf[${text.trim()}]` : null;
+}
+
+function customFieldSpec(field: JqlCustomField | null, fallbackName: string): FieldSpec {
+  if (!field) {
+    return {
+      name: fallbackName,
+      type: "custom",
+      operators: [...ORD, "~", "!~"],
+      sortable: true,
+    };
+  }
+  const name = quoteJqlValue(field.name);
+  switch (field.type) {
+    case "TEXT":
+    case "URL":
+      return { name, type: "text", operators: TEXT, sortable: true };
+    case "PARAGRAPH":
+      return { name, type: "text", operators: TEXT, sortable: false };
+    case "NUMBER":
+      return { name, type: "number", operators: ORD, sortable: true };
+    case "DATE":
+    case "DATETIME":
+      return { name, type: "date", operators: ORD, sortable: true };
+    case "SELECT":
+    case "RADIO":
+      return { name, type: "enum", operators: EQ, sortable: true };
+    case "USER":
+      return { name, type: "user", operators: EQ, sortable: true };
+    default:
+      return { name, type: "multi", operators: EQ, sortable: true };
+  }
+}
+
+/** The spec for any field, custom ones included. */
+export function jqlFieldSpec(
+  field: JqlField,
+  fields: JqlCustomField[] = registeredCustomFields,
+): FieldSpec {
+  if (!isCustomJqlField(field)) return JQL_FIELD_SPECS[field];
+  return customFieldSpec(findJqlCustomField(field, fields), field);
+}
+
+type FunctionCategory = "user" | "date" | "sprint" | "version" | "issue";
 
 const FUNCTIONS: Record<string, FunctionCategory> = {
   currentuser: "user",
@@ -275,6 +409,8 @@ const FUNCTIONS: Record<string, FunctionCategory> = {
   futuresprints: "sprint",
   releasedversions: "version",
   unreleasedversions: "version",
+  issuehistory: "issue",
+  watchedissues: "issue",
 };
 
 const FUNCTION_FIELD_TYPES: Record<FunctionCategory, FieldType[]> = {
@@ -282,6 +418,7 @@ const FUNCTION_FIELD_TYPES: Record<FunctionCategory, FieldType[]> = {
   date: ["date"],
   sprint: ["sprint"],
   version: ["version"],
+  issue: ["key"],
 };
 
 const RESERVED = new Set([
@@ -563,7 +700,16 @@ class Parser {
   constructor(
     private tokens: JqlToken[],
     private now: Date,
+    private customFields: JqlCustomField[] | "any" = registeredCustomFields,
   ) {}
+
+  private resolveField(text: string) {
+    return resolveJqlFieldText(text, this.customFields);
+  }
+
+  private spec(field: JqlField) {
+    return jqlFieldSpec(field, this.customFields === "any" ? [] : this.customFields);
+  }
 
   private peek() {
     return this.tokens[this.index];
@@ -607,14 +753,14 @@ class Parser {
             fieldToken.start,
           );
         }
-        const field = resolveJqlField(fieldToken.value);
+        const field = this.resolveField(fieldToken.value);
         if (!field) {
           throw new JqlSyntaxError(
             `Field '${fieldToken.value}' does not exist`,
             fieldToken.start,
           );
         }
-        if (!JQL_FIELD_SPECS[field].sortable) {
+        if (!this.spec(field).sortable) {
           throw new JqlSyntaxError(
             `Field '${fieldToken.value}' cannot be used for ordering`,
             fieldToken.start,
@@ -730,7 +876,7 @@ class Parser {
       );
     }
 
-    const field = resolveJqlField(fieldToken.value);
+    const field = this.resolveField(fieldToken.value);
     if (!field) {
       throw new JqlSyntaxError(
         `Field '${fieldToken.value}' does not exist`,
@@ -740,7 +886,7 @@ class Parser {
 
     const operatorToken = this.peek();
     const operator = this.parseOperator();
-    const spec = JQL_FIELD_SPECS[field];
+    const spec = this.spec(field);
     if (!spec.operators.includes(operator)) {
       throw new JqlSyntaxError(
         `The operator '${operator.toUpperCase()}' is not supported by the '${fieldToken.value}' field`,
@@ -815,7 +961,7 @@ class Parser {
 
   private parseOperand(field: JqlField): JqlOperand {
     const token = this.next();
-    const spec = JQL_FIELD_SPECS[field];
+    const spec = this.spec(field);
 
     if (token.type === "string") {
       this.validateLiteral(field, token.value, token.start);
@@ -835,7 +981,7 @@ class Parser {
       if (!category) {
         throw new JqlSyntaxError(`Unknown function '${token.value}()'`, token.start);
       }
-      if (!FUNCTION_FIELD_TYPES[category].includes(spec.type)) {
+      if (spec.type !== "custom" && !FUNCTION_FIELD_TYPES[category].includes(spec.type)) {
         throw new JqlSyntaxError(
           `Function '${token.value}()' is not supported for the '${spec.name}' field`,
           token.start,
@@ -876,7 +1022,7 @@ class Parser {
   }
 
   private validateLiteral(field: JqlField, value: string, position: number) {
-    const type = JQL_FIELD_SPECS[field].type;
+    const type = this.spec(field).type;
     if (type === "date" && !parseJqlDateLiteral(value, this.now)) {
       throw new JqlSyntaxError(
         `'${value}' is not a valid date (use yyyy-mm-dd, "yyyy-mm-dd hh:mm" or -7d)`,
@@ -889,10 +1035,20 @@ class Parser {
   }
 }
 
-export function parseJql(input: string, now = new Date()): JqlParseResult {
+export function parseJql(
+  input: string,
+  now = new Date(),
+  options: {
+    /** Known custom fields, or "any" to accept unknown names as custom fields. */
+    customFields?: JqlCustomField[] | "any";
+  } = {},
+): JqlParseResult {
   try {
     const tokens = tokenizeJql(input);
-    return { ok: true, query: new Parser(tokens, now).parseQuery() };
+    return {
+      ok: true,
+      query: new Parser(tokens, now, options.customFields ?? registeredCustomFields).parseQuery(),
+    };
   } catch (error) {
     if (error instanceof JqlSyntaxError) {
       return { ok: false, error: { message: error.message, position: error.position } };
@@ -1107,6 +1263,8 @@ function isFieldEmpty(field: JqlField, issue: Issue, ctx: JqlContext): boolean {
       return !issueDate(field, issue);
     case "flagged":
       return !issue.flagged;
+    case "archived":
+      return !issue.archivedAt;
     case "watcher":
       return (issue.watcherIds ?? []).length === 0;
     case "resolution":
@@ -1194,6 +1352,10 @@ function literalMatches(
       const truthy = ["true", "yes", "impediment", "1", "flagged"].includes(wanted);
       return truthy ? issue.flagged : !issue.flagged;
     }
+    case "archived": {
+      const truthy = ["true", "yes", "1", "archived"].includes(value.toLowerCase());
+      return truthy ? Boolean(issue.archivedAt) : !issue.archivedAt;
+    }
     case "resolution":
       if (norm(value) === "unresolved") return !issue.resolution;
       return !!issue.resolution && enumMatches(issue.resolution, RESOLUTION_LABELS, value);
@@ -1275,6 +1437,10 @@ function operandMatches(
     case "closedsprints":
     case "futuresprints":
       return !!issue.cycleId && sprintIdsFor(operand.name, ctx).has(issue.cycleId);
+    case "issuehistory":
+      return (ctx.viewedIssueIds ?? []).includes(issue.id);
+    case "watchedissues":
+      return !!ctx.currentUserId && (issue.watcherIds ?? []).includes(ctx.currentUserId);
     case "releasedversions":
       return issue.fixVersion?.status === "RELEASED";
     case "unreleasedversions":
@@ -1291,7 +1457,7 @@ function orderedCompare(
   operator: JqlOperator,
   ctx: JqlContext,
 ): boolean {
-  if (JQL_FIELD_SPECS[field].type === "date") {
+  if (jqlFieldSpec(field, customFieldsOf(ctx)).type === "date") {
     return compareDate(field, issue, operand, operator, ctx);
   }
   if (operand.kind !== "literal") return false;
@@ -1394,6 +1560,7 @@ function evaluateClause(
   ctx: JqlContext,
 ): boolean {
   const { field, operator, value } = node;
+  if (isCustomJqlField(field)) return evaluateCustomClause({ ...node, field }, issue, ctx);
   const empty = isFieldEmpty(field, issue, ctx);
   const items = valueItems(value);
   const matchesItem = (item: JqlOperand | { kind: "empty" }) =>
@@ -1432,6 +1599,157 @@ function evaluateClause(
   }
 }
 
+function customValues(raw: CustomFieldValue | undefined): string[] {
+  if (raw === undefined) return [];
+  return Array.isArray(raw) ? raw : [String(raw)];
+}
+
+function optionLabel(field: JqlCustomField, id: string) {
+  return field.options.find((option) => option.id === id)?.value ?? id;
+}
+
+/** Text used by `~` and for sorting. */
+function customText(field: JqlCustomField | null, raw: CustomFieldValue | undefined, ctx: JqlContext) {
+  if (isEmptyFieldValue(raw)) return "";
+  const values = customValues(raw);
+  switch (field?.type) {
+    case "PARAGRAPH":
+      return stripHtml(values.join(" "));
+    case "SELECT":
+    case "RADIO":
+    case "MULTI_SELECT":
+    case "CHECKBOXES":
+      return values.map((id) => optionLabel(field, id)).join(", ");
+    case "USER":
+      return ctx.members?.find((member) => member.id === values[0])?.name ?? values[0];
+    default:
+      return values.join(" ");
+  }
+}
+
+function customTime(field: JqlCustomField | null, raw: CustomFieldValue | undefined) {
+  if (isEmptyFieldValue(raw) || Array.isArray(raw)) return null;
+  const text = String(raw);
+  const time = new Date(
+    field?.type === "DATE" || /^\d{4}-\d{2}-\d{2}$/.test(text) ? `${text.slice(0, 10)}T00:00:00.000Z` : text,
+  ).getTime();
+  return Number.isNaN(time) ? null : time;
+}
+
+function customOperandMatches(
+  field: JqlCustomField | null,
+  raw: CustomFieldValue | undefined,
+  operand: JqlOperand,
+  ctx: JqlContext,
+): boolean {
+  if (isEmptyFieldValue(raw)) return false;
+  const values = customValues(raw);
+  if (operand.kind === "function") {
+    if (operand.name === "currentuser") {
+      return (!field || field.type === "USER") && !!ctx.currentMemberId && values[0] === ctx.currentMemberId;
+    }
+    const time = customTime(field, raw);
+    const range = operandToDateRange(operand, ctx);
+    return time !== null && !!range && compareRange(time, range, "=");
+  }
+  const wanted = operand.value;
+  switch (field?.type) {
+    case "SELECT":
+    case "RADIO":
+    case "MULTI_SELECT":
+    case "CHECKBOXES":
+      return values.some((id) => id === wanted || norm(optionLabel(field, id)) === norm(wanted));
+    case "USER": {
+      const member = ctx.members?.find((candidate) => candidate.id === values[0]) ?? null;
+      return values[0] === wanted || userMatches(member, wanted);
+    }
+    case "LABELS":
+      return values.some((label) => label.toLowerCase() === wanted.toLowerCase());
+    case "NUMBER":
+      return Number(raw) === Number(wanted);
+    case "DATE":
+    case "DATETIME": {
+      const time = customTime(field, raw);
+      const range = parseJqlDateLiteral(wanted, ctx.now);
+      return time !== null && !!range && compareRange(time, range, "=");
+    }
+    default:
+      return values.some((value) => value.toLowerCase() === wanted.toLowerCase());
+  }
+}
+
+function customOrderedCompare(
+  field: JqlCustomField | null,
+  raw: CustomFieldValue | undefined,
+  operand: JqlOperand,
+  operator: JqlOperator,
+  ctx: JqlContext,
+) {
+  if (isEmptyFieldValue(raw)) return false;
+  const isDate = field?.type === "DATE" || field?.type === "DATETIME";
+  if (isDate || operand.kind === "function") {
+    const time = customTime(field, raw);
+    const range = operandToDateRange(operand, ctx);
+    return time !== null && !!range && compareRange(time, range, operator);
+  }
+  let diff: number;
+  const left = Number(Array.isArray(raw) ? raw[0] : raw);
+  const right = Number(operand.value);
+  if (Number.isFinite(left) && Number.isFinite(right)) diff = left - right;
+  else if (field) return false;
+  else diff = customText(field, raw, ctx).localeCompare(operand.value);
+  switch (operator) {
+    case ">":
+      return diff > 0;
+    case ">=":
+      return diff >= 0;
+    case "<":
+      return diff < 0;
+    default:
+      return diff <= 0;
+  }
+}
+
+function evaluateCustomClause(
+  node: Extract<JqlNode, { type: "clause" }> & { field: CustomJqlField },
+  issue: Issue,
+  ctx: JqlContext,
+): boolean {
+  const { field: key, operator, value } = node;
+  const field = findJqlCustomField(key, customFieldsOf(ctx));
+  const raw = issue.customFields?.[field?.id ?? customRef(key)];
+  const empty = isEmptyFieldValue(raw);
+  const items = valueItems(value);
+  const matchesItem = (item: JqlOperand | { kind: "empty" }) =>
+    item.kind === "empty" ? empty : customOperandMatches(field, raw, item, ctx);
+
+  switch (operator) {
+    case "is":
+      return empty;
+    case "is not":
+      return !empty;
+    case "=":
+    case "in":
+      return items.some(matchesItem);
+    case "!=":
+    case "not in":
+      return !empty && !items.some(matchesItem);
+    case "~":
+    case "!~": {
+      if (value.kind !== "single" || value.operand.kind !== "literal") return false;
+      const contains = !empty && textContains(customText(field, raw, ctx), value.operand.value);
+      return operator === "~" ? contains : !contains;
+    }
+    case ">":
+    case ">=":
+    case "<":
+    case "<=":
+      return value.kind === "single" && customOrderedCompare(field, raw, value.operand, operator, ctx);
+    default:
+      return false;
+  }
+}
+
 export function evaluateJql(node: JqlNode | null, issue: Issue, ctx: JqlContext): boolean {
   if (!node) return true;
   switch (node.type) {
@@ -1453,6 +1771,7 @@ export function evaluateJql(node: JqlNode | null, issue: Issue, ctx: JqlContext)
 type SortValue = string | number | null;
 
 function sortValue(field: JqlField, issue: Issue, ctx: JqlContext): SortValue {
+  if (isCustomJqlField(field)) return customSortValue(field, issue, ctx);
   switch (field) {
     case "project":
       return (projectForIssue(issue, ctx)?.key ?? issue.projectId).toLowerCase();
@@ -1509,6 +1828,11 @@ function sortValue(field: JqlField, issue: Issue, ctx: JqlContext): SortValue {
       return epicIdOf(issue, ctx);
     case "summary":
       return issue.title.toLowerCase();
+    case "lastviewed": {
+      const viewed = ctx.viewedIssueIds ?? [];
+      const index = viewed.indexOf(issue.id);
+      return index === -1 ? null : viewed.length - index;
+    }
     case "created":
     case "updated":
     case "resolved":
@@ -1519,6 +1843,8 @@ function sortValue(field: JqlField, issue: Issue, ctx: JqlContext): SortValue {
     }
     case "flagged":
       return issue.flagged ? 1 : 0;
+    case "archived":
+      return issue.archivedAt ? 1 : 0;
     case "resolution":
       return issue.resolution ? RESOLUTION_LABELS[issue.resolution].toLowerCase() : null;
     case "storypoints":
@@ -1527,6 +1853,26 @@ function sortValue(field: JqlField, issue: Issue, ctx: JqlContext): SortValue {
       return issue.rank;
     default:
       return null;
+  }
+}
+
+function customSortValue(key: CustomJqlField, issue: Issue, ctx: JqlContext): SortValue {
+  const field = findJqlCustomField(key, customFieldsOf(ctx));
+  const raw = issue.customFields?.[field?.id ?? customRef(key)];
+  if (isEmptyFieldValue(raw)) return null;
+  switch (field?.type) {
+    case "NUMBER":
+      return Number(raw);
+    case "DATE":
+    case "DATETIME":
+      return customTime(field, raw);
+    case "SELECT":
+    case "RADIO": {
+      const index = field.options.findIndex((option) => option.id === raw);
+      return index >= 0 ? index : null;
+    }
+    default:
+      return customText(field, raw, ctx).toLowerCase();
   }
 }
 
@@ -1577,7 +1923,7 @@ export function searchIssuesWithJql<T extends Issue>(
   jql: string,
   ctx: JqlContext,
 ): JqlSearchResult<T> {
-  const parsed = parseJql(jql, ctx.now);
+  const parsed = parseJql(jql, ctx.now, { customFields: customFieldsOf(ctx) });
   if (!parsed.ok) return parsed;
   const scopedCtx: JqlContext = {
     ...ctx,
@@ -1633,7 +1979,7 @@ export function setJqlOrderBy(jql: string, orderBy: JqlOrderBy[]) {
   const where = stripOrderBy(jql);
   if (orderBy.length === 0) return where;
   const clause = `ORDER BY ${orderBy
-    .map(({ field, direction }) => `${JQL_FIELD_SPECS[field].name} ${direction}`)
+    .map(({ field, direction }) => `${jqlFieldSpec(field).name} ${direction}`)
     .join(", ")}`;
   return where ? `${where} ${clause}` : clause;
 }
@@ -1646,6 +1992,14 @@ export type BasicFilters = {
   labelName?: string | null;
   /** A member name, "UNASSIGNED", or empty for any. */
   assignee?: string | null;
+  /** Work type display name. */
+  typeName?: string | null;
+  /** Reporter name or email. */
+  reporter?: string | null;
+  /** A sprint name, or "OPEN" for openSprints(). */
+  sprint?: string | null;
+  /** Relative date such as "-1w": created within that window. */
+  createdWithin?: string | null;
   sort?: "NEWEST" | "OLDEST";
 };
 
@@ -1653,6 +2007,7 @@ export type BasicFilters = {
 export function basicFiltersToJql(filters: BasicFilters) {
   const clauses: string[] = [];
   if (filters.projectKey) clauses.push(`project = ${quoteJqlValue(filters.projectKey)}`);
+  if (filters.typeName) clauses.push(`type = ${quoteJqlValue(filters.typeName)}`);
   if (filters.status === "ACTIVE") {
     clauses.push("statusCategory != Done");
   } else if (filters.status && filters.status !== "ALL") {
@@ -1666,6 +2021,10 @@ export function basicFiltersToJql(filters: BasicFilters) {
   if (filters.labelName) clauses.push(`labels = ${quoteJqlValue(filters.labelName)}`);
   if (filters.assignee === "UNASSIGNED") clauses.push("assignee IS EMPTY");
   else if (filters.assignee) clauses.push(`assignee = ${quoteJqlValue(filters.assignee)}`);
+  if (filters.reporter) clauses.push(`reporter = ${quoteJqlValue(filters.reporter)}`);
+  if (filters.sprint === "OPEN") clauses.push("sprint in openSprints()");
+  else if (filters.sprint) clauses.push(`sprint = ${quoteJqlValue(filters.sprint)}`);
+  if (filters.createdWithin) clauses.push(`created >= ${filters.createdWithin}`);
   if (filters.text?.trim()) {
     clauses.push(`text ~ ${quoteJqlValue(filters.text.trim())}`);
   }
@@ -1696,6 +2055,8 @@ export type JqlSuggestionSource = {
   /** Configured statuses/types; defaults to the built-ins when absent. */
   statuses?: { name: string }[];
   types?: { name: string }[];
+  /** Custom fields; defaults to registerJqlCustomFields(). */
+  customFields?: JqlCustomField[];
 };
 
 export type JqlSuggestions = {
@@ -1704,7 +2065,7 @@ export type JqlSuggestions = {
   items: JqlSuggestion[];
 };
 
-const SUGGESTED_FIELDS: { label: string; field: JqlField }[] = [
+const SUGGESTED_FIELDS: { label: string; field: BuiltinJqlField }[] = [
   { label: "project", field: "project" },
   { label: "key", field: "key" },
   { label: "issuetype", field: "issuetype" },
@@ -1730,6 +2091,7 @@ const SUGGESTED_FIELDS: { label: string; field: JqlField }[] = [
   { label: "resolved", field: "resolved" },
   { label: "due", field: "due" },
   { label: "flagged", field: "flagged" },
+  { label: "archived", field: "archived" },
   { label: "watcher", field: "watcher" },
   { label: "resolution", field: "resolution" },
   { label: "\"story points\"", field: "storypoints" },
@@ -1765,6 +2127,31 @@ function valueSuggestions(field: JqlField, source: JqlSuggestionSource): JqlSugg
     items.map((item) => ({ label: item, insert: quoteJqlValue(item), kind: "value", detail }));
   const fns = (items: string[]): JqlSuggestion[] =>
     items.map((item) => ({ label: item, insert: item, kind: "function" }));
+
+  if (isCustomJqlField(field)) {
+    const custom = findJqlCustomField(field, source.customFields ?? registeredCustomFields);
+    switch (custom?.type) {
+      case "SELECT":
+      case "RADIO":
+      case "MULTI_SELECT":
+      case "CHECKBOXES":
+        return values(custom.options.filter((option) => !option.disabled).map((option) => option.value));
+      case "USER":
+        return [
+          ...fns(["currentUser()"]),
+          ...values((source.members ?? []).map((member) => member.name)),
+        ];
+      case "DATE":
+      case "DATETIME":
+        return DATE_VALUE_SUGGESTIONS.map((item) => ({
+          label: item,
+          insert: item,
+          kind: item.includes("(") ? "function" : "value",
+        }));
+      default:
+        return [];
+    }
+  }
 
   switch (field) {
     case "project":
@@ -1815,6 +2202,7 @@ function valueSuggestions(field: JqlField, source: JqlSuggestionSource): JqlSugg
     case "resolution":
       return values(["Unresolved", ...Object.values(RESOLUTION_LABELS)]);
     case "flagged":
+    case "archived":
       return values(["true", "false"]);
     case "created":
     case "updated":
@@ -1842,7 +2230,7 @@ type Expectation =
   | { state: "orderField" }
   | { state: "direction" };
 
-function computeExpectation(tokens: JqlToken[]): Expectation {
+function computeExpectation(tokens: JqlToken[], customFields: JqlCustomField[]): Expectation {
   let expectation: Expectation = { state: "field" };
   let field: JqlField | null = null;
   let operator = "";
@@ -1872,7 +2260,7 @@ function computeExpectation(tokens: JqlToken[]): Expectation {
           expectation = { state: "by" };
           break;
         }
-        field = resolveJqlField(token.value);
+        field = resolveJqlFieldText(token.value, customFields);
         expectation = { state: "operator", field };
         break;
       case "operator":
@@ -1968,7 +2356,15 @@ export function getJqlSuggestions(
   const context = endsInWord ? tokens.slice(0, -1) : tokens;
   const prefix = endsInWord && last ? last.value : "";
   const from = endsInWord && last ? last.start : caret;
-  const expectation = computeExpectation(context);
+  const customFields = source.customFields ?? registeredCustomFields;
+  const expectation = computeExpectation(context, customFields);
+  const customFieldItems = customFields.map((field) => ({
+    label: quoteJqlValue(field.name),
+    insert: quoteJqlValue(field.name),
+    kind: "field" as const,
+    detail: CUSTOM_FIELD_TYPE_LABELS[field.type],
+    sortable: jqlFieldSpec(customFieldJqlKey(field.id), customFields).sortable,
+  }));
 
   let items: JqlSuggestion[] = [];
   switch (expectation.state) {
@@ -1980,13 +2376,14 @@ export function getJqlSuggestions(
           kind: "field" as const,
           detail: JQL_FIELD_SPECS[field].type,
         })),
+        ...customFieldItems.map(({ label, insert, kind, detail }) => ({ label, insert, kind, detail })),
         { label: "NOT", insert: "NOT", kind: "keyword" },
         { label: "ORDER BY", insert: "ORDER BY", kind: "keyword" },
       ];
       break;
     case "operator": {
       const operators = expectation.field
-        ? JQL_FIELD_SPECS[expectation.field].operators
+        ? jqlFieldSpec(expectation.field, customFields).operators
         : ["=", "!="];
       items = operators.map((operator) => {
         const insert = /^[a-z]/.test(operator)
@@ -2036,6 +2433,11 @@ export function getJqlSuggestions(
         ({ label }) => ({ label, insert: label, kind: "field" as const }),
       );
       items.push({ label: "rank", insert: "rank", kind: "field" });
+      items.push(
+        ...customFieldItems
+          .filter((item) => item.sortable)
+          .map(({ label, insert }) => ({ label, insert, kind: "field" as const })),
+      );
       break;
     case "direction":
       items = [

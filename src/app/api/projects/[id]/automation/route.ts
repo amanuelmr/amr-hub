@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse, projectGuard } from "../../../../../server/projectAccess";
 import { recordAudit } from "../../../../../server/audit";
 import {
   createAutomationRule,
@@ -22,9 +23,16 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
   try {
     const { id } = await context.params;
-    const rules = await listAutomationRules(id, session.workspace.id);
+    const guard = await projectGuard(result.session, id, "admin");
+    if (guard) return guard;
+    const trigger = request.nextUrl.searchParams.get("trigger") ?? undefined;
+    const rules = await listAutomationRules(id, session.workspace.id, {
+      trigger,
+    });
     return rules ? NextResponse.json(rules) : notFound("Project");
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(error, "Automation rules could not be loaded");
   }
 }
@@ -41,6 +49,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (!validation.success) return validationFailed(validation.error);
 
     const { id } = await context.params;
+    const guard = await projectGuard(result.session, id, "admin");
+    if (guard) return guard;
     const rule = await createAutomationRule(
       id,
       validation.data,
@@ -57,6 +67,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
       ? NextResponse.json(rule, { status: 201 })
       : notFound("Project");
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(error, "Automation rule could not be created");
   }
 }

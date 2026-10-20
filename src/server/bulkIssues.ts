@@ -16,6 +16,8 @@ import {
   TransitionNotAllowedError,
 } from "./workflows";
 import { nextLabelIds, type BulkIssueRequest } from "./bulkIssueSchemas";
+import { ProjectAccessError, type AccessUser } from "./projectAccess";
+import { setIssueArchived } from "./trash";
 
 export type BulkIssueResult = {
   id: string;
@@ -23,6 +25,7 @@ export type BulkIssueResult = {
   error?: string;
   issue?: Issue;
   deleted?: boolean;
+  archived?: boolean;
 };
 
 const DOMAIN_ERRORS = [
@@ -35,9 +38,10 @@ const DOMAIN_ERRORS = [
   InvalidStatusError,
   TransitionNotAllowedError,
   InvalidWorkTypeError,
+  ProjectAccessError,
 ];
 
-function updatesFor(request: Exclude<BulkIssueRequest, { operation: "delete" | "addLabels" | "removeLabels" }>): IssueUpdates {
+function updatesFor(request: Exclude<BulkIssueRequest, { operation: "delete" | "archive" | "addLabels" | "removeLabels" }>): IssueUpdates {
   switch (request.operation) {
     case "transition":
       return { status: request.value };
@@ -54,31 +58,28 @@ function updatesFor(request: Exclude<BulkIssueRequest, { operation: "delete" | "
   }
 }
 
-/** Deletes issues owned by the organization (callers must enforce owner role). */
-export async function bulkDeleteIssues(
+/** Archives or unarchives many work items (project admins only, per item). */
+export async function bulkArchiveIssues(
   issueIds: string[],
-  organizationId: string,
+  archived: boolean,
+  actor: WorkspaceActor,
+  user: AccessUser,
 ): Promise<BulkIssueResult[]> {
-  const existing = await prisma.issue.findMany({
-    where: { id: { in: issueIds }, organizationId },
-    select: { id: true },
-  });
-  const existingIds = existing.map((issue) => issue.id);
-
-  if (existingIds.length > 0) {
-    await prisma.$transaction([
-      prisma.issueView.deleteMany({ where: { issueId: { in: existingIds } } }),
-      prisma.issue.deleteMany({
-        where: { id: { in: existingIds }, organizationId },
-      }),
-    ]);
+  const results: BulkIssueResult[] = [];
+  for (const id of issueIds) {
+    try {
+      await setIssueArchived(id, archived, actor, user);
+      results.push({ id, ok: true, archived });
+    } catch (error) {
+      if (error instanceof ProjectAccessError) {
+        results.push({ id, ok: false, error: error.message });
+      } else {
+        console.error(`Bulk archive failed for ${id}`, error);
+        results.push({ id, ok: false, error: "Work item could not be archived" });
+      }
+    }
   }
-
-  return issueIds.map((id) =>
-    existingIds.includes(id)
-      ? { id, ok: true, deleted: true }
-      : { id, ok: false, error: "Issue not found" },
-  );
+  return results;
 }
 
 /**
@@ -86,7 +87,7 @@ export async function bulkDeleteIssues(
  * notifications, watchers and automation behave exactly like single edits.
  */
 export async function bulkUpdateIssues(
-  request: Exclude<BulkIssueRequest, { operation: "delete" }>,
+  request: Exclude<BulkIssueRequest, { operation: "delete" | "archive" }>,
   actor: WorkspaceActor,
 ): Promise<BulkIssueResult[]> {
   let currentLabels = new Map<string, string[]>();
@@ -94,7 +95,7 @@ export async function bulkUpdateIssues(
     const rows = await prisma.issueLabel.findMany({
       where: {
         issueId: { in: request.issueIds },
-        issue: { organizationId: actor.organizationId },
+        issue: { organizationId: actor.organizationId, deletedAt: null },
       },
       select: { issueId: true, labelId: true },
     });

@@ -14,12 +14,14 @@ import {
   parseCsv,
   validateImportRow,
   type ColumnMapping,
+  type ColumnTarget,
   type ImportFieldKey,
   type ImportOption,
   type ValueField,
   type ValueMappings,
 } from "../../../server/csvImportCore";
 import { AdminHeader, AdminNotice } from "./AdminShell";
+import type { CustomFieldDefinition } from "../../data/customFields";
 import { adminRequest, useAdminRole } from "./adminClient";
 
 type ProjectContext = {
@@ -29,6 +31,7 @@ type ProjectContext = {
   priorities: ImportOption[];
   sprints: Array<{ id: string; name: string }>;
   versions: Array<{ id: string; name: string }>;
+  customFields: CustomFieldDefinition[];
   defaults: { status: string; kind: string; priority: string };
 };
 
@@ -88,11 +91,22 @@ export function ImportWizard() {
     setProjectId(id);
     if (!id) return;
     try {
-      setContext(
-        await adminRequest<ImportContext>(
-          `/api/admin/import/context?projectId=${encodeURIComponent(id)}`,
-        ),
+      const loaded = await adminRequest<ImportContext>(
+        `/api/admin/import/context?projectId=${encodeURIComponent(id)}`,
       );
+      setContext(loaded);
+      // Columns left unmapped may match this project's custom fields.
+      const fields = loaded.project?.customFields ?? [];
+      if (fields.length > 0 && headers.length > 0) {
+        const guessed = guessColumnMapping(headers, fields);
+        setMapping((current) =>
+          current.map((target, index) => {
+            const suggestion = guessed[index];
+            if (target || !suggestion?.startsWith("cf:")) return target;
+            return current.includes(suggestion) ? target : suggestion;
+          }),
+        );
+      }
       setError(null);
     } catch (reason) {
       setError((reason as Error).message);
@@ -122,7 +136,7 @@ export function ImportWizard() {
       return;
     }
     setTable(parsed.rows);
-    setMapping(guessColumnMapping(parsed.rows[0]));
+    setMapping(guessColumnMapping(parsed.rows[0], project?.customFields ?? []));
     setValueMappings(EMPTY_VALUE_MAPPINGS);
   };
 
@@ -181,6 +195,7 @@ export function ImportWizard() {
         priorities: project.priorities,
         members: context?.members ?? [],
         sprints: project.sprints,
+        customFields: project.customFields,
         defaults: project.defaults,
       }),
     );
@@ -355,7 +370,7 @@ export function ImportWizard() {
                             onChange={(event) =>
                               setMapping((current) => {
                                 const next = [...current];
-                                next[index] = event.target.value as ImportFieldKey | "";
+                                next[index] = event.target.value as ColumnTarget;
                                 return next;
                               })
                             }
@@ -372,6 +387,25 @@ export function ImportWizard() {
                                 </option>
                               );
                             })}
+                            {project && project.customFields.length > 0 && (
+                              <optgroup label="Custom fields">
+                                {project.customFields.map((field) => {
+                                  const target: ColumnTarget = `cf:${field.id}`;
+                                  return (
+                                    <option
+                                      key={field.id}
+                                      value={target}
+                                      disabled={mapping.some(
+                                        (value, other) => other !== index && value === target,
+                                      )}
+                                    >
+                                      {field.name}
+                                      {field.required ? " *" : ""}
+                                    </option>
+                                  );
+                                })}
+                              </optgroup>
+                            )}
                           </select>
                         </td>
                       </tr>

@@ -48,7 +48,7 @@ export default function ProjectReportPage() {
     projectId: string;
     report: string;
   }>();
-  const { projects, isLoading: isLoadingProjects } = useProjects();
+  const { allProjects: projects, isLoading: isLoadingProjects } = useProjects();
   const { issues, cycles, isLoading } = useIssues();
   const project = projects.find((candidate) => candidate.id === projectId);
   const projectIssues = useMemo(

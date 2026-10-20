@@ -12,6 +12,9 @@ import {
   type Issue,
   type IssuePriority,
 } from "../../data/issues";
+import { projectFields, type CustomFieldDefinition } from "../../data/customFields";
+import { useCustomFields } from "../fields/customFieldStore";
+import { BulkCustomFieldDialog } from "../fields/BulkCustomFieldDialog";
 
 type BulkResult = {
   id: string;
@@ -73,6 +76,8 @@ export function BulkBar({ selected, isOwner, currentMemberId, onClear, onDeleted
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
   const [versions, setVersions] = useState<Version[] | null>(null);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const { fields: customFieldDefs } = useCustomFields();
+  const [bulkField, setBulkField] = useState<CustomFieldDefinition | null>(null);
 
   const projectIds = useMemo(
     () => [...new Set(selected.map((issue) => issue.projectId))],
@@ -93,17 +98,29 @@ export function BulkBar({ selected, isOwner, currentMemberId, onClear, onDeleted
     setVersions(lists.flat().filter((version) => version.status !== "ARCHIVED"));
   };
 
-  const run = async (operation: string, value?: unknown, verb = "Updated") => {
+  // Custom fields any selected issue's project can use.
+  const bulkFields = customFieldDefs.filter((field) =>
+    projectIds.some((projectId) => projectFields([field], projectId).length > 0),
+  );
+
+  const run = async (
+    operation: string,
+    value?: unknown,
+    verb = "Updated",
+    request?: { url: string; body: Record<string, unknown> },
+  ) => {
     setIsRunning(true);
     setMessage(null);
     try {
-      const response = await apiRequest<{ results: BulkResult[] }>("/api/issues/bulk", {
+      const response = await apiRequest<{ results: BulkResult[] }>(request?.url ?? "/api/issues/bulk", {
         method: "POST",
-        body: JSON.stringify({
-          issueIds: selected.map((issue) => issue.id),
-          operation,
-          ...(value === undefined ? {} : { value }),
-        }),
+        body: JSON.stringify(
+          request?.body ?? {
+            issueIds: selected.map((issue) => issue.id),
+            operation,
+            ...(value === undefined ? {} : { value }),
+          },
+        ),
       });
       const deletedIds: string[] = [];
       for (const result of response.results) {
@@ -215,6 +232,33 @@ export function BulkBar({ selected, isOwner, currentMemberId, onClear, onDeleted
             ))
           )}
         </Menu>
+        {bulkFields.length > 0 && (
+          <Menu label="Custom field" disabled={isRunning || !selected.length}>
+            <DropdownMenu.Label className="search-menu-label">Set custom field</DropdownMenu.Label>
+            {bulkFields.map((field) => (
+              <Item key={field.id} onSelect={() => setBulkField(field)}>
+                {field.name}
+              </Item>
+            ))}
+          </Menu>
+        )}
+        <BulkCustomFieldDialog
+          field={bulkField}
+          count={selected.length}
+          members={members}
+          onClose={() => setBulkField(null)}
+          onApply={(field, value) => {
+            setBulkField(null);
+            void run("customField", value, "Updated", {
+              url: "/api/custom-fields/bulk",
+              body: {
+                issueIds: selected.map((issue) => issue.id),
+                fieldId: field.id,
+                value,
+              },
+            });
+          }}
+        />
         <button className="secondary-button" type="button" disabled={isRunning || !selected.length} onClick={() => void run("flag", true, "Flagged")}>
           <Flag size={14} aria-hidden="true" />
           Flag

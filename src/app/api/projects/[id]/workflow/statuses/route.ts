@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse, projectGuard } from "../../../../../../server/projectAccess";
 import { recordAudit } from "../../../../../../server/audit";
 import { requireWorkspaceRole } from "../../../../../../server/session";
 import {
@@ -22,6 +23,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const validation = createStatusSchema.safeParse(await request.json());
     if (!validation.success) return validationFailed(validation.error);
     const { id } = await context.params;
+    const guard = await projectGuard(result.session, id, "admin");
+    if (guard) return guard;
     const workflow = await createStatus(
       id,
       validation.data,
@@ -38,6 +41,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
       ? NextResponse.json(workflow, { status: 201 })
       : notFound("Project");
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(
       error,
       "Status could not be created",
@@ -56,6 +61,8 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     const validation = reorderSchema.safeParse(await request.json());
     if (!validation.success) return validationFailed(validation.error);
     const { id } = await context.params;
+    const guard = await projectGuard(result.session, id, "admin");
+    if (guard) return guard;
     const workflow = await reorderStatuses(
       id,
       validation.data.keys,
@@ -70,6 +77,8 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     });
     return workflow ? NextResponse.json(workflow) : notFound("Project");
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(
       error,
       "Statuses could not be reordered",

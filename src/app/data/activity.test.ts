@@ -37,6 +37,7 @@ function issue(overrides: Partial<Issue> & Pick<Issue, "id" | "createdAt">): Iss
     timeSpentMinutes: 0,
     childCount: 0,
     doneChildCount: 0,
+    customFields: {},
     ...overrides,
   };
 }

@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse, projectGuard } from "../../../../../../../server/projectAccess";
 import {
   InvalidTargetVersionError,
   releaseVersion,
   releaseVersionSchema,
 } from "../../../../../../../server/versions";
 import { requireWorkspaceRole } from "../../../../../../../server/session";
+import { runVersionAutomations } from "../../../../../../../server/automation";
 import { errorResponse, notFound, validationFailed } from "../../../../http";
 
 type RouteContext = {
@@ -24,14 +26,28 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (!validation.success) return validationFailed(validation.error);
 
     const { id, versionId } = await context.params;
+    const guard = await projectGuard(result.session, id, "edit");
+    if (guard) return guard;
     const version = await releaseVersion(
       id,
       versionId,
       validation.data,
       session.workspace.id,
     );
-    return version ? NextResponse.json(version) : notFound("Version");
+    if (!version) return notFound("Version");
+    await runVersionAutomations({
+      versionId,
+      projectId: id,
+      actor: {
+        id: session.user.id,
+        name: session.user.name,
+        organizationId: session.workspace.id,
+      },
+    });
+    return NextResponse.json(version);
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return errorResponse(error, "Version could not be released", [
       InvalidTargetVersionError,
     ]);

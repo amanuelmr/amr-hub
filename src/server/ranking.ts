@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import prisma from "../../prisma/client";
+import { assertActorPermission } from "./projectAccess";
 import type { Issue, IssueStatus } from "../app/data/issues";
 import { isDoneStatus, statusName } from "../app/data/workflow";
 import { validateIssueStatus } from "./workflows";
@@ -175,9 +176,18 @@ export async function rankIssues(
   input: RankIssuesInput,
   actor: WorkspaceActor,
 ): Promise<RankIssuesResult> {
+  const owner = await prisma.issue.findFirst({
+    where: { id: { in: input.issueIds }, organizationId: actor.organizationId },
+    select: { projectId: true },
+  });
+  if (owner) await assertActorPermission(actor, owner.projectId, "edit", "Issue not found");
   const result = await prisma.$transaction(async (transaction) => {
     const targets = await transaction.issue.findMany({
-      where: { id: { in: input.issueIds }, organizationId: actor.organizationId },
+      where: {
+        id: { in: input.issueIds },
+        organizationId: actor.organizationId,
+        deletedAt: null,
+      },
       select: {
         id: true,
         projectId: true,
@@ -258,6 +268,7 @@ export async function rankIssues(
       if (input.status && input.status !== target.status) {
         const from = target.status as IssueStatus;
         data.status = input.status;
+        data.statusChangedAt = new Date();
         if (isDoneStatus(input.status) && !isDoneStatus(from)) {
           data.resolution = "DONE";
           data.resolvedAt = new Date();

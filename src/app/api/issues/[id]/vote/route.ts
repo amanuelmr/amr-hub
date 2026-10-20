@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { issueGuard, accessErrorResponse } from "../../../../../server/projectAccess";
 import { setVote } from "../../../../../server/issueRelations";
 import {
   actorFromSession,
@@ -20,10 +21,14 @@ async function changeVote(
 
   try {
     const { id } = await context.params;
+    const denied = await issueGuard(result.session, id, "view");
+    if (denied) return denied;
     const issue = await setVote(id, voting, actorFromSession(result.session));
     if (!issue) return issueNotFound();
     return NextResponse.json(issue);
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return routeError(error, "Failed to update vote", "Vote could not be saved");
   }
 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { issueGuard, accessErrorResponse } from "../../../../../server/projectAccess";
 import {
   listWatchers,
   setWatching,
@@ -24,10 +25,14 @@ export async function GET(request: NextRequest, context: IssueRouteContext) {
 
   try {
     const { id } = await context.params;
+    const denied = await issueGuard(result.session, id, "view");
+    if (denied) return denied;
     const watchers = await listWatchers(id, result.session.workspace.id);
     if (!watchers) return issueNotFound();
     return NextResponse.json(watchers);
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return routeError(
       error,
       "Failed to load watchers",
@@ -50,6 +55,8 @@ async function changeWatching(
     );
     if (!validation.success) return validationFailed(validation.error);
     const { id } = await context.params;
+    const denied = await issueGuard(result.session, id, "view");
+    if (denied) return denied;
     const response = await setWatching(
       id,
       validation.data,
@@ -60,6 +67,8 @@ async function changeWatching(
     if (!response) return issueNotFound();
     return NextResponse.json(response);
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return routeError(
       error,
       "Failed to update watchers",

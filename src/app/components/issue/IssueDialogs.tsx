@@ -4,6 +4,8 @@ import { FormEvent, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
+  Archive,
+  ArchiveRestore,
   CircleAlert,
   Copy,
   Flag,
@@ -12,7 +14,9 @@ import {
   MoreHorizontal,
   Trash2,
   X,
+  Zap,
 } from "lucide-react";
+import { RunAutomationDialog } from "../automation/RunAutomationDialog";
 import { apiRequest } from "../../IssueProvider";
 import { useProjects } from "../../ProjectProvider";
 import type { Issue } from "../../data/issues";
@@ -78,33 +82,54 @@ function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
-type DialogKind = "clone" | "move" | "delete" | null;
+type DialogKind = "clone" | "move" | "delete" | "automation" | null;
 
 export function IssueMoreMenu({
   issue,
   canEdit,
   canDelete,
+  canArchive = false,
   controller,
   onNavigate,
   onDeleted,
+  menuOpen,
+  onMenuOpenChange,
 }: {
   issue: Issue;
   canEdit: boolean;
   canDelete: boolean;
+  /** Project admins can archive and unarchive work items. */
+  canArchive?: boolean;
   controller: IssueDetailController;
   onNavigate: (id: string) => void;
   onDeleted: () => void;
+  /** Controlled open state, so the "." shortcut can open the menu. */
+  menuOpen?: boolean;
+  onMenuOpenChange?: (open: boolean) => void;
 }) {
   const [dialog, setDialog] = useState<DialogKind>(null);
 
+  const toggleArchive = async () => {
+    try {
+      const updated = await apiRequest<Issue>(issueUrl(issue.id, "/archive"), {
+        method: "POST",
+        body: JSON.stringify({ archived: !issue.archivedAt }),
+      });
+      controller.applyIssue(updated);
+    } catch (requestError) {
+      window.alert(errorMessage(requestError, "Work item could not be archived"));
+    }
+  };
+
   return (
     <>
-      <DropdownMenu.Root>
+      <DropdownMenu.Root open={menuOpen} onOpenChange={onMenuOpenChange}>
         <DropdownMenu.Trigger asChild>
           <button
             className="icon-button issue-more-button"
             type="button"
             aria-label="More actions"
+            title="More actions (.)"
           >
             <MoreHorizontal size={16} aria-hidden="true" />
           </button>
@@ -141,6 +166,13 @@ export function IssueMoreMenu({
                   <FolderInput size={14} aria-hidden="true" />
                   Move to another project
                 </DropdownMenu.Item>
+                <DropdownMenu.Item
+                  className="issue-menu-item"
+                  onSelect={() => setDialog("automation")}
+                >
+                  <Zap size={14} aria-hidden="true" />
+                  Run automation
+                </DropdownMenu.Item>
               </>
             )}
             <DropdownMenu.Item
@@ -156,6 +188,19 @@ export function IssueMoreMenu({
               <Link2 size={14} aria-hidden="true" />
               Copy link
             </DropdownMenu.Item>
+            {canArchive && (
+              <DropdownMenu.Item
+                className="issue-menu-item"
+                onSelect={() => void toggleArchive()}
+              >
+                {issue.archivedAt ? (
+                  <ArchiveRestore size={14} aria-hidden="true" />
+                ) : (
+                  <Archive size={14} aria-hidden="true" />
+                )}
+                {issue.archivedAt ? "Unarchive" : "Archive"}
+              </DropdownMenu.Item>
+            )}
             {canDelete && (
               <>
                 <DropdownMenu.Separator className="issue-menu-separator" />
@@ -172,6 +217,13 @@ export function IssueMoreMenu({
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
 
+      <RunAutomationDialog
+        open={dialog === "automation"}
+        onOpenChange={(open) => !open && setDialog(null)}
+        projectId={issue.projectId}
+        issueId={issue.id}
+        onRan={() => void controller.refresh()}
+      />
       {dialog === "clone" && (
         <CloneDialog
           issue={issue}
@@ -304,7 +356,11 @@ function MoveDialog({
   onMoved: (issue: Issue) => void;
 }) {
   const { projects } = useProjects();
-  const targets = projects.filter((project) => project.id !== issue.projectId);
+  // Only projects the user can create work in.
+  const targets = projects.filter(
+    (project) =>
+      project.id !== issue.projectId && project.permissions?.canEdit !== false,
+  );
   const [projectId, setProjectId] = useState(targets[0]?.id ?? "");
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -407,7 +463,7 @@ function DeleteDialog({
       open
       onOpenChange={(open) => !open && onClose()}
       title={`Delete ${issue.id}?`}
-      description="This permanently removes the issue with its comments, work logs and attachments. Child issues are kept without a parent."
+      description="The work item moves to the trash with its subtasks. Project admins can restore it for 60 days, then it's deleted permanently. Other child work items are kept without a parent."
     >
       <DialogError message={error} />
       <div className="issue-dialog-actions">

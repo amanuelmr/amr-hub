@@ -1,4 +1,5 @@
 import { dispatchWebhook } from "./webhooks";
+import { runSprintAutomations } from "./automation";
 import {
   isDoneStatus,
   isEpicLevel,
@@ -7,7 +8,9 @@ import {
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import prisma from "../../prisma/client";
+import { assertActorPermission } from "./projectAccess";
 import type { Cycle, Issue } from "../app/data/issues";
+import { parseBoardConfig } from "../app/data/projects";
 import {
   DuplicateCycleNameError,
   UnknownProjectError,
@@ -44,16 +47,41 @@ export function sprintPoints(issues: PointIssue[], onlyDone = false) {
     .reduce((total, issue) => total + (issue.estimate ?? 0), 0);
 }
 
-/** Jira-style auto name: "<KEY> Sprint N", skipping names already used. */
+/**
+ * Jira-style auto name. Follows the latest sprint's trailing number
+ * ("Release 7" -> "Release 8"); otherwise "<KEY> Sprint N". `existingNames`
+ * is ordered oldest first; names already used are skipped.
+ */
 export function nextSprintName(projectKey: string, existingNames: string[]) {
-  const taken = new Set(existingNames.map((name) => name.toLowerCase()));
-  let number = existingNames.length + 1;
+  const taken = new Set(existingNames.map((name) => name.trim().toLowerCase()));
+  const latest = existingNames.at(-1)?.trim() ?? "";
+  const trailing = /^(.*?)(\d+)$/.exec(latest);
+  if (trailing && trailing[1].trim()) {
+    let number = Number(trailing[2]) + 1;
+    while (taken.has(`${trailing[1]}${number}`.toLowerCase())) number += 1;
+    const candidate = `${trailing[1]}${number}`;
+    if (candidate.length <= 80) return candidate;
+  }
+  let number = 1;
   for (const name of existingNames) {
-    const match = new RegExp(`^${projectKey} Sprint (\\d+)$`, "i").exec(name);
+    const match = new RegExp(`^${projectKey} Sprint (\\d+)$`, "i").exec(name.trim());
     if (match) number = Math.max(number, Number(match[1]) + 1);
   }
+  if (number === 1) number = existingNames.length + 1;
   while (taken.has(`${projectKey} sprint ${number}`.toLowerCase())) number += 1;
   return `${projectKey} Sprint ${number}`;
+}
+
+/**
+ * Jira allows one active sprint per board unless "parallel sprints" is on.
+ * Returns the error message, or null when the sprint may start.
+ */
+export function parallelSprintConflict(
+  activeNames: string[],
+  allowParallel: boolean,
+) {
+  if (allowParallel || activeNames.length === 0) return null;
+  return `${activeNames[0]} is already active. Complete it before starting another sprint, or turn on parallel sprints in the board settings.`;
 }
 
 function toDateOnly(date: Date) {
@@ -170,6 +198,7 @@ export async function createSprint(
     select: { id: true, key: true },
   });
   if (!project) throw new UnknownProjectError();
+  await assertActorPermission(actor, project.id, "edit");
 
   try {
     const sprint = await prisma.$transaction((transaction) =>
@@ -198,6 +227,7 @@ export async function updateSprint(
   actor: WorkspaceActor,
 ): Promise<Cycle> {
   const sprint = await findSprint(id, actor.organizationId);
+  await assertActorPermission(actor, sprint.projectId, "edit");
   const start = updates.startDate
     ? parseCycleDate(updates.startDate, false)
     : sprint.startDate;
@@ -229,6 +259,7 @@ async function startSprintUnhooked(
   input: { name?: string; goal?: string | null; startDate: string; endDate: string },
   actor: WorkspaceActor,
 ): Promise<Cycle> {
+  await assertSprintEditable(id, actor);
   try {
     const sprint = await prisma.$transaction(async (transaction) => {
       const sprint = await transaction.cycle.findFirst({
@@ -238,21 +269,28 @@ async function startSprintUnhooked(
       if (sprint.state !== "FUTURE") {
         throw new SprintStateError("Only future sprints can be started");
       }
-      const active = await transaction.cycle.findFirst({
-        where: {
-          projectId: sprint.projectId,
-          organizationId: actor.organizationId,
-          state: "ACTIVE",
-        },
-        select: { name: true },
-      });
-      if (active) {
-        throw new SprintStateError(
-          `${active.name} is already active. Complete it before starting another sprint.`,
-        );
-      }
+      const [active, project] = await Promise.all([
+        transaction.cycle.findMany({
+          where: {
+            projectId: sprint.projectId,
+            organizationId: actor.organizationId,
+            state: "ACTIVE",
+          },
+          select: { name: true },
+          orderBy: { startedAt: "asc" },
+        }),
+        transaction.project.findFirst({
+          where: { id: sprint.projectId, organizationId: actor.organizationId },
+          select: { boardConfig: true },
+        }),
+      ]);
+      const conflict = parallelSprintConflict(
+        active.map((cycle) => cycle.name),
+        parseBoardConfig(project?.boardConfig).parallelSprints,
+      );
+      if (conflict) throw new SprintStateError(conflict);
       const issues = await transaction.issue.findMany({
-        where: { cycleId: sprint.id, organizationId: actor.organizationId },
+        where: { cycleId: sprint.id, organizationId: actor.organizationId, deletedAt: null },
         select: { kind: true, status: true, estimate: true },
       });
 
@@ -293,6 +331,7 @@ async function completeSprintUnhooked(
   input: CompleteSprintInput,
   actor: WorkspaceActor,
 ): Promise<SprintMutationResult> {
+  await assertSprintEditable(id, actor);
   const result = await prisma.$transaction(async (transaction) => {
     const sprint = await transaction.cycle.findFirst({
       where: { id, organizationId: actor.organizationId },
@@ -329,7 +368,7 @@ async function completeSprintUnhooked(
     }
 
     const issues = await transaction.issue.findMany({
-      where: { cycleId: sprint.id, organizationId: actor.organizationId },
+      where: { cycleId: sprint.id, organizationId: actor.organizationId, deletedAt: null },
       select: { id: true, kind: true, status: true, estimate: true },
     });
     const openIssues = issues.filter((issue) => !isDoneStatus(issue.status));
@@ -381,7 +420,17 @@ async function completeSprintUnhooked(
   };
 }
 
+/** Sprint changes need edit access to the sprint's project. */
+async function assertSprintEditable(id: string, actor: WorkspaceActor) {
+  const sprint = await prisma.cycle.findFirst({
+    where: { id, organizationId: actor.organizationId },
+    select: { projectId: true },
+  });
+  if (sprint) await assertActorPermission(actor, sprint.projectId, "edit");
+}
+
 export async function deleteSprint(id: string, actor: WorkspaceActor) {
+  await assertSprintEditable(id, actor);
   const movedIds = await prisma.$transaction(async (transaction) => {
     const sprint = await transaction.cycle.findFirst({
       where: { id, organizationId: actor.organizationId },
@@ -391,7 +440,7 @@ export async function deleteSprint(id: string, actor: WorkspaceActor) {
       throw new SprintStateError("Complete the active sprint before deleting it");
     }
     const issues = await transaction.issue.findMany({
-      where: { cycleId: sprint.id, organizationId: actor.organizationId },
+      where: { cycleId: sprint.id, organizationId: actor.organizationId, deletedAt: null },
       select: { id: true },
     });
     for (const issue of issues) {
@@ -426,6 +475,12 @@ export async function startSprint(
 ) {
   const sprint = await startSprintUnhooked(...args);
   dispatchWebhook(args[2].organizationId, "sprint_started", { sprint });
+  await runSprintAutomations({
+    trigger: "SPRINT_STARTED",
+    sprintId: sprint.id,
+    projectId: sprint.projectId,
+    actor: args[2],
+  });
   return sprint;
 }
 
@@ -434,5 +489,12 @@ export async function completeSprint(
 ) {
   const result = await completeSprintUnhooked(...args);
   dispatchWebhook(args[2].organizationId, "sprint_closed", result);
+  await runSprintAutomations({
+    trigger: "SPRINT_COMPLETED",
+    sprintId: result.sprint.id,
+    projectId: result.sprint.projectId,
+    actor: args[2],
+    issueIds: result.issues.map((issue) => issue.id),
+  });
   return result;
 }

@@ -69,6 +69,7 @@ export function actorFromSession(session: WorkspaceSession) {
     name: session.user.name,
     organizationId: session.workspace.id,
     organizationKey: session.workspace.key,
+    role: session.workspace.role,
   };
 }
 

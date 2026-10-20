@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../../../../server/projectAccess";
 import { sendTestWebhook } from "../../../../../../server/webhooks";
 import { requireWorkspaceRole } from "../../../../../../server/session";
 import { webhookOwnersOnly as ownersOnly } from "../../../_lib/responses";
@@ -21,6 +22,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (!delivery) return NextResponse.json({ error: "Webhook not found" }, { status: 404 });
     return NextResponse.json(delivery);
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     console.error("Failed to send test webhook", error);
     return NextResponse.json({ error: "The test delivery failed" }, { status: 500 });
   }

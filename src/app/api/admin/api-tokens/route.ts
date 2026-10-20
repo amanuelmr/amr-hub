@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../../server/projectAccess";
 import {
   createApiToken,
   createApiTokenSchema,
@@ -24,6 +25,8 @@ export async function GET(request: NextRequest) {
     });
     return NextResponse.json({ tokens, canManageAll: isOwner, userId: session.user.id });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     console.error("Failed to list API tokens", error);
     return NextResponse.json(
       { error: "API tokens could not be loaded" },
@@ -47,6 +50,8 @@ export async function POST(request: NextRequest) {
     const created = await createApiToken(validation.data, actorFromSession(result.session));
     return NextResponse.json(created, { status: 201 });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     if (error instanceof SyntaxError) {
       return NextResponse.json(
         { error: "Request body must be valid JSON" },

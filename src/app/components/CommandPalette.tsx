@@ -6,6 +6,7 @@ import {
   Bookmark,
   CornerDownLeft,
   Filter,
+  GanttChart,
   FolderKanban,
   Gauge,
   House,
@@ -14,7 +15,11 @@ import {
   ListTodo,
   Plus,
   Search,
+  Settings2,
+  Target,
   UserRound,
+  Users,
+  UsersRound,
 } from "lucide-react";
 import { useIssues } from "../IssueProvider";
 import { useProjects } from "../ProjectProvider";
@@ -48,6 +53,12 @@ const STATIC_COMMANDS: PaletteResult[] = [
   { id: "nav-filters", label: "Go to Filters", href: "/filters", group: "Navigate", icon: Filter },
   { id: "nav-dashboards", label: "Go to Dashboards", href: "/dashboards", group: "Navigate", icon: Gauge },
   { id: "nav-jql", label: "Advanced issue search (JQL)", href: "/issues?jql=", group: "Navigate", icon: Search },
+  { id: "nav-roadmap", label: "Go to Roadmap", href: "/roadmap", group: "Navigate", icon: GanttChart },
+  { id: "nav-goals", label: "Go to Goals", href: "/goals", group: "Navigate", icon: Target },
+  { id: "nav-people", label: "Go to People", href: "/people", group: "Navigate", icon: UsersRound },
+  { id: "nav-teams", label: "Go to Teams", href: "/teams", group: "Navigate", icon: Users },
+  { id: "nav-admin", label: "Go to Workspace settings", href: "/admin", group: "Navigate", icon: Settings2 },
+  { id: "nav-notifications", label: "Notification settings", href: "/account/notifications", group: "Navigate", icon: UserRound },
   { id: "nav-account", label: "Go to Account", href: "/account", group: "Navigate", icon: UserRound },
   { id: "shortcuts", label: "Show keyboard shortcuts", href: "#", group: "Help", icon: Keyboard },
 ];

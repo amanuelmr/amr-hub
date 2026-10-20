@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../../server/projectAccess";
 import { recordAudit } from "../../../../server/audit";
 import { exportFileName } from "../../../../server/csvExportCore";
 import {
@@ -41,6 +42,8 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     if (error instanceof ExportProjectError) {
       return NextResponse.json({ error: error.message }, { status: 404 });
     }

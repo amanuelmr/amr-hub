@@ -49,6 +49,7 @@ function issue(overrides: Partial<Issue>): Issue {
     timeSpentMinutes: 0,
     childCount: 0,
     doneChildCount: 0,
+    customFields: {},
     ...overrides,
   };
 }
@@ -172,5 +173,51 @@ describe("filters and grouping", () => {
   it("detects stale done work and remaining days", () => {
     expect(isStaleDone(issue({ status: "DONE", resolvedAt: "2026-09-01T00:00:00.000Z" }), now)).toBe(true);
     expect(daysRemaining("2026-10-18T23:59:59.000Z", now)).toBe(3);
+    const fresh = issue({ status: "DONE", resolvedAt: now.toISOString(), cycleId: "old" });
+    expect(isStaleDone(fresh, now)).toBe(false);
+    expect(isStaleDone(fresh, now, new Set(["old"]))).toBe(true);
+    expect(isStaleDone({ ...fresh, status: "OPEN" }, now, new Set(["old"]))).toBe(false);
+  });
+});
+
+describe("subtask swimlanes", () => {
+  const parentRef = {
+    id: "WEB-1",
+    title: "Checkout",
+    status: "IN_PROGRESS" as const,
+    kind: "STORY" as const,
+    priority: "MEDIUM" as const,
+    assignee: null,
+    estimate: null,
+  };
+  const parent = issue({ id: "WEB-1", title: "Checkout", kind: "STORY", rank: 1 });
+  const loner = issue({ id: "WEB-2", title: "Copy fix", kind: "TASK", rank: 2 });
+  const subA = issue({
+    id: "WEB-3",
+    kind: "SUBTASK",
+    parentId: "WEB-1",
+    parent: parentRef,
+    rank: 3,
+  });
+  const subB = issue({
+    id: "WEB-4",
+    kind: "SUBTASK",
+    parentId: "WEB-1",
+    parent: parentRef,
+    rank: 4,
+  });
+
+  it("gives each parent a lane of its subtasks and drops the parent card", () => {
+    const lanes = groupLanes([parent, loner, subA, subB], "SUBTASKS", []);
+    expect(lanes.map((lane) => lane.id)).toEqual(["WEB-1", "__everything-else"]);
+    expect(lanes[0].title).toBe("WEB-1 Checkout");
+    expect(lanes[0].issues.map((item) => item.id)).toEqual(["WEB-3", "WEB-4"]);
+    expect(lanes[1].issues.map((item) => item.id)).toEqual(["WEB-2"]);
+  });
+
+  it("keeps everything in one lane when nothing has subtasks", () => {
+    const lanes = groupLanes([parent, loner], "SUBTASKS", []);
+    expect(lanes).toHaveLength(1);
+    expect(lanes[0].issues.map((item) => item.id)).toEqual(["WEB-1", "WEB-2"]);
   });
 });

@@ -4,112 +4,54 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import {
-  ArrowDownToLine,
-  ArrowUpToLine,
-  CalendarClock,
-  ExternalLink,
-  Flag,
-  FlagOff,
-  ListTree,
-  MoreHorizontal,
-  UserRound,
-} from "lucide-react";
+import { CalendarClock, ListTree, Package, Puzzle } from "lucide-react";
 import type { Issue } from "../../data/issues";
+import {
+  DEFAULT_BOARD_CONFIG,
+  type CardField,
+} from "../../data/projects";
 import { isDoneStatus } from "../../data/workflow";
 import { IssueLabelChip } from "../IssueLabelChip";
 import { KindIcon, PriorityBadge } from "../IssueVisuals";
 import { selectedIssueHref } from "../issue/selectedIssue";
 import { epicOf, formatShortDate, isOverdue } from "./boardModel";
 import { EpicChip, FlagMark, MemberAvatar, PointsBadge } from "./PlanningVisuals";
+import {
+  IssueActionsMenu,
+  type IssueMenuAction,
+  type MoveDestination,
+} from "./IssueActions";
 
-export type CardAction = "top" | "bottom" | "flag" | "assign-me" | "open";
+export type CardAction = IssueMenuAction;
 
-function CardMenu({
-  issue,
-  isViewer,
-  canAssignToMe,
-  onAction,
-}: {
-  issue: Issue;
-  isViewer: boolean;
-  canAssignToMe: boolean;
-  onAction: (action: CardAction) => void;
-}) {
+export type CardDisplay = {
+  fields: CardField[];
+  /** Left color bar from the board's card color strategy. */
+  color: string | null;
+  /** Whole days in the current status, shown as Jira's dots when set. */
+  daysInColumn?: number | null;
+  /** View settings "Compact cards": title, key and assignee only. */
+  compact?: boolean;
+};
+
+/** Jira's days-in-column dots: more dots the longer an item sits still. */
+function DaysInColumn({ days }: { days: number }) {
+  const filled = days >= 14 ? 4 : days >= 7 ? 3 : days >= 3 ? 2 : days >= 1 ? 1 : 0;
+  if (filled === 0) return null;
+  const label = `${days} ${days === 1 ? "day" : "days"} in this column`;
   return (
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger asChild>
-        <button
-          className="board-card-menu-trigger"
-          type="button"
-          aria-label={`Actions for ${issue.id}`}
-          onClick={(event) => event.stopPropagation()}
-          onPointerDown={(event) => event.stopPropagation()}
-          onKeyDown={(event) => event.stopPropagation()}
-        >
-          <MoreHorizontal size={15} aria-hidden="true" />
-        </button>
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          className="planning-menu"
-          align="end"
-          sideOffset={4}
-          onClick={(event) => event.stopPropagation()}
-        >
-          {!isViewer && (
-            <>
-              <DropdownMenu.Item
-                className="planning-menu-item"
-                onSelect={() => onAction("top")}
-              >
-                <ArrowUpToLine size={14} aria-hidden="true" />
-                Move to top of column
-              </DropdownMenu.Item>
-              <DropdownMenu.Item
-                className="planning-menu-item"
-                onSelect={() => onAction("bottom")}
-              >
-                <ArrowDownToLine size={14} aria-hidden="true" />
-                Move to bottom of column
-              </DropdownMenu.Item>
-              <DropdownMenu.Separator className="planning-menu-separator" />
-              <DropdownMenu.Item
-                className="planning-menu-item"
-                onSelect={() => onAction("flag")}
-              >
-                {issue.flagged ? (
-                  <FlagOff size={14} aria-hidden="true" />
-                ) : (
-                  <Flag size={14} aria-hidden="true" />
-                )}
-                {issue.flagged ? "Remove flag" : "Add flag"}
-              </DropdownMenu.Item>
-              {canAssignToMe && (
-                <DropdownMenu.Item
-                  className="planning-menu-item"
-                  onSelect={() => onAction("assign-me")}
-                >
-                  <UserRound size={14} aria-hidden="true" />
-                  Assign to me
-                </DropdownMenu.Item>
-              )}
-              <DropdownMenu.Separator className="planning-menu-separator" />
-            </>
-          )}
-          <DropdownMenu.Item
-            className="planning-menu-item"
-            onSelect={() => onAction("open")}
-          >
-            <ExternalLink size={14} aria-hidden="true" />
-            Open issue
-          </DropdownMenu.Item>
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
+    <span className="board-card-days" title={label} aria-label={label} role="img">
+      {[0, 1, 2, 3].map((dot) => (
+        <span key={dot} className={dot < filled ? "on" : undefined} />
+      ))}
+    </span>
   );
 }
+
+const DEFAULT_DISPLAY: CardDisplay = {
+  fields: DEFAULT_BOARD_CONFIG.cardFields,
+  color: null,
+};
 
 /**
  * Jira card anatomy: summary, then the epic lozenge, then a footer with the
@@ -119,16 +61,27 @@ export function BoardCardBody({
   issue,
   isViewer,
   canAssignToMe,
+  meId = null,
+  destinations = [],
+  display = DEFAULT_DISPLAY,
   onAction,
 }: {
   issue: Issue;
   isViewer: boolean;
   canAssignToMe: boolean;
+  meId?: string | null;
+  destinations?: MoveDestination[];
+  display?: CardDisplay;
   onAction?: (action: CardAction) => void;
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const epic = epicOf(issue);
+  const show = (field: CardField) =>
+    display.fields.includes(field) &&
+    (!display.compact || field === "assignee");
+  const epic = show("epic") ? epicOf(issue) : null;
+  const labels = show("labels") ? issue.labels.slice(0, 2) : [];
+  const components = show("components") ? issue.components.slice(0, 2) : [];
   const overdue = isOverdue(issue);
   const isDone = isDoneStatus(issue.status);
 
@@ -137,21 +90,44 @@ export function BoardCardBody({
       <div className="board-card-head">
         <p className="board-card-title">{issue.title}</p>
         {onAction && (
-          <CardMenu
+          <IssueActionsMenu
             issue={issue}
             isViewer={isViewer}
             canAssignToMe={canAssignToMe}
+            meId={meId}
+            scope="column"
+            destinations={destinations}
             onAction={onAction}
           />
         )}
       </div>
 
-      {(issue.labels.length > 0 || epic) && (
+      {(labels.length > 0 || epic || components.length > 0 ||
+        (show("fixVersion") && issue.fixVersion)) && (
         <div className="board-card-labels">
           {epic && <EpicChip epic={epic} />}
-          {issue.labels.slice(0, 2).map((label) => (
+          {labels.map((label) => (
             <IssueLabelChip label={label} compact key={label.id} />
           ))}
+          {components.map((component) => (
+            <span
+              className="board-card-field-chip"
+              key={component.id}
+              title={`Component: ${component.name}`}
+            >
+              <Puzzle size={11} aria-hidden="true" />
+              {component.name}
+            </span>
+          ))}
+          {show("fixVersion") && issue.fixVersion && (
+            <span
+              className="board-card-field-chip"
+              title={`Fix version: ${issue.fixVersion.name}`}
+            >
+              <Package size={11} aria-hidden="true" />
+              {issue.fixVersion.name}
+            </span>
+          )}
         </div>
       )}
 
@@ -167,13 +143,13 @@ export function BoardCardBody({
           {issue.id}
         </Link>
         {issue.flagged && <FlagMark />}
-        {issue.childCount > 0 && (
+        {show("subtasks") && issue.childCount > 0 && (
           <span className="board-card-subtasks" title="Subtasks done">
             <ListTree size={12} aria-hidden="true" />
             {issue.doneChildCount}/{issue.childCount}
           </span>
         )}
-        {issue.dueDate && (
+        {show("dueDate") && issue.dueDate && (
           <span
             className={overdue ? "board-card-due overdue" : "board-card-due"}
             title={overdue ? "Overdue" : "Due date"}
@@ -182,12 +158,17 @@ export function BoardCardBody({
             {formatShortDate(issue.dueDate)}
           </span>
         )}
+        {display.daysInColumn != null && <DaysInColumn days={display.daysInColumn} />}
         <span className="board-card-meta-end">
-          {issue.estimate !== null && <PointsBadge points={issue.estimate} />}
-          <span className="board-card-priority">
-            <PriorityBadge priority={issue.priority} />
-          </span>
-          <MemberAvatar member={issue.assignee} />
+          {show("storyPoints") && issue.estimate !== null && (
+            <PointsBadge points={issue.estimate} />
+          )}
+          {show("priority") && (
+            <span className="board-card-priority">
+              <PriorityBadge priority={issue.priority} />
+            </span>
+          )}
+          {show("assignee") && <MemberAvatar member={issue.assignee} />}
         </span>
       </div>
     </>
@@ -199,6 +180,9 @@ export function SortableBoardCard({
   cellId,
   isViewer,
   canAssignToMe,
+  meId,
+  destinations,
+  display,
   onAction,
   onOpen,
   shouldIgnoreClick,
@@ -207,6 +191,9 @@ export function SortableBoardCard({
   cellId: string;
   isViewer: boolean;
   canAssignToMe: boolean;
+  meId: string | null;
+  destinations: MoveDestination[];
+  display: CardDisplay;
   onAction: (issue: Issue, action: CardAction) => void;
   onOpen: (issue: Issue) => void;
   shouldIgnoreClick: () => boolean;
@@ -232,10 +219,18 @@ export function SortableBoardCard({
         "planning-card",
         issue.flagged ? "flagged" : "",
         isDragging ? "dragging" : "",
+        display.color ? "colored" : "",
+        display.compact ? "compact" : "",
       ]
         .filter(Boolean)
         .join(" ")}
-      style={{ transform: CSS.Translate.toString(transform), transition }}
+      style={
+        {
+          transform: CSS.Translate.toString(transform),
+          transition,
+          ...(display.color ? { "--card-color": display.color } : {}),
+        } as React.CSSProperties
+      }
       {...attributes}
       {...listeners}
       aria-label={`${issue.id} ${issue.title}`}
@@ -257,6 +252,9 @@ export function SortableBoardCard({
         issue={issue}
         isViewer={isViewer}
         canAssignToMe={canAssignToMe}
+        meId={meId}
+        destinations={destinations}
+        display={display}
         onAction={(action) => onAction(issue, action)}
       />
     </div>

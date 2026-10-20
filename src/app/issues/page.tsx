@@ -1,12 +1,16 @@
 "use client";
 
-import { type FormEvent, Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowDownUp,
   Bookmark,
   BookmarkPlus,
+  ChevronDown,
+  Info,
+  Pencil,
+  Star,
   Download,
   Kanban,
   ListFilter,
@@ -18,18 +22,23 @@ import {
   Tag,
   Trash2,
   UserRound,
-  X,
 } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useIssues } from "../IssueProvider";
 import { useProjects } from "../ProjectProvider";
+import { useWorkflows } from "../WorkflowProvider";
 import { authClient } from "../../lib/auth-client";
 import {
   PRIORITY_LABELS,
   type IssuePriority,
   type IssueStatus,
-  type SavedView,
 } from "../data/issues";
+import { DEFAULT_FILTERS, defaultFilter } from "../data/filters";
+import { apiRequest } from "../IssueProvider";
+import * as Popover from "@radix-ui/react-popover";
+import { useFilters } from "../components/search/useFilters";
+import { FilterDetailsDialog } from "../components/search/FilterDetailsDialog";
+import { summarizeShares, useShareDirectory } from "../components/search/ShareEditor";
 import {
   DEFAULT_JQL_ORDER,
   basicFiltersToJql,
@@ -50,6 +59,7 @@ import {
   selectedIssueHref,
   useSelectedIssue,
 } from "../components/issue/selectedIssue";
+import { setIssueNavigation } from "../components/issue/issueNav";
 import { KindIcon, StatusBadge } from "../components/IssueVisuals";
 import { BulkBar } from "../components/search/BulkBar";
 import {
@@ -64,6 +74,23 @@ import { useColumnLookups, useJqlContext } from "../components/search/useJqlCont
 type ViewMode = "list" | "detail" | "board";
 type SearchMode = "basic" | "jql";
 type StatusFilter = "ALL" | "ACTIVE" | IssueStatus;
+
+type ExtraField = "priority" | "labels" | "reporter" | "sprint" | "created";
+
+const EXTRA_FIELDS: { value: ExtraField; label: string }[] = [
+  { value: "priority", label: "Priority" },
+  { value: "labels", label: "Labels" },
+  { value: "reporter", label: "Reporter" },
+  { value: "sprint", label: "Sprint" },
+  { value: "created", label: "Created" },
+];
+
+const CREATED_WINDOWS = [
+  { value: "-1d", label: "Last 24 hours" },
+  { value: "-1w", label: "Last week" },
+  { value: "-2w", label: "Last 2 weeks" },
+  { value: "-4w", label: "Last 4 weeks" },
+];
 
 const UNASSIGNED_FILTER = "UNASSIGNED";
 /** `?view=detail` shows the split list + issue panel; `?view=board` the board. */
@@ -127,14 +154,12 @@ function IssueNavigator() {
   const {
     issues,
     labels,
-    savedViews,
     members,
     cycles,
     updateStatus,
-    createSavedView,
-    deleteSavedView,
   } = useIssues();
   const { projects } = useProjects();
+  const { workflows } = useWorkflows();
   const { data: activeMember } = authClient.useActiveMember();
   const isViewer = activeMember?.role === "viewer";
   const isOwner = activeMember?.role === "owner";
@@ -148,6 +173,12 @@ function IssueNavigator() {
   const [projectFilter, setProjectFilter] = useState("ALL");
   const [labelFilter, setLabelFilter] = useState("ALL");
   const [assigneeFilter, setAssigneeFilter] = useState("ALL");
+  const [typeFilter, setTypeFilter] = useState("ALL");
+  const [reporterFilter, setReporterFilter] = useState("ALL");
+  const [sprintFilter, setSprintFilter] = useState("ALL");
+  const [createdFilter, setCreatedFilter] = useState("ALL");
+  // Jira shows Project, Type, Status and Assignee; "More" adds the rest.
+  const [extraFields, setExtraFields] = useState<Set<ExtraField>>(new Set());
   const [sortNewestFirst, setSortNewestFirst] = useState(true);
   const [basicOrder, setBasicOrder] = useState<JqlOrderBy[] | null>(null);
 
@@ -161,49 +192,68 @@ function IssueNavigator() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
-  const [selectedViewId, setSelectedViewId] = useState("");
-  const [isSaveViewOpen, setIsSaveViewOpen] = useState(false);
-  const [viewName, setViewName] = useState("");
-  const [viewError, setViewError] = useState<string | null>(null);
-  const [isSavingView, setIsSavingView] = useState(false);
+  const {
+    filters,
+    create: createFilter,
+    update: updateFilter,
+    remove: removeFilter,
+    setStar: setFilterStar,
+  } = useFilters();
+  const shareDirectory = useShareDirectory();
+  const [openFilterId, setOpenFilterId] = useState<string | null>(null);
+  const [filterDialog, setFilterDialog] = useState<"save" | "saveAs" | "edit" | null>(null);
+  const [filterNotice, setFilterNotice] = useState<string | null>(null);
+  const [viewedIssueIds, setViewedIssueIds] = useState<string[]>([]);
+
+  // issueHistory() / "Viewed recently" need the viewer's recent issues.
+  useEffect(() => {
+    let cancelled = false;
+    apiRequest<{ recent: { id: string }[] }>("/api/your-work?only=recent&limit=50")
+      .then((response) => !cancelled && setViewedIssueIds(response.recent.map((item) => item.id)))
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!filterNotice) return;
+    const timer = window.setTimeout(() => setFilterNotice(null), 3000);
+    return () => window.clearTimeout(timer);
+  }, [filterNotice]);
 
   const viewParam = searchParams.get(VIEW_PARAM);
   const viewMode: ViewMode = viewParam === "detail" || viewParam === "board" ? viewParam : "list";
   const { selectedIssueId } = useSelectedIssue();
 
-  const ctx = useJqlContext(searchedAt);
+  const baseCtx = useJqlContext(searchedAt);
+  const ctx = useMemo(() => ({ ...baseCtx, viewedIssueIds }), [baseCtx, viewedIssueIds]);
   const lookups = useColumnLookups();
 
-  const applySavedView = (view: SavedView | undefined, id: string) => {
-    setSelectedViewId(id);
+  const applyFilter = (id: string, jql: string) => {
+    setOpenFilterId(id);
     setVisibleCount(PAGE_SIZE);
     setSelectedIds(new Set());
-    if (!view) return;
-    if (view.jql) {
-      setMode("jql");
-      setJqlDraft(view.jql);
-      setAppliedJql(view.jql);
-      setSearchedAt(new Date());
-      return;
-    }
-    setMode("basic");
-    setQuery(view.query);
-    setStatusFilter(view.status);
-    setPriorityFilter(view.priority);
-    setAssigneeFilter(view.assignee);
-    setLabelFilter(view.labelId ?? "ALL");
-    setSortNewestFirst(view.sort === "NEWEST");
-    setBasicOrder(null);
+    setMode("jql");
+    setJqlDraft(jql);
+    setAppliedJql(jql);
+    setSearchedAt(new Date());
   };
 
+  // ?filter= opens a default or saved filter; saved ones wait for the list.
   const filterParam = searchParams.get("filter");
   const [appliedFilterParam, setAppliedFilterParam] = useState<string | null>(null);
-  if (filterParam !== appliedFilterParam) {
+  const requestedFilter = filterParam
+    ? (defaultFilter(filterParam) ?? filters?.find((filter) => filter.id === filterParam) ?? null)
+    : null;
+  if (filterParam !== appliedFilterParam && (!filterParam || requestedFilter || filters !== null)) {
     setAppliedFilterParam(filterParam);
-    if (filterParam) {
-      const view = savedViews.find((candidate) => candidate.id === filterParam);
-      const freshJql = searchParams.get("jql");
-      applySavedView(view && freshJql !== null ? { ...view, jql: freshJql } : view, filterParam);
+    if (filterParam && requestedFilter) {
+      applyFilter(filterParam, searchParams.get("jql") ?? requestedFilter.jql);
+    } else if (filterParam) {
+      setFilterNotice("That filter doesn't exist or isn't shared with you");
+    } else {
+      setOpenFilterId(null);
     }
   }
 
@@ -219,7 +269,6 @@ function IssueNavigator() {
   }
 
   const markViewModified = () => {
-    setSelectedViewId("");
     setVisibleCount(PAGE_SIZE);
   };
 
@@ -234,6 +283,18 @@ function IssueNavigator() {
         assigneeFilter === UNASSIGNED_FILTER
           ? UNASSIGNED_FILTER
           : (members.find((member) => member.id === assigneeFilter)?.email ?? null),
+      typeName: typeFilter === "ALL" ? null : typeFilter,
+      reporter:
+        reporterFilter === "ALL"
+          ? null
+          : (members.find((member) => member.id === reporterFilter)?.email ?? null),
+      sprint:
+        sprintFilter === "ALL"
+          ? null
+          : sprintFilter === "OPEN"
+            ? "OPEN"
+            : (cycles.find((cycle) => cycle.id === sprintFilter)?.name ?? null),
+      createdWithin: createdFilter === "ALL" ? null : createdFilter,
       sort: sortNewestFirst ? "NEWEST" : "OLDEST",
     });
     return basicOrder ? setJqlOrderBy(base, basicOrder) : base;
@@ -247,6 +308,11 @@ function IssueNavigator() {
     labelFilter,
     members,
     assigneeFilter,
+    typeFilter,
+    reporterFilter,
+    sprintFilter,
+    createdFilter,
+    cycles,
     sortNewestFirst,
     basicOrder,
   ]);
@@ -261,6 +327,11 @@ function IssueNavigator() {
   const pageIssues = results.slice(0, visibleCount);
   const selectedIssues = results.filter((issue) => selectedIds.has(issue.id));
   const firstResultId = results[0]?.id ?? null;
+
+  // j/k in the issue view walk the full result order, not just the loaded page.
+  useEffect(() => {
+    setIssueNavigation(results.map((issue) => issue.id));
+  }, [results]);
 
   // Jira's detail view always shows an issue: pick the first result when the
   // URL doesn't name one yet.
@@ -290,7 +361,8 @@ function IssueNavigator() {
   const syncUrl = (jql: string | null) => {
     // Rebuild the query but keep the view switcher and open issue.
     const params = new URLSearchParams();
-    for (const key of [VIEW_PARAM, SELECTED_ISSUE_PARAM]) {
+    // Keep the open filter so an edited query still shows as "Edited".
+    for (const key of [VIEW_PARAM, SELECTED_ISSUE_PARAM, "filter"]) {
       const value = searchParams.get(key);
       if (value) params.set(key, value);
     }
@@ -305,10 +377,6 @@ function IssueNavigator() {
     setSearchedAt(new Date());
     setVisibleCount(PAGE_SIZE);
     setSelectedIds(new Set());
-    setSelectedViewId((current) => {
-      const view = savedViews.find((candidate) => candidate.id === current);
-      return view?.jql === jql ? current : "";
-    });
     syncUrl(jql);
   };
 
@@ -373,40 +441,64 @@ function IssueNavigator() {
     downloadCsv(`issues-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(header, rows));
   };
 
-  const selectedView = savedViews.find((view) => view.id === selectedViewId);
+  const savedFilter =
+    openFilterId && !defaultFilter(openFilterId)
+      ? (filters?.find((filter) => filter.id === openFilterId) ?? null)
+      : null;
+  const currentFilter = (openFilterId && defaultFilter(openFilterId)) || savedFilter;
+  const normalizeJql = (jql: string) => jql.trim().replace(/\s+/g, " ");
+  const isFilterModified =
+    !!currentFilter && normalizeJql(effectiveJql) !== normalizeJql(currentFilter.jql);
 
-  const handleSaveView = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const name = viewName.trim();
-    if (name.length < 2) return;
+  const openFilter = (id: string) => {
+    const params = new URLSearchParams();
+    const view = searchParams.get(VIEW_PARAM);
+    if (view) params.set(VIEW_PARAM, view);
+    params.set("filter", id);
+    router.push(`${pathname}?${params.toString()}`, { scroll: false });
+  };
 
-    setIsSavingView(true);
-    setViewError(null);
-
+  const saveFilterChanges = async () => {
+    if (!savedFilter) return;
     try {
-      const view = await createSavedView({
-        name,
-        query: mode === "basic" ? query.trim().slice(0, 100) : "",
-        status: mode === "basic" ? statusFilter : "ALL",
-        priority: mode === "basic" ? priorityFilter : "ALL",
-        assignee: mode === "basic" ? assigneeFilter : "ALL",
-        sort: mode === "basic" && !sortNewestFirst ? "OLDEST" : "NEWEST",
-        labelId: mode === "basic" && labelFilter !== "ALL" ? labelFilter : null,
-        jql: mode === "jql" ? appliedJql : null,
-      });
-      setSelectedViewId(view.id);
-      setViewName("");
-      setIsSaveViewOpen(false);
+      await updateFilter(savedFilter.id, { jql: effectiveJql });
+      setFilterNotice("Filter saved");
     } catch (error) {
-      setViewError(error instanceof Error ? error.message : "Filter could not be saved");
-    } finally {
-      setIsSavingView(false);
+      setFilterNotice(error instanceof Error ? error.message : "Filter could not be saved");
     }
   };
 
-  const handleDeleteView = async () => {
-    if (!selectedViewId) return;
-    if (await deleteSavedView(selectedViewId)) setSelectedViewId("");
+  const deleteOpenFilter = async () => {
+    if (!savedFilter) return;
+    try {
+      await removeFilter(savedFilter.id);
+      router.replace(pathname, { scroll: false });
+    } catch (error) {
+      setFilterNotice(error instanceof Error ? error.message : "Filter could not be deleted");
+    }
+  };
+
+  const workTypeNames = [
+    ...new Set(
+      Object.values(workflows).flatMap((workflow) => workflow.types.map((type) => type.name)),
+    ),
+  ].sort((a, b) => a.localeCompare(b));
+
+  // Removing a field from "More" also clears its value, as in Jira.
+  const toggleExtraField = (field: ExtraField, checked: boolean) => {
+    setExtraFields((current) => {
+      const next = new Set(current);
+      if (checked) next.add(field);
+      else next.delete(field);
+      return next;
+    });
+    if (checked) return;
+    if (field === "priority") setPriorityFilter("ALL");
+    if (field === "labels") setLabelFilter("ALL");
+    if (field === "reporter") setReporterFilter("ALL");
+    if (field === "sprint") setSprintFilter("ALL");
+    if (field === "created") setCreatedFilter("ALL");
+    markViewModified();
   };
 
   const clearFilters = () => {
@@ -421,6 +513,11 @@ function IssueNavigator() {
     setLabelFilter("ALL");
     setAssigneeFilter("ALL");
     setProjectFilter("ALL");
+    setTypeFilter("ALL");
+    setReporterFilter("ALL");
+    setSprintFilter("ALL");
+    setCreatedFilter("ALL");
+    setExtraFields(new Set());
     setBasicOrder(null);
     markViewModified();
   };
@@ -472,40 +569,154 @@ function IssueNavigator() {
     <div className="page issues-page search-page">
       <header className="jira-page-header">
         <div className="search-page-heading">
-          <h1 className="jira-page-title">{selectedView ? selectedView.name : "Search"}</h1>
+          <h1 className="jira-page-title">{currentFilter ? currentFilter.name : "Search"}</h1>
+          {savedFilter && (
+            <button
+              type="button"
+              className={savedFilter.isStarred ? "filters-star active" : "filters-star"}
+              aria-pressed={savedFilter.isStarred}
+              aria-label={savedFilter.isStarred ? "Unstar filter" : "Star filter"}
+              onClick={() => void setFilterStar(savedFilter.id, !savedFilter.isStarred)}
+            >
+              <Star size={16} aria-hidden="true" />
+            </button>
+          )}
+          {currentFilter && isFilterModified && (
+            <span className="search-filter-modified">Edited</span>
+          )}
+          {savedFilter && (
+            <Popover.Root>
+              <Popover.Trigger asChild>
+                <button type="button" className="text-button search-filter-details-trigger">
+                  <Info size={14} aria-hidden="true" />
+                  Details
+                </button>
+              </Popover.Trigger>
+              <Popover.Portal>
+                <Popover.Content className="search-popover search-filter-details" align="start" sideOffset={6}>
+                  <dl>
+                    <dt>Owner</dt>
+                    <dd>{savedFilter.ownerName}</dd>
+                    {savedFilter.description && (
+                      <>
+                        <dt>Description</dt>
+                        <dd>{savedFilter.description}</dd>
+                      </>
+                    )}
+                    <dt>Viewers</dt>
+                    <dd>{summarizeShares(savedFilter.viewers, shareDirectory)}</dd>
+                    <dt>Editors</dt>
+                    <dd>
+                      {savedFilter.editors.length
+                        ? summarizeShares(savedFilter.editors, shareDirectory)
+                        : "Owner only"}
+                    </dd>
+                    <dt>Starred by</dt>
+                    <dd>{savedFilter.starCount}</dd>
+                  </dl>
+                  {savedFilter.canEdit && (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => setFilterDialog("edit")}
+                    >
+                      <Pencil size={14} aria-hidden="true" />
+                      Edit details
+                    </button>
+                  )}
+                </Popover.Content>
+              </Popover.Portal>
+            </Popover.Root>
+          )}
         </div>
         <div className="jira-page-actions">
-          <label className="select-button search-filter-picker">
-            <Bookmark size={15} aria-hidden="true" />
-            <span className="sr-only">Open a saved filter</span>
-            <select
-              value={selectedViewId}
-              onChange={(event) =>
-                applySavedView(
-                  savedViews.find((view) => view.id === event.target.value),
-                  event.target.value,
-                )
-              }
+          {filterNotice && (
+            <span className="search-filter-notice" role="status">
+              {filterNotice}
+            </span>
+          )}
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <button className="secondary-button search-header-button" type="button">
+                <Bookmark size={15} aria-hidden="true" />
+                Filters
+                <ChevronDown size={14} aria-hidden="true" />
+              </button>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content className="search-menu search-filter-menu" align="end" sideOffset={6}>
+                <DropdownMenu.Label className="search-menu-label">Default filters</DropdownMenu.Label>
+                {DEFAULT_FILTERS.map((filter) => (
+                  <DropdownMenu.Item
+                    key={filter.id}
+                    className="search-menu-item"
+                    onSelect={() => openFilter(filter.id)}
+                  >
+                    {filter.name}
+                  </DropdownMenu.Item>
+                ))}
+                {(filters ?? []).filter((filter) => filter.isStarred).length > 0 && (
+                  <>
+                    <DropdownMenu.Separator className="search-menu-separator" />
+                    <DropdownMenu.Label className="search-menu-label">Starred filters</DropdownMenu.Label>
+                    {(filters ?? []).filter((filter) => filter.isStarred).map((filter) => (
+                      <DropdownMenu.Item
+                        key={filter.id}
+                        className="search-menu-item"
+                        onSelect={() => openFilter(filter.id)}
+                      >
+                        <Star size={13} aria-hidden="true" />
+                        {filter.name}
+                      </DropdownMenu.Item>
+                    ))}
+                  </>
+                )}
+                {(filters ?? []).some((filter) => filter.isMine && !filter.isStarred) && (
+                  <>
+                    <DropdownMenu.Separator className="search-menu-separator" />
+                    <DropdownMenu.Label className="search-menu-label">My filters</DropdownMenu.Label>
+                    {(filters ?? [])
+                      .filter((filter) => filter.isMine && !filter.isStarred)
+                      .map((filter) => (
+                        <DropdownMenu.Item
+                          key={filter.id}
+                          className="search-menu-item"
+                          onSelect={() => openFilter(filter.id)}
+                        >
+                          {filter.name}
+                        </DropdownMenu.Item>
+                      ))}
+                  </>
+                )}
+                <DropdownMenu.Separator className="search-menu-separator" />
+                <DropdownMenu.Item
+                  className="search-menu-item"
+                  onSelect={() => router.push("/filters")}
+                >
+                  <ListFilter size={14} aria-hidden="true" />
+                  View all filters
+                </DropdownMenu.Item>
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
+          {savedFilter && isFilterModified && savedFilter.canEdit && (
+            <button
+              className="primary-button search-header-button"
+              type="button"
+              disabled={mode === "jql" && !!jqlError}
+              onClick={() => void saveFilterChanges()}
             >
-              <option value="">Filters…</option>
-              {savedViews.map((view) => (
-                <option value={view.id} key={view.id}>
-                  {view.name}
-                </option>
-              ))}
-            </select>
-          </label>
+              Save
+            </button>
+          )}
           <button
             className="secondary-button search-header-button"
             type="button"
             disabled={mode === "jql" && !!jqlError}
-            onClick={() => {
-              setViewError(null);
-              setIsSaveViewOpen(true);
-            }}
+            onClick={() => setFilterDialog(currentFilter ? "saveAs" : "save")}
           >
             <BookmarkPlus size={15} aria-hidden="true" />
-            {selectedView ? "Save as" : "Save filter"}
+            {currentFilter ? "Save as" : "Save filter"}
           </button>
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
@@ -544,12 +755,12 @@ function IssueNavigator() {
                   <ListFilter size={14} aria-hidden="true" />
                   View all filters
                 </DropdownMenu.Item>
-                {selectedView && !selectedView.isSystem && (
+                {savedFilter?.canManage && (
                   <>
                     <DropdownMenu.Separator className="search-menu-separator" />
                     <DropdownMenu.Item
                       className="search-menu-item danger"
-                      onSelect={() => void handleDeleteView()}
+                      onSelect={() => void deleteOpenFilter()}
                     >
                       <Trash2 size={14} aria-hidden="true" />
                       Delete filter
@@ -626,6 +837,23 @@ function IssueNavigator() {
                 </select>
               </label>
               <label className="select-button">
+                <span className="sr-only">Filter by work type</span>
+                <select
+                  value={typeFilter}
+                  onChange={(event) => {
+                    setTypeFilter(event.target.value);
+                    markViewModified();
+                  }}
+                >
+                  <option value="ALL">Type: All</option>
+                  {workTypeNames.map((name) => (
+                    <option value={name} key={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="select-button">
                 <span className="sr-only">Filter by status</span>
                 <select
                   value={statusFilter}
@@ -660,6 +888,7 @@ function IssueNavigator() {
                   ))}
                 </select>
               </label>
+              {extraFields.has("priority") && (
               <label className="select-button">
                 <span className="sr-only">Filter by priority</span>
                 <select
@@ -677,6 +906,8 @@ function IssueNavigator() {
                   ))}
                 </select>
               </label>
+              )}
+              {extraFields.has("labels") && (
               <label className="select-button">
                 <Tag size={14} aria-hidden="true" />
                 <span className="sr-only">Filter by label</span>
@@ -695,6 +926,92 @@ function IssueNavigator() {
                   ))}
                 </select>
               </label>
+              )}
+              {extraFields.has("reporter") && (
+                <label className="select-button">
+                  <span className="sr-only">Filter by reporter</span>
+                  <select
+                    value={reporterFilter}
+                    onChange={(event) => {
+                      setReporterFilter(event.target.value);
+                      markViewModified();
+                    }}
+                  >
+                    <option value="ALL">Reporter: All</option>
+                    {members.map((member) => (
+                      <option value={member.id} key={member.id}>
+                        {member.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {extraFields.has("sprint") && (
+                <label className="select-button">
+                  <span className="sr-only">Filter by sprint</span>
+                  <select
+                    value={sprintFilter}
+                    onChange={(event) => {
+                      setSprintFilter(event.target.value);
+                      markViewModified();
+                    }}
+                  >
+                    <option value="ALL">Sprint: All</option>
+                    <option value="OPEN">Open sprints</option>
+                    {cycles.map((cycle) => (
+                      <option value={cycle.id} key={cycle.id}>
+                        {cycle.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {extraFields.has("created") && (
+                <label className="select-button">
+                  <span className="sr-only">Filter by created date</span>
+                  <select
+                    value={createdFilter}
+                    onChange={(event) => {
+                      setCreatedFilter(event.target.value);
+                      markViewModified();
+                    }}
+                  >
+                    <option value="ALL">Created: Any time</option>
+                    {CREATED_WINDOWS.map((window) => (
+                      <option value={window.value} key={window.value}>
+                        {window.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <DropdownMenu.Root>
+                <DropdownMenu.Trigger asChild>
+                  <button type="button" className="secondary-button search-more-button">
+                    More
+                    <ChevronDown size={14} aria-hidden="true" />
+                  </button>
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content className="search-menu" align="start" sideOffset={6}>
+                    <DropdownMenu.Label className="search-menu-label">Add a filter</DropdownMenu.Label>
+                    {EXTRA_FIELDS.map((field) => (
+                      <DropdownMenu.CheckboxItem
+                        key={field.value}
+                        className="search-menu-item"
+                        checked={extraFields.has(field.value)}
+                        onSelect={(event) => event.preventDefault()}
+                        onCheckedChange={(checked) => toggleExtraField(field.value, checked)}
+                      >
+                        <span className="search-menu-check" aria-hidden="true">
+                          {extraFields.has(field.value) ? "✓" : ""}
+                        </span>
+                        {field.label}
+                      </DropdownMenu.CheckboxItem>
+                    ))}
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu.Root>
             </div>
           )}
         </div>
@@ -834,78 +1151,39 @@ function IssueNavigator() {
         </section>
       )}
 
-      {isSaveViewOpen && (
-        <div
-          className="dialog-backdrop"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.currentTarget === event.target) setIsSaveViewOpen(false);
+      {filterDialog && (
+        <FilterDetailsDialog
+          title={
+            filterDialog === "edit"
+              ? "Edit filter details"
+              : filterDialog === "saveAs"
+                ? "Save as a new filter"
+                : "Save filter"
+          }
+          submitLabel={filterDialog === "edit" ? "Save" : "Save filter"}
+          initial={
+            filterDialog === "edit" && savedFilter
+              ? savedFilter
+              : {
+                  name: currentFilter ? `${currentFilter.name} (copy)` : "",
+                  description: savedFilter?.description ?? null,
+                  viewers: [],
+                  editors: [],
+                }
+          }
+          jqlPreview={filterDialog === "edit" && savedFilter ? savedFilter.jql : effectiveJql}
+          onClose={() => setFilterDialog(null)}
+          onSubmit={async (input) => {
+            if (filterDialog === "edit" && savedFilter) {
+              await updateFilter(savedFilter.id, input);
+              setFilterNotice("Filter details saved");
+              return;
+            }
+            const created = await createFilter({ ...input, jql: effectiveJql });
+            setFilterNotice(`Saved "${created.name}"`);
+            openFilter(created.id);
           }}
-        >
-          <section
-            className="save-view-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="save-view-title"
-          >
-            <header>
-              <div>
-                <h2 id="save-view-title">Save filter</h2>
-                <p>
-                  {mode === "jql"
-                    ? "Saves this JQL so you can rerun it from Filters."
-                    : "Reuse this filter combination across the workspace."}
-                </p>
-              </div>
-              <button
-                className="icon-button"
-                type="button"
-                onClick={() => setIsSaveViewOpen(false)}
-                aria-label="Close save filter dialog"
-              >
-                <X size={16} aria-hidden="true" />
-              </button>
-            </header>
-            <form onSubmit={handleSaveView}>
-              <label className="form-field">
-                <span>Filter name</span>
-                <input
-                  value={viewName}
-                  onChange={(event) => {
-                    setViewName(event.target.value);
-                    setViewError(null);
-                  }}
-                  maxLength={50}
-                  placeholder="e.g. Support triage"
-                  autoFocus
-                />
-              </label>
-              {mode === "jql" && <code className="search-jql-preview">{appliedJql || "(all issues)"}</code>}
-              {viewError && (
-                <p className="form-submit-error" role="alert">
-                  {viewError}
-                </p>
-              )}
-              <footer>
-                <button
-                  className="secondary-button"
-                  type="button"
-                  onClick={() => setIsSaveViewOpen(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  className="primary-button"
-                  type="submit"
-                  disabled={viewName.trim().length < 2 || isSavingView}
-                >
-                  <BookmarkPlus size={15} aria-hidden="true" />
-                  {isSavingView ? "Saving..." : "Save filter"}
-                </button>
-              </footer>
-            </form>
-          </section>
-        </div>
+        />
       )}
     </div>
   );

@@ -6,13 +6,7 @@ import type {
 
 export type { Gadget, GadgetConfig, GadgetType };
 
-export type DashboardRecord = {
-  id: string;
-  name: string;
-  gadgets: Gadget[];
-  createdAt: string;
-  updatedAt: string;
-};
+export type { DashboardRecord } from "../../../server/dashboards";
 
 export type GadgetField =
   | "title"

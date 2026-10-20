@@ -1,6 +1,6 @@
 import { z } from "zod";
 import prisma from "../../prisma/client";
-import { getIssue, type WorkspaceActor } from "./issues";
+import { getIssue, type WorkspaceActor, actorAccessUser } from "./issues";
 import { IssueActionError } from "./issueRelations";
 import { formatDuration } from "../app/data/issues";
 import type {
@@ -160,7 +160,7 @@ export async function createWorklog(
 
   return {
     worklog: serializeWorklog(worklog),
-    issue: await getIssue(issueId, actor.organizationId),
+    issue: await getIssue(issueId, actor.organizationId, actorAccessUser(actor)),
   };
 }
 
@@ -244,7 +244,7 @@ export async function updateWorklog(
 
   return {
     worklog: serializeWorklog(worklog),
-    issue: await getIssue(issueId, actor.organizationId),
+    issue: await getIssue(issueId, actor.organizationId, actorAccessUser(actor)),
   };
 }
 
@@ -290,5 +290,5 @@ export async function deleteWorklog(
     }),
   ]);
 
-  return getIssue(issueId, actor.organizationId);
+  return getIssue(issueId, actor.organizationId, actorAccessUser(actor));
 }

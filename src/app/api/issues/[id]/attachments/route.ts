@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { issueGuard, accessErrorResponse } from "../../../../../server/projectAccess";
 import {
   createAttachments,
   listAttachments,
@@ -22,10 +23,14 @@ export async function GET(request: NextRequest, context: IssueRouteContext) {
 
   try {
     const { id } = await context.params;
+    const denied = await issueGuard(result.session, id, "view");
+    if (denied) return denied;
     const attachments = await listAttachments(id, result.session.workspace.id);
     if (!attachments) return issueNotFound();
     return NextResponse.json(attachments);
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return routeError(
       error,
       "Failed to load attachments",
@@ -53,6 +58,8 @@ export async function POST(request: NextRequest, context: IssueRouteContext) {
       .getAll("files")
       .filter((entry): entry is File => typeof entry !== "string");
     const { id } = await context.params;
+    const denied = await issueGuard(result.session, id, "edit");
+    if (denied) return denied;
     const response = await createAttachments(
       id,
       files,
@@ -61,6 +68,8 @@ export async function POST(request: NextRequest, context: IssueRouteContext) {
     if (!response) return issueNotFound();
     return NextResponse.json(response, { status: 201 });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return routeError(
       error,
       "Failed to upload attachments",

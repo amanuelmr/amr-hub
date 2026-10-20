@@ -5,6 +5,11 @@
  */
 
 import { isEpicLevel } from "../app/data/workflow";
+import {
+  normalizeFieldValue,
+  type CustomFieldDefinition,
+  type CustomFieldValues,
+} from "../app/data/customFields";
 
 export type CsvParseResult = {
   rows: string[][];
@@ -133,7 +138,32 @@ export const IMPORT_FIELDS = [
 ] as const;
 
 export type ImportFieldKey = (typeof IMPORT_FIELDS)[number]["key"];
-export type ColumnMapping = Array<ImportFieldKey | "">;
+/** A column mapped to a custom field: `cf:<field id>`. */
+export type CustomFieldColumn = `cf:${string}`;
+export type ColumnTarget = ImportFieldKey | CustomFieldColumn | "";
+export type ColumnMapping = ColumnTarget[];
+
+export function customFieldColumn(fieldId: string): CustomFieldColumn {
+  return `cf:${fieldId}`;
+}
+
+export function isCustomFieldColumn(target: string): target is CustomFieldColumn {
+  return target.startsWith("cf:");
+}
+
+/** Jira exports custom fields as "Custom field (Name)". */
+const JIRA_CUSTOM_FIELD_HEADER = /^custom\s*field\s*\((.+)\)$/i;
+
+function guessCustomField(
+  header: string,
+  fields: Pick<CustomFieldDefinition, "id" | "name">[],
+): CustomFieldColumn | "" {
+  const name = (JIRA_CUSTOM_FIELD_HEADER.exec(header.trim())?.[1] ?? header).trim();
+  const normalized = normalizeHeader(name);
+  if (!normalized) return "";
+  const field = fields.find((candidate) => normalizeHeader(candidate.name) === normalized);
+  return field ? customFieldColumn(field.id) : "";
+}
 
 export function normalizeHeader(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -171,11 +201,18 @@ export function guessField(header: string): ImportFieldKey | "" {
   return "";
 }
 
-/** Guesses a mapping for each header; each single-value field is used once, labels may repeat. */
-export function guessColumnMapping(headers: string[]): ColumnMapping {
-  const used = new Set<ImportFieldKey>();
+/**
+ * Guesses a mapping for each header; each single-value field is used once,
+ * labels may repeat. Custom fields match by name or Jira's
+ * "Custom field (Name)" header; built-in fields win on a name clash.
+ */
+export function guessColumnMapping(
+  headers: string[],
+  customFields: Pick<CustomFieldDefinition, "id" | "name">[] = [],
+): ColumnMapping {
+  const used = new Set<string>();
   return headers.map((header) => {
-    const field = guessField(header);
+    const field = guessField(header) || guessCustomField(header, customFields);
     if (!field) return "";
     if (field !== "labels" && used.has(field)) return "";
     used.add(field);
@@ -281,6 +318,8 @@ export type ImportRow = {
   parentKey: string;
   sprint: string;
   fixVersion: string;
+  /** Raw cell text keyed by custom field id. */
+  customFields?: Record<string, string>;
 };
 
 export const MAX_IMPORT_ROWS = 2000;
@@ -323,11 +362,18 @@ export function buildImportRows(
       parentKey: "",
       sprint: "",
       fixVersion: "",
+      customFields: {},
     };
     mapping.forEach((field, columnIndex) => {
       if (!field) return;
       const value = unguard((cells[columnIndex] ?? "").trim());
       if (!value) return;
+      if (isCustomFieldColumn(field)) {
+        const fieldId = field.slice(3);
+        const values = (row.customFields ??= {});
+        if (!values[fieldId]) values[fieldId] = value;
+        return;
+      }
       if (field === "labels") {
         for (const label of splitLabels(value)) {
           if (!row.labels.includes(label)) row.labels.push(label);
@@ -407,6 +453,8 @@ export type ImportValidationContext = {
   priorities: ImportOption[];
   members: Array<{ id: string; name: string; email: string }>;
   sprints: Array<{ id: string; name: string }>;
+  /** Custom fields available in the target project. */
+  customFields?: CustomFieldDefinition[];
   /** Issue keys that already exist in the workspace (server only; optional on the client). */
   existingKeys?: Set<string>;
   defaults: { status: string; kind: string; priority: string };
@@ -427,6 +475,8 @@ export type ValidatedRow = {
   cycleId: string | null;
   fixVersion: string | null;
   issueId: string | null;
+  /** Typed custom field values keyed by field id, ready for createIssue. */
+  customFields: CustomFieldValues;
   errors: string[];
   warnings: string[];
 };
@@ -517,6 +567,27 @@ export function validateImportRow(
   const parentRef = row.parentKey.trim() || null;
   if (parentRef && isEpicLevel(kind)) errors.push("Epics cannot have a parent issue");
 
+  const customFields: CustomFieldValues = {};
+  for (const [fieldId, raw] of Object.entries(row.customFields ?? {})) {
+    const field = context.customFields?.find((candidate) => candidate.id === fieldId);
+    if (!field) {
+      warnings.push("A custom field column is not available in this project; skipped");
+      continue;
+    }
+    if (field.issueTypes.length > 0 && !field.issueTypes.includes(kind)) {
+      warnings.push(`${field.name} does not apply to this work type; skipped`);
+      continue;
+    }
+    const converted = csvCustomFieldInput(field, raw, context.members);
+    if ("error" in converted) {
+      errors.push(converted.error);
+      continue;
+    }
+    const result = normalizeFieldValue(field, converted.value);
+    if (!result.ok) errors.push(result.error);
+    else if (result.value !== null) customFields[field.id] = result.value;
+  }
+
   return {
     rowNumber: row.rowNumber,
     summary,
@@ -532,9 +603,47 @@ export function validateImportRow(
     cycleId,
     fixVersion: row.fixVersion.trim().slice(0, 120) || null,
     issueId: row.issueId.trim() || null,
+    customFields,
     errors,
     warnings,
   };
+}
+
+/**
+ * Turns CSV cell text into the input normalizeFieldValue expects: lists are
+ * split on commas or semicolons, dates accept the import's date formats and
+ * people are matched by email or display name.
+ */
+export function csvCustomFieldInput(
+  field: CustomFieldDefinition,
+  raw: string,
+  members: ImportValidationContext["members"],
+): { value: unknown } | { error: string } {
+  const text = raw.trim();
+  switch (field.type) {
+    case "MULTI_SELECT":
+    case "CHECKBOXES":
+      return { value: text.split(/[;,]/).map((item) => item.trim()).filter(Boolean) };
+    case "LABELS":
+      return { value: text.split(/[\s,;]+/).filter(Boolean) };
+    case "DATE": {
+      const date = normalizeDate(text);
+      return date ? { value: date } : { error: `${field.name}: "${text}" is not a recognised date` };
+    }
+    case "NUMBER":
+      return { value: text.replace(",", ".") };
+    case "USER": {
+      const needle = text.toLowerCase();
+      const member =
+        members.find((candidate) => candidate.email.toLowerCase() === needle) ??
+        members.find((candidate) => candidate.name.toLowerCase() === needle);
+      return member
+        ? { value: member.id }
+        : { error: `${field.name}: "${text}" is not a workspace member` };
+    }
+    default:
+      return { value: text };
+  }
 }
 
 /**

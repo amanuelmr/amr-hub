@@ -95,4 +95,40 @@ describe("boardConfigSchema", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("validates card layout, quick filters and JQL", () => {
+    const columns = [
+      { id: "a", name: "To do", statuses: ["OPEN"], wipLimit: null },
+    ];
+    expect(
+      boardConfigSchema.safeParse({
+        ...base,
+        columns,
+        swimlanes: "QUERY",
+        cardFields: ["epic", "labels", "dueDate", "subtasks"],
+        cardColors: {
+          strategy: "QUERY",
+          queries: [{ id: "q1", name: "Bugs", jql: "type = Bug", color: "#ff0000" }],
+        },
+        quickFilters: [{ id: "q1", name: "Mine", jql: "assignee = currentUser()" }],
+        swimlaneQueries: [{ id: "q1", name: "Bugs", jql: "type = Bug" }],
+        kanbanDoneDays: 14,
+        parallelSprints: true,
+      }).success,
+    ).toBe(true);
+    expect(
+      boardConfigSchema.safeParse({
+        ...base,
+        columns,
+        cardFields: ["labels", "dueDate", "subtasks", "components"],
+      }).success,
+    ).toBe(false);
+    expect(
+      boardConfigSchema.safeParse({
+        ...base,
+        columns,
+        quickFilters: [{ id: "q1", name: "Broken", jql: "priority = = High" }],
+      }).success,
+    ).toBe(false);
+  });
 });

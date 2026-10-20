@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_BOARD_CONFIG } from "../../../data/projects";
+import { DEFAULT_BOARD_CONFIG, parseBoardConfig } from "../../../data/projects";
 import {
+  addQuery,
+  removeQuery,
+  shiftQuery,
+  toggleCardField,
+  updateQuery,
   addColumn,
   assignStatus,
   moveColumn,
@@ -54,5 +59,40 @@ describe("board editor", () => {
       "IN_PROGRESS:qa",
     ]);
     expect(unmappedStatuses(next, order)).toEqual(["BACKLOG"]);
+  });
+});
+
+describe("card layout and board queries", () => {
+  it("caps extra card fields at three", () => {
+    const fields = DEFAULT_BOARD_CONFIG.cardFields;
+    expect(fields.filter((field) => ["labels", "subtasks", "dueDate"].includes(field))).toHaveLength(3);
+    expect(toggleCardField(fields, "components")).toBe(fields);
+    const fewer = toggleCardField(fields, "labels");
+    expect(fewer).not.toContain("labels");
+    expect(toggleCardField(fewer, "components")).toContain("components");
+    expect(toggleCardField(fields, "epic")).not.toContain("epic");
+  });
+
+  it("adds, edits, reorders and removes queries", () => {
+    let queries = addQuery([], { name: "Bugs", jql: "type = Bug" });
+    queries = addQuery(queries, { name: "Mine", jql: "assignee = currentUser()" });
+    expect(queries.map((query) => query.id)).toEqual(["q1", "q2"]);
+    queries = updateQuery(queries, "q1", { name: "Only bugs" });
+    expect(queries[0].name).toBe("Only bugs");
+    queries = shiftQuery(queries, "q2", -1);
+    expect(queries.map((query) => query.id)).toEqual(["q2", "q1"]);
+    expect(shiftQuery(queries, "q2", -1)).toBe(queries);
+    expect(removeQuery(queries, "q2").map((query) => query.id)).toEqual(["q1"]);
+  });
+
+  it("fills defaults for configs saved before the new keys", () => {
+    const config = parseBoardConfig(
+      JSON.stringify({ swimlanes: "EPIC", showBacklogColumn: true }),
+    );
+    expect(config.swimlanes).toBe("EPIC");
+    expect(config.quickFilters).toEqual([]);
+    expect(config.kanbanDoneDays).toBe(14);
+    expect(config.parallelSprints).toBe(false);
+    expect(config.cardColors.strategy).toBe("NONE");
   });
 });

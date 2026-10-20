@@ -25,6 +25,7 @@ export const bulkIssueSchema = z.discriminatedUnion("operation", [
   z.object({ issueIds: issueIdsSchema, operation: z.literal("fixVersion"), value: optionalIdSchema }).strict(),
   z.object({ issueIds: issueIdsSchema, operation: z.literal("flag"), value: z.boolean() }).strict(),
   z.object({ issueIds: issueIdsSchema, operation: z.literal("delete") }).strict(),
+  z.object({ issueIds: issueIdsSchema, operation: z.literal("archive"), value: z.boolean() }).strict(),
 ]);
 
 export type BulkIssueRequest = z.infer<typeof bulkIssueSchema>;

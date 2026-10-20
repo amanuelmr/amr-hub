@@ -1,5 +1,6 @@
 import type { Form } from "@prisma/client";
 import prisma from "../../prisma/client";
+import { visibleProjectWhere, type AccessUser } from "./projectAccess";
 import {
   defaultFormFields,
   type FormAnswers,
@@ -151,9 +152,18 @@ export async function deleteForm(projectId: string, formId: string, organization
 }
 
 /** Loads a form for the fill page: any member of the form's workspace may open it. */
-export async function getFormForFill(formId: string, organizationId: string) {
+export async function getFormForFill(
+  formId: string,
+  organizationId: string,
+  viewer?: AccessUser,
+) {
   const form = await prisma.form.findFirst({
-    where: { id: formId, project: { organizationId, deletedAt: null } },
+    where: {
+      id: formId,
+      project: viewer
+        ? visibleProjectWhere(viewer, organizationId)
+        : { organizationId, deletedAt: null, archivedAt: null },
+    },
     include: { project: { select: { id: true, key: true, name: true } } },
   });
   if (!form) return null;

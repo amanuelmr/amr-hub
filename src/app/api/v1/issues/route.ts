@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const [result, projects] = await Promise.all([
-      searchOrganizationIssues(context.organization.id, context.user.id, {
+      searchOrganizationIssues(context.organization.id, { id: context.user.id, role: context.role }, {
         jql: params.get("jql") ?? "",
         limit: maxResults,
         cursor: String(startAt),

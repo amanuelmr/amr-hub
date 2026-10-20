@@ -9,7 +9,6 @@ import {
   ChevronRight,
   Eye,
   EyeOff,
-  Share2,
   ThumbsUp,
   UserPlus,
   X,
@@ -346,45 +345,6 @@ export function VoteButton({
     >
       <ThumbsUp size={15} aria-hidden="true" />
       {voterIds.length}
-    </button>
-  );
-}
-
-export function ShareButton({
-  issueId,
-  compact = false,
-}: {
-  issueId: string;
-  compact?: boolean;
-}) {
-  const [copied, setCopied] = useState(false);
-
-  return (
-    <button
-      className={`secondary-button issue-toolbar-button${
-        compact ? " is-compact" : ""
-      }`}
-      type="button"
-      title="Copy link to issue"
-      aria-label={copied ? "Link copied" : "Share"}
-      onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(
-            `${window.location.origin}/issues/${encodeURIComponent(issueId)}`,
-          );
-          setCopied(true);
-          window.setTimeout(() => setCopied(false), 1600);
-        } catch {
-          setCopied(false);
-        }
-      }}
-    >
-      {copied ? (
-        <Check size={15} aria-hidden="true" />
-      ) : (
-        <Share2 size={15} aria-hidden="true" />
-      )}
-      {!compact && (copied ? "Copied" : "Share")}
     </button>
   );
 }

@@ -5,100 +5,51 @@ import {
   getDashboard,
   updateDashboard,
 } from "../../../../server/dashboards";
-import { requireWorkspaceSession } from "../../../../server/session";
-
-type RouteContext = {
-  params: Promise<{ id: string }>;
-};
+import {
+  dashboardError,
+  dashboardNotFound,
+  dashboardSession,
+  readJson,
+  validationFailed,
+  type DashboardRouteContext,
+} from "../http";
 
 export const dynamic = "force-dynamic";
 
-function notFound() {
-  return NextResponse.json({ error: "Dashboard not found" }, { status: 404 });
-}
-
-export async function GET(request: NextRequest, context: RouteContext) {
-  const result = await requireWorkspaceSession(request);
-  if ("response" in result) return result.response;
-  const { session } = result;
-  const { id } = await context.params;
-
+export async function GET(request: NextRequest, context: DashboardRouteContext) {
+  const auth = await dashboardSession(request);
+  if ("response" in auth) return auth.response;
   try {
-    const dashboard = await getDashboard(
-      id,
-      session.user.id,
-      session.workspace.id,
-    );
-    return dashboard ? NextResponse.json(dashboard) : notFound();
-  } catch (error) {
-    console.error("Failed to load dashboard", error);
-    return NextResponse.json(
-      { error: "Dashboard could not be loaded" },
-      { status: 500 },
-    );
-  }
-}
-
-export async function PATCH(request: NextRequest, context: RouteContext) {
-  const result = await requireWorkspaceSession(request);
-  if ("response" in result) return result.response;
-  const { session } = result;
-
-  try {
-    const validation = updateDashboardSchema.safeParse(await request.json());
-
-    if (!validation.success) {
-      return NextResponse.json(
-        {
-          error: "Validation failed",
-          fields: validation.error.flatten().fieldErrors,
-        },
-        { status: 400 },
-      );
-    }
-
     const { id } = await context.params;
-    const dashboard = await updateDashboard(
-      id,
-      validation.data,
-      session.user.id,
-      session.workspace.id,
-    );
-    return dashboard ? NextResponse.json(dashboard) : notFound();
+    const dashboard = await getDashboard(id, auth.user, auth.organizationId);
+    return dashboard ? NextResponse.json(dashboard) : dashboardNotFound();
   } catch (error) {
-    if (error instanceof SyntaxError) {
-      return NextResponse.json(
-        { error: "Request body must be valid JSON" },
-        { status: 400 },
-      );
-    }
-
-    console.error("Failed to update dashboard", error);
-    return NextResponse.json(
-      { error: "Dashboard could not be updated" },
-      { status: 500 },
-    );
+    return dashboardError(error, "Dashboard could not be loaded");
   }
 }
 
-export async function DELETE(request: NextRequest, context: RouteContext) {
-  const result = await requireWorkspaceSession(request);
-  if ("response" in result) return result.response;
-  const { session } = result;
-  const { id } = await context.params;
-
+export async function PATCH(request: NextRequest, context: DashboardRouteContext) {
+  const auth = await dashboardSession(request);
+  if ("response" in auth) return auth.response;
+  const validation = updateDashboardSchema.safeParse(await readJson(request));
+  if (!validation.success) return validationFailed(validation.error);
   try {
-    const deleted = await deleteDashboard(
-      id,
-      session.user.id,
-      session.workspace.id,
-    );
-    return deleted ? NextResponse.json({ ok: true }) : notFound();
+    const { id } = await context.params;
+    const dashboard = await updateDashboard(id, validation.data, auth.user, auth.organizationId);
+    return dashboard ? NextResponse.json(dashboard) : dashboardNotFound();
   } catch (error) {
-    console.error("Failed to delete dashboard", error);
-    return NextResponse.json(
-      { error: "Dashboard could not be deleted" },
-      { status: 500 },
-    );
+    return dashboardError(error, "Dashboard could not be updated");
+  }
+}
+
+export async function DELETE(request: NextRequest, context: DashboardRouteContext) {
+  const auth = await dashboardSession(request);
+  if ("response" in auth) return auth.response;
+  try {
+    const { id } = await context.params;
+    const deleted = await deleteDashboard(id, auth.user, auth.organizationId);
+    return deleted ? new NextResponse(null, { status: 204 }) : dashboardNotFound();
+  } catch (error) {
+    return dashboardError(error, "Dashboard could not be deleted");
   }
 }

@@ -1620,3 +1620,127 @@ a.calendar-chip-title:hover {
     max-width: 100%;
   }
 }
+
+/* Timeline dependency arrows (Jira Plans style) */
+.timeline-dependencies {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.timeline-dep {
+  fill: none;
+  stroke: var(--gray-500);
+  stroke-width: 1.5;
+  pointer-events: stroke;
+}
+
+.timeline-dep.conflict {
+  stroke: var(--red-500);
+  stroke-dasharray: 4 3;
+}
+
+.timeline-dep-head {
+  fill: var(--gray-500);
+}
+
+.timeline-dep-head.conflict {
+  fill: var(--red-500);
+}
+
+.secondary-button.active {
+  border-color: var(--console-line);
+  color: var(--console-ink);
+  background: var(--console-lime);
+}
+
+/* Roadmap (cross-project timeline) */
+.roadmap-header-page {
+  padding-bottom: 0;
+}
+
+.roadmap-page .timeline-page {
+  padding-top: 12px;
+}
+
+.roadmap-projects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.roadmap-project {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 2px solid var(--gray-300);
+  border-radius: 3px;
+  color: var(--gray-500);
+  background: var(--surface);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.roadmap-project.active {
+  border-color: var(--console-line);
+  color: var(--ink);
+  box-shadow: var(--console-shadow-small);
+}
+
+.timeline-project-row {
+  background: var(--gray-50);
+}
+
+.timeline-project-row .timeline-label {
+  gap: 8px;
+  background: var(--gray-50);
+}
+
+.timeline-project-swatch {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border: 2px solid var(--console-line);
+  border-radius: 2px;
+}
+
+.timeline-project-name {
+  display: inline-flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeline-project-name span {
+  color: var(--gray-500);
+  font-size: 10px;
+}
+
+.timeline-project-name:hover {
+  color: var(--green-600);
+}
+
+/* Dashboard header: star and sharing summary */
+.dashboards-title {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.dashboards-meta {
+  color: var(--gray-500);
+  font-size: 12px;
+}

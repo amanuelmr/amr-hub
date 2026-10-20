@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { sanitizeDescriptionHtml, stripHtml } from "./richText";
 import { isValidStatusKey, isValidTypeKey } from "../app/data/workflow";
+import { customFieldValuesInputSchema } from "./customFieldSchemas";
 
 /**
  * Status keys are built-ins or custom "<CATEGORY>:<slug>" keys. The server
@@ -121,6 +122,7 @@ export const createIssueSchema = z
     startDate: dueDateSchema.nullable().optional(),
     originalEstimateMinutes: minutesSchema.optional(),
     environment: environmentSchema.optional(),
+    customFields: customFieldValuesInputSchema.optional(),
   })
   .strict();
 
@@ -148,6 +150,7 @@ export const updateIssueSchema = z
     environment: environmentSchema.optional(),
     originalEstimateMinutes: minutesSchema.optional(),
     remainingEstimateMinutes: minutesSchema.optional(),
+    customFields: customFieldValuesInputSchema.optional(),
   })
   .strict()
   .refine((updates) => Object.keys(updates).length > 0, {
@@ -175,6 +178,10 @@ export const listIssuesQuerySchema = z.object({
   sort: z.enum(["NEWEST", "OLDEST", "RANK"]).default("NEWEST"),
   cursor: z.string().trim().min(1).max(120).optional(),
   limit: z.coerce.number().int().min(1).max(500).optional(),
+  archived: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
 });
 
 export type ListIssuesQuery = z.infer<typeof listIssuesQuerySchema>;

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { ZodError } from "zod";
 import { IssueActionError } from "../../../../../server/issueRelations";
+import { accessErrorResponse } from "../../../../../server/projectAccess";
 
 export function validationFailed(error: ZodError) {
   return NextResponse.json(
@@ -14,6 +15,8 @@ export function issueNotFound(message = "Issue not found") {
 }
 
 export function routeError(error: unknown, context: string, message: string) {
+  const denied = accessErrorResponse(error);
+  if (denied) return denied;
   if (error instanceof SyntaxError) {
     return NextResponse.json(
       { error: "Request body must be valid JSON" },

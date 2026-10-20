@@ -1,0 +1,230 @@
+/* project-access — project access, roles, trash and archive. Theme tokens only. */
+
+.pac-levels {
+  display: grid;
+  gap: 8px;
+}
+
+.pac-level {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 2px solid var(--console-line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.pac-level input {
+  margin: 3px 0 0;
+}
+
+.pac-level > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pac-level strong {
+  font-size: 13px;
+}
+
+.pac-level small {
+  color: var(--gray-500);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.pac-level.is-selected {
+  border-color: var(--ink);
+  background: var(--gray-50);
+}
+
+/* Without an icon (create project form) the grid has two columns. */
+.pac-level:not(:has(svg)) {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.pac-people {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  border: 2px solid var(--console-line);
+  border-radius: var(--radius);
+  list-style: none;
+}
+
+.pac-person {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--gray-200);
+}
+
+.pac-person:last-child {
+  border-bottom: 0;
+}
+
+.pac-person-name {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.pac-person-name strong {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.pac-person-name small {
+  overflow: hidden;
+  color: var(--gray-500);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pac-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border: 1px solid var(--console-line);
+  border-radius: var(--radius);
+  color: var(--gray-500);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.pac-person-name .pac-tag {
+  margin-left: 0;
+}
+
+.pac-role {
+  height: 32px;
+  padding: 0 8px;
+  border: 2px solid var(--console-line);
+  border-radius: var(--radius);
+  color: var(--ink);
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.pac-picker {
+  display: grid;
+  max-height: 260px;
+  overflow-y: auto;
+  border: 2px solid var(--console-line);
+  border-radius: var(--radius);
+}
+
+.pac-picker > .pa-muted {
+  margin: 0;
+  padding: 10px 12px;
+}
+
+.pac-pick {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--gray-200);
+  cursor: pointer;
+}
+
+.pac-pick:last-child {
+  border-bottom: 0;
+}
+
+.pac-pick:hover {
+  background: var(--gray-50);
+}
+
+.pac-lock {
+  flex: none;
+  margin-left: 6px;
+  color: var(--gray-500);
+}
+
+.pa-access-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pa-archived-banner {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border: 2px solid var(--amber-500);
+  border-radius: var(--radius);
+  color: var(--ink);
+  background: color-mix(in srgb, var(--amber-500) 14%, var(--surface));
+  font-size: 13px;
+}
+
+.pa-archived-project {
+  margin: 8px 24px 0;
+}
+
+.pac-table-wrap {
+  border: 2px solid var(--console-line);
+  border-radius: var(--radius);
+}
+
+.pac-table td {
+  white-space: nowrap;
+}
+
+.pac-table td:first-child {
+  min-width: 220px;
+  white-space: normal;
+}
+
+.pac-cell-title {
+  overflow-wrap: anywhere;
+}
+
+.pac-danger-title {
+  margin-top: 20px;
+}
+
+.pac-trash {
+  display: grid;
+  gap: 24px;
+}
+
+.pac-trash section {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .pac-person {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .pac-person .pac-role {
+    grid-column: 2 / 3;
+    width: 100%;
+  }
+
+  .pa-archived-project {
+    margin: 8px 16px 0;
+  }
+}

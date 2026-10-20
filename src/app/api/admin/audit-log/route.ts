@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../../server/projectAccess";
 import { listAuditLogs, parseAuditDate } from "../../../../server/audit";
 import { requireWorkspaceRole } from "../../../../server/session";
 
@@ -28,6 +29,8 @@ export async function GET(request: NextRequest) {
       }),
     );
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     console.error("Failed to load audit log", error);
     return NextResponse.json(
       { error: "The audit log could not be loaded" },

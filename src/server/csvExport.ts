@@ -1,6 +1,9 @@
 import prisma from "../../prisma/client";
 import { KIND_LABELS, PRIORITY_LABELS } from "../app/data/issues";
 import { htmlToPlainText, minutesToHours, toCsv } from "./csvExportCore";
+import { exportFieldValue, parseCustomFieldValues, sortFields } from "../app/data/customFields";
+import { listAllCustomFields } from "./customFields";
+import { listOrganizationMembers } from "./members";
 
 const exportInclude = {
   project: { select: { id: true, key: true, name: true } },
@@ -89,9 +92,22 @@ export async function exportIssuesCsv(organizationId: string, projectId: string 
   const { scope, projectIds } = await loadScope(organizationId, projectId);
   const issues = await loadIssues(organizationId, projectIds, {});
   const { statusNames, typeNames } = await nameLookups(organizationId);
+  // Jira-style "Custom field (Name)" columns for the fields in scope.
+  const [allFields, members] = await Promise.all([
+    listAllCustomFields(organizationId),
+    listOrganizationMembers(organizationId),
+  ]);
+  const customFields = sortFields(
+    allFields.filter(
+      (field) => !projectIds || field.projectId === null || projectIds.includes(field.projectId),
+    ),
+  );
 
-  const rows: unknown[][] = [CSV_EXPORT_HEADERS];
+  const rows: unknown[][] = [
+    [...CSV_EXPORT_HEADERS, ...customFields.map((field) => `Custom field (${field.name})`)],
+  ];
   for (const issue of issues) {
+    const customValues = parseCustomFieldValues(issue.customFields);
     rows.push([
       issue.id,
       issue.id,
@@ -126,6 +142,11 @@ export async function exportIssuesCsv(organizationId: string, projectId: string 
       issue.project.key,
       issue.project.name,
       htmlToPlainText(issue.description),
+      ...customFields.map((field) =>
+        field.type === "PARAGRAPH"
+          ? htmlToPlainText(String(customValues[field.id] ?? ""))
+          : exportFieldValue(field, customValues[field.id], members),
+      ),
     ]);
   }
   return { scope, count: issues.length, body: toCsv(rows) };

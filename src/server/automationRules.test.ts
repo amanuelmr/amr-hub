@@ -6,7 +6,7 @@ import {
   parseActions,
   parseConditions,
   planActions,
-  renderTemplate,
+  renderSmartValues,
   type AutomationIssueContext,
 } from "./automationRules";
 
@@ -25,9 +25,8 @@ const issue: AutomationIssueContext = {
 };
 
 const values = {
-  issueKey: "ENG-7",
-  issueSummary: "Checkout fails",
-  actor: "Ada",
+  issue: { key: "ENG-7", summary: "Checkout fails" },
+  initiator: "Ada",
 };
 
 describe("matchesConditions", () => {
@@ -103,10 +102,10 @@ describe("matchesConditions", () => {
   });
 });
 
-describe("renderTemplate", () => {
+describe("renderSmartValues (legacy placeholders)", () => {
   it("substitutes known placeholders and keeps unknown ones", () => {
     expect(
-      renderTemplate(
+      renderSmartValues(
         "{{issue.key}}: {{ issue.summary }} by {{actor}} {{nope}}",
         values,
       ),
@@ -129,8 +128,10 @@ describe("planActions", () => {
       ],
       issue,
       values,
-      { "member-reporter": "Rita" },
-      { "label-b": "Backend" },
+      {
+        memberNames: { "member-reporter": "Rita" },
+        labelNames: { "label-b": "Backend" },
+      },
     );
     expect(plan.issueUpdates).toEqual({
       priority: "HIGH",

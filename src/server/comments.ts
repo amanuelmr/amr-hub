@@ -1,6 +1,45 @@
+import { z } from "zod";
 import prisma from "../../prisma/client";
-import { getIssue, type WorkspaceActor } from "./issues";
+import { looksLikeHtml } from "../app/data/richText";
+import { getIssue, type WorkspaceActor, actorAccessUser } from "./issues";
 import { IssueActionError } from "./issueRelations";
+import { hasRichContent, sanitizeCommentHtml, stripHtml } from "./richText";
+
+/** Raw request body for creating or editing a comment. */
+export const commentBodySchema = z
+  .object({ body: z.string().max(100_000) })
+  .strict();
+
+const MAX_STORED_COMMENT = 50_000;
+
+/**
+ * Comments are rich HTML from the shared editor, sanitized here (the trust
+ * boundary). Plain-text bodies (older clients, the public API) are kept as-is.
+ * Returns the body to store, or throws a 400 when it is empty or too long.
+ */
+export function prepareCommentBody(raw: string): string {
+  const trimmed = raw.trim();
+  if (looksLikeHtml(trimmed)) {
+    const html = sanitizeCommentHtml(trimmed);
+    if (
+      !hasRichContent(html) ||
+      stripHtml(html).length + (html.includes("<img") ? 2 : 0) < 2
+    ) {
+      throw new IssueActionError("Write at least 2 characters", 400);
+    }
+    if (html.length > MAX_STORED_COMMENT) {
+      throw new IssueActionError("This comment is too long", 400);
+    }
+    return html;
+  }
+  if (trimmed.length < 2) {
+    throw new IssueActionError("Write at least 2 characters", 400);
+  }
+  if (trimmed.length > 10_000) {
+    throw new IssueActionError("This comment is too long", 400);
+  }
+  return trimmed;
+}
 
 export function canEditComment(authorId: string | null, actorId: string) {
   return authorId !== null && authorId === actorId;
@@ -12,6 +51,14 @@ export function canDeleteComment(
   role: string,
 ) {
   return role === "owner" || canEditComment(authorId, actorId);
+}
+
+/** Bumps updatedAt so live views (GET /api/live) see comment changes. */
+async function touchIssue(issueId: string) {
+  await prisma.issue.update({
+    where: { id: issueId },
+    data: { updatedAt: new Date() },
+  });
 }
 
 async function findComment(
@@ -39,9 +86,10 @@ export async function editComment(
 
   await prisma.comment.update({
     where: { id: comment.id },
-    data: { body, editedAt: new Date() },
+    data: { body: prepareCommentBody(body), editedAt: new Date() },
   });
-  return getIssue(issueId, actor.organizationId);
+  await touchIssue(issueId);
+  return getIssue(issueId, actor.organizationId, actorAccessUser(actor));
 }
 
 export async function deleteComment(
@@ -60,5 +108,6 @@ export async function deleteComment(
   }
 
   await prisma.comment.delete({ where: { id: comment.id } });
-  return getIssue(issueId, actor.organizationId);
+  await touchIssue(issueId);
+  return getIssue(issueId, actor.organizationId, actorAccessUser(actor));
 }

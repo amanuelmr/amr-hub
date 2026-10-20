@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../server/projectAccess";
 import { listOrganizationMembers } from "../../../server/members";
 import { requireWorkspaceSession } from "../../../server/session";
 
@@ -15,6 +16,8 @@ export async function GET(request: NextRequest) {
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     console.error("Failed to load workspace members", error);
     return NextResponse.json(
       { error: "Workspace members could not be loaded" },

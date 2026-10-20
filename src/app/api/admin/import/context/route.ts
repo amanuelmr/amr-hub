@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accessErrorResponse } from "../../../../../server/projectAccess";
 import {
   loadImportProjects,
   loadProjectImportContext,
@@ -34,6 +35,8 @@ export async function GET(request: NextRequest) {
       project,
     });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     console.error("Failed to load import context", error);
     return NextResponse.json(
       { error: "Import settings could not be loaded" },

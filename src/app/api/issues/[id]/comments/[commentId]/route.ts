@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createCommentSchema } from "../../../../../../server/issueSchemas";
-import { deleteComment, editComment } from "../../../../../../server/comments";
+import { issueGuard, accessErrorResponse } from "../../../../../../server/projectAccess";
+import {
+  commentBodySchema,
+  deleteComment,
+  editComment,
+} from "../../../../../../server/comments";
 import {
   actorFromSession,
   requireWorkspaceRole,
@@ -20,9 +24,11 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   if ("response" in result) return result.response;
 
   try {
-    const validation = createCommentSchema.safeParse(await request.json());
+    const validation = commentBodySchema.safeParse(await request.json());
     if (!validation.success) return validationFailed(validation.error);
     const { id, commentId } = await context.params;
+    const denied = await issueGuard(result.session, id, "comment");
+    if (denied) return denied;
     const issue = await editComment(
       id,
       commentId,
@@ -32,6 +38,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     if (!issue) return issueNotFound("Comment not found");
     return NextResponse.json(issue);
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return routeError(
       error,
       "Failed to edit comment",
@@ -46,6 +54,8 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
   try {
     const { id, commentId } = await context.params;
+    const denied = await issueGuard(result.session, id, "comment");
+    if (denied) return denied;
     const issue = await deleteComment(
       id,
       commentId,
@@ -55,6 +65,8 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     if (!issue) return issueNotFound("Comment not found");
     return NextResponse.json(issue);
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     return routeError(
       error,
       "Failed to delete comment",

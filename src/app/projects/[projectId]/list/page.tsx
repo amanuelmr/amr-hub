@@ -29,7 +29,15 @@ import {
 import { sortIssuesByJql, textContains, type JqlField, type JqlOrderBy } from "../../../data/jql";
 import { KindIcon } from "../../../components/IssueVisuals";
 import { WorkspaceLoading } from "../../../components/WorkspaceLoading";
-import { COLUMNS_BY_ID, initials, issueLink } from "../../../components/search/columns";
+import {
+  COLUMNS_BY_ID,
+  customFieldColumn,
+  initials,
+  issueLink,
+  type CustomColumnId,
+} from "../../../components/search/columns";
+import { useCustomFields } from "../../../components/fields/customFieldStore";
+import { projectFields } from "../../../data/customFields";
 import { useColumnLookups, useJqlContext } from "../../../components/search/useJqlContext";
 import {
   isEpicLevel,
@@ -58,8 +66,11 @@ type ListColumnId =
   | "fixVersion"
   | "parent";
 
+/** Built-in columns plus the project's custom fields (`cf:<field id>`). */
+type ColumnKey = ListColumnId | CustomColumnId;
+
 type ListColumn = {
-  id: ListColumnId;
+  id: ColumnKey;
   label: string;
   sortField: JqlField;
   width: string;
@@ -101,14 +112,18 @@ const DEFAULT_LIST_COLUMNS: ListColumnId[] = [
 const COLUMNS_STORAGE_KEY = "amr.list.columns";
 const AVATAR_LIMIT = 5;
 
-function readStoredColumns(): ListColumnId[] {
+function readStoredColumns(): ColumnKey[] {
   try {
     const raw = window.localStorage.getItem(COLUMNS_STORAGE_KEY);
     if (!raw) return DEFAULT_LIST_COLUMNS;
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return DEFAULT_LIST_COLUMNS;
-    const known = new Set(LIST_COLUMNS.map((column) => column.id));
-    const ids = parsed.filter((id): id is ListColumnId => known.has(id as ListColumnId));
+    const known = new Set<string>(LIST_COLUMNS.map((column) => column.id));
+    // Custom field columns are kept even before the field list has loaded.
+    const ids = parsed.filter(
+      (id): id is ColumnKey =>
+        typeof id === "string" && (known.has(id) || id.startsWith("cf:")),
+    );
     return ids.includes("summary") ? ids : DEFAULT_LIST_COLUMNS;
   } catch {
     return DEFAULT_LIST_COLUMNS;
@@ -137,9 +152,14 @@ export default function ProjectListPage() {
 function ProjectList() {
   const { projectId } = useParams<{ projectId: string }>();
   const { issues, members, isLoading, updateIssue, createIssue } = useIssues();
-  const { projects } = useProjects();
+  const { allProjects: projects } = useProjects();
   const { data: activeMember } = authClient.useActiveMember();
-  const isViewer = activeMember?.role === "viewer";
+  // Read-only for workspace viewers and for people without edit access to
+  // this project (Limited/Private projects, project Viewer role, archived).
+  const isViewer =
+    activeMember?.role === "viewer" ||
+    projects.find((candidate) => candidate.id === projectId)?.permissions
+      ?.canEdit === false;
   const project = projects.find((candidate) => candidate.id === projectId);
   const workflow = useWorkflow(projectId);
   const workflowStatuses = workflow.statuses;
@@ -154,7 +174,24 @@ function ProjectList() {
   const [assigneeFilter, setAssigneeFilter] = useState<Set<string>>(new Set());
   const [kindFilter, setKindFilter] = useState<IssueKind | "">("");
   const [categoryFilter, setCategoryFilter] = useState<StatusCategory | "">("");
-  const [visibleColumns, setVisibleColumns] = useState<ListColumnId[]>(DEFAULT_LIST_COLUMNS);
+  const [visibleColumns, setVisibleColumns] = useState<ColumnKey[]>(DEFAULT_LIST_COLUMNS);
+  const { fields: customFields } = useCustomFields();
+  const customColumns = useMemo(
+    () => projectFields(customFields, projectId).map(customFieldColumn),
+    [customFields, projectId],
+  );
+  const allColumns = useMemo<ListColumn[]>(
+    () => [
+      ...LIST_COLUMNS,
+      ...customColumns.map((column) => ({
+        id: column.id as CustomColumnId,
+        label: column.label,
+        sortField: column.sortField,
+        width: column.width,
+      })),
+    ],
+    [customColumns],
+  );
   useEffect(() => {
     // Restore the viewer's column choice after hydration (storage is per-browser).
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -279,10 +316,10 @@ function ProjectList() {
 
   if (isLoading) return <WorkspaceLoading label="list" />;
 
-  const columns = LIST_COLUMNS.filter((column) => visibleColumns.includes(column.id));
+  const columns = allColumns.filter((column) => visibleColumns.includes(column.id));
   const grid = columns.map((column) => column.width).join(" ");
 
-  const setColumns = (ids: ListColumnId[]) => {
+  const setColumns = (ids: ColumnKey[]) => {
     setVisibleColumns(ids);
     try {
       window.localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(ids));
@@ -291,12 +328,12 @@ function ProjectList() {
     }
   };
 
-  const toggleColumn = (id: ListColumnId) => {
+  const toggleColumn = (id: ColumnKey) => {
     if (id === "summary") return;
     setColumns(
       visibleColumns.includes(id)
         ? visibleColumns.filter((column) => column !== id)
-        : LIST_COLUMNS.map((column) => column.id).filter(
+        : allColumns.map((column) => column.id).filter(
             (column) => column === id || visibleColumns.includes(column),
           ),
     );
@@ -398,7 +435,10 @@ function ProjectList() {
       const hasChildren = childrenOf.has(issue.id);
       const isSaving = savingIds.has(issue.id);
       const href = issueLink(lookups, issue.id);
-      const cell = (id: ListColumnId): ReactNode => {
+      const cell = (id: ColumnKey): ReactNode => {
+        if (id.startsWith("cf:")) {
+          return customColumns.find((column) => column.id === id)?.render(issue, lookups) ?? null;
+        }
         switch (id) {
           case "type":
             return <KindIcon kind={issue.kind} />;
@@ -658,7 +698,7 @@ function ProjectList() {
             <Popover.Content className="search-popover" align="end" sideOffset={6}>
               <p className="search-popover-title">Columns</p>
               <div className="search-column-list">
-                {LIST_COLUMNS.map((column) => (
+                {allColumns.map((column) => (
                   <label key={column.id}>
                     <input
                       type="checkbox"

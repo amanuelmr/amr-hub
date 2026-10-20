@@ -20,6 +20,10 @@ import {
   requireWorkspaceRole,
   requireWorkspaceSession,
 } from "../../../../server/session";
+import {
+  accessErrorResponse,
+  accessUserFromSession,
+} from "../../../../server/projectAccess";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -33,12 +37,18 @@ export async function GET(request: NextRequest, context: RouteContext) {
   const { id } = await context.params;
 
   try {
-    const issue = await getIssue(id, result.session.workspace.id);
+    const issue = await getIssue(
+      id,
+      result.session.workspace.id,
+      accessUserFromSession(result.session),
+    );
     if (!issue) {
       return NextResponse.json({ error: "Issue not found" }, { status: 404 });
     }
     return NextResponse.json(issue);
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     console.error("Failed to load issue", error);
     return NextResponse.json(
       { error: "Issue could not be loaded" },
@@ -78,6 +88,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     return NextResponse.json(issue);
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     if (error instanceof SyntaxError) {
       return NextResponse.json(
         { error: "Request body must be valid JSON" },
@@ -124,6 +136,8 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     }
     return new NextResponse(null, { status: 204 });
   } catch (error) {
+    const denied = accessErrorResponse(error);
+    if (denied) return denied;
     if (error instanceof IssueActionError) {
       return NextResponse.json(
         { error: error.message },

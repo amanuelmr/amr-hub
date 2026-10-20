@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import { apiRequest } from "../../../IssueProvider";
+import { useProjects } from "../../../ProjectProvider";
 import { authClient } from "../../../../lib/auth-client";
 
 export type ProjectPerson = {
@@ -21,6 +22,17 @@ export function useWorkspaceRole() {
     userId: activeMember?.userId ?? null,
     isViewer: activeMember?.role === "viewer",
     isOwner: activeMember?.role === "owner",
+  };
+}
+
+/** The current user's permissions on a project (from the projects list). */
+export function useProjectPermissions(projectId: string) {
+  const { allProjects } = useProjects();
+  const permissions = allProjects.find((project) => project.id === projectId)
+    ?.permissions;
+  return {
+    canEdit: permissions?.canEdit ?? false,
+    canAdmin: permissions?.canAdmin ?? false,
   };
 }
 
