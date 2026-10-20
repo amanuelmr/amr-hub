@@ -30,6 +30,7 @@ describe("parseBoardView", () => {
       daysInColumn: true,
       compact: true,
       collapsedColumns: ["a"],
+      hiddenFields: [],
     });
   });
 });

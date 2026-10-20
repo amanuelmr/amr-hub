@@ -1,18 +1,22 @@
 "use client";
 
 import { useCallback, useMemo, useSyncExternalStore } from "react";
+import type { CardField } from "../../data/projects";
 
 /** Per-viewer board view settings, kept in this browser like Jira's. */
 export type BoardView = {
   daysInColumn: boolean;
   compact: boolean;
   collapsedColumns: string[];
+  /** Card fields this viewer hid; the board settings decide what's offered. */
+  hiddenFields: CardField[];
 };
 
 export const DEFAULT_BOARD_VIEW: BoardView = {
   daysInColumn: true,
   compact: false,
   collapsedColumns: [],
+  hiddenFields: [],
 };
 
 const listeners = new Set<() => void>();
@@ -46,6 +50,9 @@ export function parseBoardView(raw: string | null): BoardView {
       compact: typeof value.compact === "boolean" ? value.compact : false,
       collapsedColumns: Array.isArray(value.collapsedColumns)
         ? value.collapsedColumns.filter((id): id is string => typeof id === "string")
+        : [],
+      hiddenFields: Array.isArray(value.hiddenFields)
+        ? value.hiddenFields.filter((field): field is CardField => typeof field === "string")
         : [],
     };
   } catch {
