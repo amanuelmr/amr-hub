@@ -26,6 +26,7 @@ import { searchIssuesWithJql } from "../data/jql";
 import type { FilterSubscription } from "../data/notifications";
 import { WorkspaceLoading } from "../components/WorkspaceLoading";
 import { FilterSubscribeDialog } from "../components/FilterSubscribeDialog";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { useJqlContext } from "../components/search/useJqlContext";
 import { useFilters } from "../components/search/useFilters";
 import { FilterDetailsDialog } from "../components/search/FilterDetailsDialog";
@@ -391,59 +392,6 @@ export default function FiltersPage() {
         />
       )}
     </div>
-  );
-}
-
-function ConfirmDialog({
-  title,
-  body,
-  confirmLabel,
-  onClose,
-  onConfirm,
-}: {
-  title: string;
-  body: string;
-  confirmLabel: string;
-  onClose: () => void;
-  onConfirm: () => Promise<void>;
-}) {
-  const [isWorking, setIsWorking] = useState(false);
-  return (
-    <Dialog.Root open onOpenChange={(open) => !open && onClose()}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="planning-dialog-overlay" />
-        <Dialog.Content className="save-view-dialog planning-dialog filter-details-dialog">
-          <header>
-            <Dialog.Title asChild>
-              <h2>{title}</h2>
-            </Dialog.Title>
-            <Dialog.Close asChild>
-              <button className="icon-button" type="button" aria-label="Close">
-                <X size={16} aria-hidden="true" />
-              </button>
-            </Dialog.Close>
-          </header>
-          <Dialog.Description>{body}</Dialog.Description>
-          <footer className="filter-details-actions">
-            <button className="secondary-button" type="button" onClick={onClose}>
-              Cancel
-            </button>
-            <button
-              className="danger-button"
-              type="button"
-              disabled={isWorking}
-              onClick={async () => {
-                setIsWorking(true);
-                await onConfirm();
-                onClose();
-              }}
-            >
-              {confirmLabel}
-            </button>
-          </footer>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
   );
 }
 

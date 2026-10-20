@@ -88,12 +88,13 @@ export function useFilters() {
   }, []);
 
   const changeOwner = useCallback(async (id: string, userId: string) => {
-    replace(
-      await apiRequest<FilterSummary>(path(id, "/owner"), {
-        method: "PATCH",
-        body: JSON.stringify({ userId }),
-      }),
-    );
+    const filter = await apiRequest<Partial<FilterSummary>>(path(id, "/owner"), {
+      method: "PATCH",
+      body: JSON.stringify({ userId }),
+    });
+    // A private filter disappears from the list once someone else owns it.
+    if (filter.id) replace(filter as FilterSummary);
+    else setFilters((current) => current?.filter((item) => item.id !== id) ?? null);
   }, []);
 
   return { filters, error, refresh, create, update, remove, setStar, copy, changeOwner };

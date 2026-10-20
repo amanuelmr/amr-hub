@@ -16,6 +16,7 @@ export function FilterDetailsDialog({
   submitLabel,
   initial,
   jqlPreview,
+  noun = "filter",
   onClose,
   onSubmit,
 }: {
@@ -24,6 +25,8 @@ export function FilterDetailsDialog({
   initial: { name: string; description: string | null; viewers: FilterShare[]; editors: FilterShare[] };
   /** Shown read-only so people know what they are saving. */
   jqlPreview?: string;
+  /** What is being shared, for the wording ("filter" or "dashboard"). */
+  noun?: string;
   onClose: () => void;
   onSubmit: (input: Omit<FilterInput, "jql">) => Promise<void>;
 }) {
@@ -38,7 +41,7 @@ export function FilterDetailsDialog({
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (name.trim().length < 2) {
-      setError("Give the filter a name of at least 2 characters.");
+      setError(`Give the ${noun} a name of at least 2 characters.`);
       return;
     }
     setIsSaving(true);
@@ -52,7 +55,7 @@ export function FilterDetailsDialog({
       });
       onClose();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "The filter could not be saved");
+      setError(saveError instanceof Error ? saveError.message : `The ${noun} could not be saved`);
     } finally {
       setIsSaving(false);
     }
@@ -74,7 +77,7 @@ export function FilterDetailsDialog({
             </Dialog.Close>
           </header>
           <Dialog.Description className="sr-only">
-            Name the filter and choose who can view and edit it.
+            Name the {noun} and choose who can view and edit it.
           </Dialog.Description>
           <form onSubmit={submit} className="filter-details-form">
             <label className="form-field">
@@ -100,14 +103,14 @@ export function FilterDetailsDialog({
               shares={viewers}
               onChange={setViewers}
               directory={directory}
-              emptyText="Private: only you can see this filter."
+              emptyText={`Private: only you can see this ${noun}.`}
             />
             <ShareEditor
               label="Editors"
               shares={editors}
               onChange={setEditors}
               directory={directory}
-              emptyText="Only you can edit this filter."
+              emptyText={`Only you can edit this ${noun}.`}
             />
             {jqlPreview !== undefined && (
               <div className="search-jql-preview">

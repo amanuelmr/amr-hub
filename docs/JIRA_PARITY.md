@@ -100,7 +100,7 @@ Out of scope by decision: Rovo / AI, paid plans, Confluence, Marketplace apps, J
 | Jira feature | Status | Notes |
 |---|---|---|
 | Dashboards with configurable gadgets | ✅ | Not re-checked after later changes |
-| Dashboard sharing (viewers and editors) | ❌ | Always private |
+| Dashboard sharing (viewers and editors), stars, copy, change owner | ✅ 🔌 | Same sharing model as filters; screens not yet seen in browser |
 | Reports: burndown, burnup, velocity, sprint report, CFD, control chart, created vs resolved, pie, version, epic, time tracking, workload | ✅ | Not re-checked after later changes |
 
 ## 10. Releases and components
@@ -156,7 +156,7 @@ Work in this order; each step is finished, checked in the browser and committed 
    - Server-side stars with a starred count.
    - A filter details panel on the Search page.
    - Basic mode with Type and "+ More".
-2. **Dashboard sharing.** Uses the same viewers/editors model as filters.
+2. ✅ **Dashboard sharing.** Done (screens still need a browser look).
 3. **Browser pass over screens only tested through the API:** access, trash, archive, automation builder, board settings, forms, reactions, notifications, calendar, reports, dashboards. Fix what's broken or unlike Jira.
 4. **Mobile pass at phone width** for the main screens.
 5. **Remaining gaps, if wanted:** issue-level security, user groups, changing a project key.

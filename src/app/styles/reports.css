@@ -1730,3 +1730,17 @@ a.calendar-chip-title:hover {
 .timeline-project-name:hover {
   color: var(--green-600);
 }
+
+/* Dashboard header: star and sharing summary */
+.dashboards-title {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.dashboards-meta {
+  color: var(--gray-500);
+  font-size: 12px;
+}
