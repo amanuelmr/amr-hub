@@ -60,6 +60,10 @@ Out of scope by decision: Rovo / AI, paid plans, Confluence, Marketplace apps, J
 | Quick filters (built-in and JQL), card layout, card colours | ✅ 🌐 | |
 | Card actions menu, insights panel, parallel sprints, Kanban release | ✅ 🔌 | |
 | Several boards per project with a JQL filter | ✅ 🌐 | |
+| Column menu: rename, column limit, move, collapse, delete; "+" creates a column with a new status | ✅ 🌐 | Collapse is per viewer |
+| Status drop zones when a column holds several statuses | ✅ | |
+| View settings: days in column, compact cards | ✅ 🌐 | Days in column uses the new statusChangedAt field |
+| Inline create with work type picker, Jira title row and toolbar layout | ✅ 🌐 | |
 
 ## 6. Backlog and sprints
 

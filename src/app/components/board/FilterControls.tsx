@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { Check, ChevronDown, Search, X } from "lucide-react";
+import { Check, ChevronDown, Search, UserRound, X } from "lucide-react";
 import type { IssueKind, WorkspaceMember } from "../../data/issues";
 import { useWorkflows } from "../../WorkflowProvider";
 import { KindIcon } from "../IssueVisuals";
@@ -78,7 +78,7 @@ export function AssigneeStack({
             title={entry.name}
             onClick={() => onToggle(entry.id)}
           >
-            {entry.id === UNASSIGNED ? "?" : initials(entry.name)}
+            {entry.id === UNASSIGNED ? <UserRound size={14} aria-hidden="true" /> : initials(entry.name)}
             <span className="sr-only">{entry.name}</span>
           </button>
         );
@@ -107,7 +107,7 @@ export function AssigneeStack({
                   onToggle={() => onToggle(entry.id)}
                 >
                   <span className="avatar avatar-small" aria-hidden="true">
-                    {entry.id === UNASSIGNED ? "?" : initials(entry.name)}
+                    {entry.id === UNASSIGNED ? <UserRound size={14} aria-hidden="true" /> : initials(entry.name)}
                   </span>
                   {entry.name}
                 </FilterCheckItem>

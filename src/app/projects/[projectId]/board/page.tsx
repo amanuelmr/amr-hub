@@ -9,9 +9,11 @@ import {
   KeyboardSensor,
   PointerSensor,
   closestCorners,
+  pointerWithin,
   useDroppable,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
@@ -27,18 +29,20 @@ import {
   ChevronRight,
   CircleAlert,
   Clock,
+  CornerDownLeft,
   Lightbulb,
   MoreHorizontal,
   Package,
   Plus,
   Rows3,
   Settings2,
-  X,
+  SlidersHorizontal,
 } from "lucide-react";
-import { useIssues } from "../../../IssueProvider";
+import { apiRequest, useIssues } from "../../../IssueProvider";
 import { useProjects } from "../../../ProjectProvider";
 import { authClient } from "../../../../lib/auth-client";
 import { WorkspaceLoading } from "../../../components/WorkspaceLoading";
+import { KindIcon } from "../../../components/IssueVisuals";
 import { useSelectedIssue } from "../../../components/issue/selectedIssue";
 import {
   BoardCardBody,
@@ -81,16 +85,24 @@ import {
   PlanningDialog,
 } from "../../../components/board/SprintDialogs";
 import { useProjectBoards } from "../../../components/board/useProjectBoards";
+import {
+  BoardAddColumn,
+  BoardColumnHeader,
+} from "../../../components/board/BoardColumnHeader";
+import { useBoardView } from "../../../components/board/useBoardView";
+import { ConfirmDialog } from "../../../components/ConfirmDialog";
 import { DEFAULT_BOARD_ID } from "../../../data/projects";
 import { parseJql, searchIssuesWithJql } from "../../../data/jql";
 import { usePlanningActions } from "../../../components/board/sprintApi";
-import { useWorkflow } from "../../../WorkflowProvider";
+import { useWorkflow, useWorkflows } from "../../../WorkflowProvider";
 import {
   allowedTransitions,
   isDoneStatus,
   isEpicLevel,
   isSubtaskLevel,
   statusName,
+  type ProjectWorkflow,
+  type StatusCategory,
 } from "../../../data/workflow";
 import {
   BOARD_CREATE_DESCRIPTION,
@@ -119,6 +131,7 @@ import type {
 } from "../../../data/issues";
 import {
   DEFAULT_BOARD_CONFIG,
+  addColumnForStatus,
   type BoardColumnConfig,
   type BoardSwimlanes,
 } from "../../../data/projects";
@@ -150,13 +163,50 @@ function parseCellKey(key: string) {
   return { laneId, columnId };
 }
 
+/** One status of a multi-status column, shown as a drop zone while dragging. */
+function StatusZone({
+  cellId,
+  status,
+  name,
+  allowed,
+}: {
+  cellId: string;
+  status: string;
+  name: string;
+  allowed: boolean;
+}) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `zone${CELL_SEPARATOR}${cellId}${CELL_SEPARATOR}${status}`,
+    data: { type: "status", cellId, status },
+    disabled: !allowed,
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      className={[
+        "board-status-zone",
+        isOver ? "over" : "",
+        allowed ? "" : "blocked",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      {name}
+    </div>
+  );
+}
+
 function BoardCell({
   id,
   issues,
+  collapsed = false,
+  zones = [],
   children,
 }: {
   id: string;
   issues: Issue[];
+  collapsed?: boolean;
+  zones?: { key: string; name: string; allowed: boolean }[];
   children: React.ReactNode;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id, data: { type: "cell" } });
@@ -164,27 +214,69 @@ function BoardCell({
   return (
     <SortableContext
       id={id}
-      items={issues.map((issue) => issue.id)}
+      items={collapsed ? [] : issues.map((issue) => issue.id)}
       strategy={verticalListSortingStrategy}
     >
       <div
         ref={setNodeRef}
-        className={isOver ? "board-cell drag-over" : "board-cell"}
+        className={[
+          "board-cell",
+          isOver ? "drag-over" : "",
+          collapsed ? "collapsed" : "",
+          zones.length > 0 ? "with-zones" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
       >
-        {children}
+        {!collapsed && children}
+        {zones.length > 0 && (
+          <div className="board-status-zones">
+            {zones.map((zone) => (
+              <StatusZone
+                key={zone.key}
+                cellId={id}
+                status={zone.key}
+                name={zone.name}
+                allowed={zone.allowed}
+              />
+            ))}
+          </div>
+        )}
       </div>
     </SortableContext>
   );
 }
 
-/** Jira's hover "+ Create" at the bottom of a column. */
+/** Status zones win while the pointer is over one; otherwise sort by corners. */
+const boardCollision: CollisionDetection = (args) => {
+  const zones = pointerWithin({
+    ...args,
+    droppableContainers: args.droppableContainers.filter(
+      (container) => container.data.current?.type === "status",
+    ),
+  });
+  return zones.length > 0 ? zones : closestCorners(args);
+};
+
+/**
+ * Jira's hover "+ Create" at the bottom of a column: a card with the summary,
+ * a work type picker and Enter to create. Escape (or leaving it empty)
+ * cancels.
+ */
 function ColumnCreate({
+  types,
+  defaultKind,
+  projectId,
   onCreate,
 }: {
-  onCreate: (title: string) => Promise<void>;
+  types: { key: IssueKind; name: string }[];
+  defaultKind: IssueKind;
+  projectId: string;
+  onCreate: (title: string, kind: IssueKind) => Promise<void>;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [title, setTitle] = useState("");
+  const [kind, setKind] = useState<IssueKind>(defaultKind);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -216,7 +308,7 @@ function ColumnCreate({
     setIsSubmitting(true);
     setError(null);
     try {
-      await onCreate(title.trim());
+      await onCreate(title.trim(), kind);
       setTitle("");
     } catch (createError) {
       setError(
@@ -229,8 +321,22 @@ function ColumnCreate({
     }
   };
 
+  const kindName = types.find((type) => type.key === kind)?.name ?? "Work type";
+
   return (
-    <form className="board-inline-create" onSubmit={handleSubmit}>
+    <form
+      className="board-inline-create"
+      onSubmit={handleSubmit}
+      onBlur={(event) => {
+        const next = event.relatedTarget as Node | null;
+        // Menus render in a portal, so only close when focus really left.
+        const inMenu =
+          next instanceof HTMLElement &&
+          next.closest("[data-radix-popper-content-wrapper]") !== null;
+        if ((next && event.currentTarget.contains(next)) || inMenu) return;
+        if (!title.trim() && !isSubmitting) close();
+      }}
+    >
       <textarea
         value={title}
         maxLength={255}
@@ -250,16 +356,46 @@ function ColumnCreate({
       />
       {error && <p className="field-error">{error}</p>}
       <div className="board-inline-create-actions">
-        <button className="primary-button" type="submit" disabled={isSubmitting}>
-          {isSubmitting ? "Creating..." : "Create"}
-        </button>
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
+            <button
+              className="board-inline-type"
+              type="button"
+              aria-label={`Work type: ${kindName}`}
+              title={kindName}
+            >
+              <KindIcon kind={kind} projectId={projectId} />
+              <ChevronDown size={12} aria-hidden="true" />
+            </button>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content className="planning-menu" align="start" sideOffset={4}>
+              <DropdownMenu.RadioGroup
+                value={kind}
+                onValueChange={(value) => setKind(value as IssueKind)}
+              >
+                {types.map((type) => (
+                  <DropdownMenu.RadioItem
+                    key={type.key}
+                    value={type.key}
+                    className="planning-menu-item"
+                  >
+                    <KindIcon kind={type.key} projectId={projectId} />
+                    {type.name}
+                  </DropdownMenu.RadioItem>
+                ))}
+              </DropdownMenu.RadioGroup>
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
         <button
-          className="icon-button"
-          type="button"
-          aria-label="Cancel"
-          onClick={close}
+          className="board-inline-submit"
+          type="submit"
+          disabled={isSubmitting || !title.trim()}
+          aria-label="Create"
+          title="Create (Enter)"
         >
-          <X size={14} aria-hidden="true" />
+          <CornerDownLeft size={14} aria-hidden="true" />
         </button>
       </div>
     </form>
@@ -277,7 +413,8 @@ export default function ProjectBoardPage() {
     isLoading,
     createIssue,
   } = useIssues();
-  const { allProjects: projects } = useProjects();
+  const { allProjects: projects, updateProject, refreshProjects } = useProjects();
+  const { setProjectWorkflow } = useWorkflows();
   const { data: activeMember } = authClient.useActiveMember();
   // Read-only for workspace viewers and for people without edit access to
   // this project (Limited/Private projects, project Viewer role, archived).
@@ -290,7 +427,11 @@ export default function ProjectBoardPage() {
   const { open: openIssue } = useSelectedIssue();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { boards, create: createBoard } = useProjectBoards(projectId);
+  const {
+    boards,
+    create: createBoard,
+    update: updateBoard,
+  } = useProjectBoards(projectId);
   const [boardDialogOpen, setBoardDialogOpen] = useState(false);
   const workflow = useWorkflow(projectId);
   const defaultKind =
@@ -311,6 +452,7 @@ export default function ProjectBoardPage() {
   const [isReleaseOpen, setIsReleaseOpen] = useState(false);
   const [showInsights, setShowInsights] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [deleteColumnId, setDeleteColumnId] = useState<string | null>(null);
   const justDragged = useRef(false);
   const [now] = useState(() => new Date());
   const jqlContext = useJqlContext(now);
@@ -343,6 +485,8 @@ export default function ProjectBoardPage() {
     : currentBoard.config;
   const canAdminBoards = project?.permissions?.canAdmin ?? false;
   const columns = resolveBoardColumns(config, boardType);
+  const { view, update: updateView, toggleColumn } = useBoardView(projectId, boardId);
+  const collapsedColumns = new Set(view.collapsedColumns);
   const quickFilters = compileQueries(config.quickFilters, now);
   const laneQueries = compileQueries(config.swimlaneQueries, now);
   const colorQueries = compileQueries(config.cardColors.queries, now);
@@ -370,6 +514,9 @@ export default function ProjectBoardPage() {
   const boardKinds: IssueKind[] = workflow.types
     .filter((type) => type.level === 0)
     .map((type) => type.key);
+  const createTypes = workflow.types
+    .filter((type) => type.level === 0)
+    .map((type) => ({ key: type.key, name: type.name }));
   const typeColor = (kind: string) =>
     workflow.types.find((type) => type.key === kind)?.color ?? null;
 
@@ -433,6 +580,14 @@ export default function ProjectBoardPage() {
       compiled: colorQueries,
       typeColor,
     }),
+    daysInColumn:
+      view.daysInColumn && issue.statusChangedAt
+        ? Math.max(
+            0,
+            Math.floor((now.getTime() - Date.parse(issue.statusChangedAt)) / 86_400_000),
+          )
+        : null,
+    compact: view.compact,
   });
 
   const boardMembers = members.filter((member) =>
@@ -450,6 +605,7 @@ export default function ProjectBoardPage() {
     issue: Issue,
     targetColumn: BoardColumnConfig,
     target: { afterId?: string; beforeId?: string; order: string[] },
+    chosenStatus?: string,
   ) => {
     const sourceColumn = columnOf(issue);
     // A column with no mapped statuses has nowhere to transition the issue to.
@@ -457,21 +613,26 @@ export default function ProjectBoardPage() {
       return;
     }
     // Jira: dropping on a column moves to the first of its statuses that the
-    // workflow allows from the issue's current status.
+    // workflow allows; a status drop zone names the status instead.
     let status: string | undefined;
-    if (sourceColumn !== targetColumn.id) {
+    const wanted = chosenStatus === issue.status ? undefined : chosenStatus;
+    if (wanted || (!chosenStatus && sourceColumn !== targetColumn.id)) {
       const allowed = new Set(
         allowedTransitions(workflow, issue.status).map(
           (transition) => transition.toKey,
         ),
       );
-      status = targetColumn.statuses.find((key) => allowed.has(key));
+      status = wanted
+        ? allowed.has(wanted)
+          ? wanted
+          : undefined
+        : targetColumn.statuses.find((key) => allowed.has(key));
       if (!status) {
         planning.setError(
           `The workflow does not allow moving ${issue.id} from ${statusName(
             issue.status,
             workflow.statuses,
-          )} to ${targetColumn.name}.`,
+          )} to ${wanted ? statusName(wanted, workflow.statuses) : targetColumn.name}.`,
         );
         return;
       }
@@ -482,7 +643,10 @@ export default function ProjectBoardPage() {
     const optimistic = new Map<string, Partial<Issue>>([
       [
         issue.id,
-        { rank: ranks.get(issue.id) ?? issue.rank, ...(status ? { status } : {}) },
+        {
+          rank: ranks.get(issue.id) ?? issue.rank,
+          ...(status ? { status, statusChangedAt: new Date().toISOString() } : {}),
+        },
       ],
     ]);
     await planning.rank(
@@ -494,6 +658,77 @@ export default function ProjectBoardPage() {
       },
       optimistic,
     );
+  };
+
+  // Columns the viewer can configure (Kanban's implied Backlog column isn't
+  // stored, so it has no menu).
+  const storedColumnIds = new Set(config.columns.map((column) => column.id));
+  const extraBoard = currentBoard && !currentBoard.isDefault ? currentBoard : null;
+
+  const saveColumns = async (
+    change: (current: BoardColumnConfig[]) => BoardColumnConfig[],
+  ) => {
+    const next = { ...config, columns: change(config.columns) };
+    if (extraBoard) {
+      await updateBoard(extraBoard.id, { config: next });
+    } else if (project && !(await updateProject(project.id, { boardConfig: next }))) {
+      throw new Error("The board could not be saved");
+    }
+  };
+
+  const reportError = (error: unknown) =>
+    planning.setError(
+      error instanceof Error ? error.message : "The board could not be saved",
+    );
+
+  const moveColumn = (columnId: string, direction: -1 | 1) => {
+    void saveColumns((current) => {
+      const index = current.findIndex((column) => column.id === columnId);
+      const swap = index + direction;
+      if (index < 0 || swap < 0 || swap >= current.length) return current;
+      const next = [...current];
+      [next[index], next[swap]] = [next[swap], next[index]];
+      return next;
+    }).catch(reportError);
+  };
+
+  /** Jira keeps the work: a deleted column's statuses join its neighbour. */
+  const deleteColumn = async (columnId: string) => {
+    await saveColumns((current) => {
+      const index = current.findIndex((column) => column.id === columnId);
+      if (index < 0 || current.length < 2) return current;
+      const neighbour = index > 0 ? index - 1 : index + 1;
+      const removed = current[index];
+      return current
+        .map((column, position) =>
+          position === neighbour
+            ? { ...column, statuses: [...column.statuses, ...removed.statuses] }
+            : column,
+        )
+        .filter((column) => column.id !== columnId);
+    });
+    if (collapsedColumns.has(columnId)) toggleColumn(columnId);
+  };
+
+  const addColumn = async (name: string, category: StatusCategory) => {
+    const updated = await apiRequest<ProjectWorkflow>(
+      `/api/projects/${encodeURIComponent(projectId)}/workflow/statuses`,
+      {
+        method: "POST",
+        body: JSON.stringify({ name, category, boardColumn: !extraBoard }),
+      },
+    );
+    setProjectWorkflow(projectId, updated);
+    const created = updated.statuses.find(
+      (status) => !workflow.statuses.some((known) => known.key === status.key),
+    );
+    if (extraBoard && created) {
+      await updateBoard(extraBoard.id, {
+        config: addColumnForStatus(config, created.key, name),
+      });
+    }
+    // The default board's columns changed on the server with the status.
+    await refreshProjects();
   };
 
   const handleDragStart = (event: DragStartEvent) => {
@@ -512,10 +747,11 @@ export default function ProjectBoardPage() {
     if (!issue) return;
 
     const overData = over.data.current as
-      | { type?: string; cellId?: string }
+      | { type?: string; cellId?: string; status?: string }
       | undefined;
     const targetCell =
       overData?.type === "cell" ? String(over.id) : overData?.cellId;
+    const onZone = overData?.type === "status";
     if (!targetCell) return;
     const { laneId, columnId } = parseCellKey(targetCell);
     const targetColumn = columns.find((column) => column.id === columnId);
@@ -527,10 +763,10 @@ export default function ProjectBoardPage() {
       list,
       movedIds: [issue.id],
       activeId: issue.id,
-      overId: overData?.type === "cell" ? null : String(over.id),
+      overId: overData?.type === "card" ? String(over.id) : null,
     });
     if (!target) return;
-    void moveIssue(issue, targetColumn, target);
+    void moveIssue(issue, targetColumn, target, onZone ? overData?.status : undefined);
   };
 
   /** Sprints and the backlog a board card can move to (Scrum only). */
@@ -595,12 +831,13 @@ export default function ProjectBoardPage() {
     title: string,
     column: BoardColumnConfig,
     lane: Lane,
+    kind: IssueKind = defaultKind,
   ) => {
     const input: NewIssueInput = {
       title,
       description: BOARD_CREATE_DESCRIPTION,
       priority: "MEDIUM",
-      kind: defaultKind,
+      kind,
       assigneeId: null,
       dueDate: null,
       estimate: null,
@@ -768,9 +1005,36 @@ export default function ProjectBoardPage() {
     );
 
   const canAssignToMe = !!meId && !isViewer;
+  const track = (column: BoardColumnConfig, open: string) =>
+    collapsedColumns.has(column.id) ? "44px" : open;
   const columnStyle = {
     "--board-columns": columns.length,
+    "--board-template": columns
+      .map((column) => track(column, "minmax(250px, 1fr)"))
+      .join(" "),
+    "--board-template-narrow": columns
+      .map((column) => track(column, "minmax(240px, 80vw)"))
+      .join(" "),
   } as React.CSSProperties;
+  // Statuses the dragged card may move to, for the status drop zones.
+  const dragTargets = activeIssue
+    ? new Set([
+        activeIssue.status,
+        ...allowedTransitions(workflow, activeIssue.status).map(
+          (transition) => transition.toKey,
+        ),
+      ])
+    : null;
+  const zonesFor = (column: BoardColumnConfig) =>
+    dragTargets && column.statuses.length > 1 && !collapsedColumns.has(column.id)
+      ? column.statuses.map((key) => ({
+          key,
+          name: statusName(key, workflow.statuses),
+          allowed: dragTargets.has(key),
+        }))
+      : [];
+  const deletingColumn =
+    columns.find((column) => column.id === deleteColumnId) ?? null;
   const quickCount = QUICK_FILTERS.filter(([key]) => filters[key]).length +
     (filters.labelId ? 1 : 0);
   const groupLabel =
@@ -806,7 +1070,69 @@ export default function ProjectBoardPage() {
     >
       <div className="board-titlebar">
         <h2 className="board-name">{boardName}</h2>
-        {boardSwitcher}
+        <div className="board-titlebar-actions">
+          {activeSprint && shownSprints.length === 1 && (
+            <Tooltip.Provider delayDuration={200}>
+              <Tooltip.Root>
+                <Tooltip.Trigger asChild>
+                  <span className="board-sprint-chip" tabIndex={0}>
+                    <Clock size={13} aria-hidden="true" />
+                    {remaining} {remaining === 1 ? "day" : "days"} remaining
+                  </span>
+                </Tooltip.Trigger>
+                <Tooltip.Portal>
+                  <Tooltip.Content
+                    className="planning-tooltip"
+                    side="bottom"
+                    align="end"
+                    sideOffset={6}
+                  >
+                    <strong>{activeSprint.name}</strong>
+                    <span>
+                      {formatShortDate(activeSprint.startDate)} –{" "}
+                      {formatShortDate(activeSprint.endDate)}
+                    </span>
+                    {activeSprint.goal && <span>Goal: {activeSprint.goal}</span>}
+                  </Tooltip.Content>
+                </Tooltip.Portal>
+              </Tooltip.Root>
+            </Tooltip.Provider>
+          )}
+          {!isViewer && shownSprints.length === 1 && (
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={() => setCompleteSprintId(shownSprints[0].id)}
+            >
+              Complete sprint
+            </button>
+          )}
+          {!isViewer && shownSprints.length > 1 && (
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger asChild>
+                <button className="secondary-button" type="button">
+                  Complete sprint
+                  <ChevronDown size={14} aria-hidden="true" />
+                </button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content className="planning-menu" align="end" sideOffset={4}>
+                  {shownSprints.map((sprint) => (
+                    <DropdownMenu.Item
+                      key={sprint.id}
+                      className="planning-menu-item"
+                      onSelect={() => setCompleteSprintId(sprint.id)}
+                    >
+                      {sprint.name}
+                    </DropdownMenu.Item>
+                  ))}
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
+          )}
+          {boardSwitcher}
+          {boardMenu}
+        </div>
       </div>
       {boardFilter && !boardFilter.ok && (
         <p className="form-submit-error" role="alert">
@@ -915,74 +1241,6 @@ export default function ProjectBoardPage() {
         </div>
 
         <div className="planning-toolbar-end">
-          {activeSprint && shownSprints.length === 1 && (
-            <Tooltip.Provider delayDuration={200}>
-              <Tooltip.Root>
-                <Tooltip.Trigger asChild>
-                  <span className="board-sprint-chip" tabIndex={0}>
-                    <Clock size={13} aria-hidden="true" />
-                    {remaining} {remaining === 1 ? "day" : "days"} remaining
-                  </span>
-                </Tooltip.Trigger>
-                <Tooltip.Portal>
-                  <Tooltip.Content
-                    className="planning-tooltip"
-                    side="bottom"
-                    align="end"
-                    sideOffset={6}
-                  >
-                    <strong>{activeSprint.name}</strong>
-                    <span>
-                      {formatShortDate(activeSprint.startDate)} –{" "}
-                      {formatShortDate(activeSprint.endDate)}
-                    </span>
-                    {activeSprint.goal && <span>Goal: {activeSprint.goal}</span>}
-                  </Tooltip.Content>
-                </Tooltip.Portal>
-              </Tooltip.Root>
-            </Tooltip.Provider>
-          )}
-          {!isViewer && shownSprints.length === 1 && (
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={() => setCompleteSprintId(shownSprints[0].id)}
-            >
-              Complete sprint
-            </button>
-          )}
-          {!isViewer && shownSprints.length > 1 && (
-            <DropdownMenu.Root>
-              <DropdownMenu.Trigger asChild>
-                <button className="secondary-button" type="button">
-                  Complete sprint
-                  <ChevronDown size={14} aria-hidden="true" />
-                </button>
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Portal>
-                <DropdownMenu.Content className="planning-menu" align="end" sideOffset={4}>
-                  {shownSprints.map((sprint) => (
-                    <DropdownMenu.Item
-                      key={sprint.id}
-                      className="planning-menu-item"
-                      onSelect={() => setCompleteSprintId(sprint.id)}
-                    >
-                      {sprint.name}
-                    </DropdownMenu.Item>
-                  ))}
-                </DropdownMenu.Content>
-              </DropdownMenu.Portal>
-            </DropdownMenu.Root>
-          )}
-          <button
-            className={showInsights ? "planning-filter active" : "planning-filter"}
-            type="button"
-            aria-pressed={showInsights}
-            onClick={() => setShowInsights((current) => !current)}
-          >
-            <Lightbulb size={14} aria-hidden="true" />
-            Insights
-          </button>
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
               <button className="planning-filter" type="button">
@@ -1021,7 +1279,72 @@ export default function ProjectBoardPage() {
               </DropdownMenu.Content>
             </DropdownMenu.Portal>
           </DropdownMenu.Root>
-          {boardMenu}
+          <button
+            className={showInsights ? "planning-filter active" : "planning-filter"}
+            type="button"
+            aria-pressed={showInsights}
+            onClick={() => setShowInsights((current) => !current)}
+          >
+            <Lightbulb size={14} aria-hidden="true" />
+            Insights
+          </button>
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="View settings"
+                title="View settings"
+              >
+                <SlidersHorizontal size={16} aria-hidden="true" />
+              </button>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content
+                className="planning-menu"
+                align="end"
+                sideOffset={4}
+              >
+                <MenuLabel>View settings</MenuLabel>
+                <FilterCheckItem
+                  checked={view.daysInColumn}
+                  onToggle={() =>
+                    updateView((current) => ({
+                      ...current,
+                      daysInColumn: !current.daysInColumn,
+                    }))
+                  }
+                >
+                  Days in column
+                </FilterCheckItem>
+                <FilterCheckItem
+                  checked={view.compact}
+                  onToggle={() =>
+                    updateView((current) => ({ ...current, compact: !current.compact }))
+                  }
+                >
+                  Compact cards
+                </FilterCheckItem>
+                {collapsedColumns.size > 0 && (
+                  <DropdownMenu.Item
+                    className="planning-menu-item"
+                    onSelect={() =>
+                      updateView((current) => ({ ...current, collapsedColumns: [] }))
+                    }
+                  >
+                    Expand all columns
+                  </DropdownMenu.Item>
+                )}
+                <DropdownMenu.Item className="planning-menu-item" asChild>
+                  <Link
+                    href={`/projects/${projectId}/settings?tab=board&board=${encodeURIComponent(boardId)}`}
+                  >
+                    Card layout and colours
+                  </Link>
+                </DropdownMenu.Item>
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
         </div>
       </div>
 
@@ -1040,39 +1363,61 @@ export default function ProjectBoardPage() {
       <div className="board-body">
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCorners}
+        collisionDetection={boardCollision}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
         onDragCancel={() => setActiveId(null)}
       >
         <div className="board-scroll">
+          <div className="board-grid-row">
           <div
             className={
               swimlanes === "NONE" ? "board-grid no-lanes" : "board-grid"
             }
             style={columnStyle}
           >
-            {columns.map((column) => {
+            {columns.map((column, index) => {
               const count = onBoard.filter(
                 (issue) =>
                   columnOf(issue) === column.id && !laneHeaderIds.has(issue.id),
               ).length;
-              const overLimit = column.wipLimit !== null && count > column.wipLimit;
+              const stored = storedColumnIds.has(column.id);
+              const storedIndex = config.columns.findIndex(
+                (candidate) => candidate.id === column.id,
+              );
               return (
-                <div
+                <BoardColumnHeader
                   key={column.id}
-                  className={
-                    overLimit ? "board-column-head over-limit" : "board-column-head"
+                  column={column}
+                  count={count}
+                  isDone={
+                    column.statuses.length > 0 &&
+                    column.statuses.every((status) => isDoneStatus(status))
                   }
+                  overLimit={column.wipLimit !== null && count > column.wipLimit}
+                  collapsed={collapsedColumns.has(column.id)}
+                  canConfigure={canAdminBoards && stored}
+                  canMoveLeft={storedIndex > 0 && index > 0}
+                  canMoveRight={storedIndex >= 0 && storedIndex < config.columns.length - 1}
+                  canDelete={config.columns.length > 1}
+                  onToggleCollapse={() => toggleColumn(column.id)}
+                  onRename={(name) =>
+                    saveColumns((current) =>
+                      current.map((candidate) =>
+                        candidate.id === column.id ? { ...candidate, name } : candidate,
+                      ),
+                    )
+                  }
+                  onSetLimit={(wipLimit) =>
+                    saveColumns((current) =>
+                      current.map((candidate) =>
+                        candidate.id === column.id ? { ...candidate, wipLimit } : candidate,
+                      ),
+                    )
+                  }
+                  onMove={(direction) => moveColumn(column.id, direction)}
+                  onDelete={() => setDeleteColumnId(column.id)}
                 >
-                  <span className="board-column-name">{column.name}</span>
-                  <span className="board-column-count">{count}</span>
-                  {column.wipLimit !== null && (
-                    <span className="board-column-wip">
-                      Max {column.wipLimit}
-                    </span>
-                  )}
-                  {overLimit && <span className="sr-only">WIP limit exceeded</span>}
                   {releaseColumn?.id === column.id && !isViewer && (
                     <button
                       type="button"
@@ -1089,7 +1434,7 @@ export default function ProjectBoardPage() {
                       Release
                     </button>
                   )}
-                </div>
+                </BoardColumnHeader>
               );
             })}
 
@@ -1128,7 +1473,13 @@ export default function ProjectBoardPage() {
                       const id = cellKey(lane.id, column.id);
                       const items = cellIssues(lane.issues, column);
                       return (
-                        <BoardCell key={id} id={id} issues={items}>
+                        <BoardCell
+                          key={id}
+                          id={id}
+                          issues={items}
+                          collapsed={collapsedColumns.has(column.id)}
+                          zones={zonesFor(column)}
+                        >
                           {items.map((issue) => (
                             <SortableBoardCard
                               key={issue.id}
@@ -1146,7 +1497,12 @@ export default function ProjectBoardPage() {
                           ))}
                           {!isViewer && column.statuses.length > 0 && (
                             <ColumnCreate
-                              onCreate={(title) => handleCreate(title, column, lane)}
+                              types={createTypes}
+                              defaultKind={defaultKind}
+                              projectId={projectId}
+                              onCreate={(title, kind) =>
+                                handleCreate(title, column, lane, kind)
+                              }
                             />
                           )}
                         </BoardCell>
@@ -1163,6 +1519,8 @@ export default function ProjectBoardPage() {
                   : "No work items match these filters."}
               </p>
             )}
+          </div>
+          {canAdminBoards && !isViewer && <BoardAddColumn onCreate={addColumn} />}
           </div>
         </div>
         <DragOverlay>
@@ -1199,6 +1557,27 @@ export default function ProjectBoardPage() {
         />
       )}
       </div>
+
+      {deletingColumn && (
+        <ConfirmDialog
+          title={`Delete the ${deletingColumn.name} column?`}
+          body={
+            deletingColumn.statuses.length > 0
+              ? "Its statuses and work items move to the neighbouring column. The workflow statuses stay."
+              : "The column has no statuses, so no work items move."
+          }
+          confirmLabel="Delete column"
+          onClose={() => setDeleteColumnId(null)}
+          onConfirm={async () => {
+            try {
+              await deleteColumn(deletingColumn.id);
+            } catch (error) {
+              reportError(error);
+            }
+            setDeleteColumnId(null);
+          }}
+        />
+      )}
 
       {completeSprint && (
         <CompleteSprintDialog
