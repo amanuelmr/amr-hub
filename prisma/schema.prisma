@@ -30,6 +30,7 @@ model Issue {
   flagged                  Boolean          @default(false)
   resolution               String?
   resolvedAt               DateTime?
+  statusChangedAt          DateTime         @default(now())
   environment              String?
   originalEstimateMinutes  Int?
   remainingEstimateMinutes Int?

@@ -215,6 +215,8 @@ export type Issue = {
   archivedAt?: string | null;
   resolution: IssueResolution | null;
   resolvedAt: string | null;
+  /** When the issue entered its current status (board "days in column"). */
+  statusChangedAt?: string;
   environment: string | null;
   originalEstimateMinutes: number | null;
   remainingEstimateMinutes: number | null;

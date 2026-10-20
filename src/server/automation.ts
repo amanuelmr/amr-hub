@@ -450,8 +450,8 @@ type Outcome = { done: string[]; errors: string[] };
 
 function statusFields(status: IssueStatus) {
   return isDoneStatus(status)
-    ? { status, resolution: "DONE", resolvedAt: new Date() }
-    : { status, resolution: null, resolvedAt: null };
+    ? { status, statusChangedAt: new Date(), resolution: "DONE", resolvedAt: new Date() }
+    : { status, statusChangedAt: new Date(), resolution: null, resolvedAt: null };
 }
 
 function errorText(error: unknown) {

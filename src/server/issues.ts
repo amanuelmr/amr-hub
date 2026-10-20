@@ -305,6 +305,7 @@ export function serializeIssue(issue: StoredIssue): Issue {
     archivedAt: issue.archivedAt?.toISOString() ?? null,
     resolution: issue.resolution as IssueResolution | null,
     resolvedAt: issue.resolvedAt?.toISOString() ?? null,
+    statusChangedAt: issue.statusChangedAt.toISOString(),
     environment: issue.environment,
     originalEstimateMinutes: issue.originalEstimateMinutes,
     remainingEstimateMinutes: issue.remainingEstimateMinutes,
@@ -1378,6 +1379,7 @@ async function updateIssueUnhooked(
     // reopens it.
     const resolutionFields: Prisma.IssueUncheckedUpdateInput = {};
     if (updates.status && updates.status !== current.status) {
+      resolutionFields.statusChangedAt = new Date();
       if (isDoneStatus(updates.status) && !isDoneStatus(current.status)) {
         resolutionFields.resolution =
           updates.resolution ?? current.resolution ?? "DONE";

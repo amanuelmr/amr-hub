@@ -268,6 +268,7 @@ export async function rankIssues(
       if (input.status && input.status !== target.status) {
         const from = target.status as IssueStatus;
         data.status = input.status;
+        data.statusChangedAt = new Date();
         if (isDoneStatus(input.status) && !isDoneStatus(from)) {
           data.resolution = "DONE";
           data.resolvedAt = new Date();
