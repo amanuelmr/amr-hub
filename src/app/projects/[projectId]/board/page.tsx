@@ -35,7 +35,12 @@ import {
   Package,
   Plus,
   Rows3,
+  Maximize2,
+  Minimize2,
+  Pencil,
   Settings2,
+  Target,
+  UserPlus,
   SlidersHorizontal,
 } from "lucide-react";
 import { apiRequest, useIssues } from "../../../IssueProvider";
@@ -81,6 +86,7 @@ import {
 import {
   CompleteSprintDialog,
   DialogFooter,
+  EditSprintDialog,
   FormError,
   PlanningDialog,
 } from "../../../components/board/SprintDialogs";
@@ -90,6 +96,7 @@ import {
   BoardColumnHeader,
 } from "../../../components/board/BoardColumnHeader";
 import { useBoardView } from "../../../components/board/useBoardView";
+import { ViewSettingsPanel } from "../../../components/board/ViewSettingsPanel";
 import { ConfirmDialog } from "../../../components/ConfirmDialog";
 import { DEFAULT_BOARD_ID } from "../../../data/projects";
 import { parseJql, searchIssuesWithJql } from "../../../data/jql";
@@ -450,7 +457,14 @@ export default function ProjectBoardPage() {
   const [completeSprintId, setCompleteSprintId] = useState<string | null>(null);
   const [chosenSprintIds, setChosenSprintIds] = useState<string[]>([]);
   const [isReleaseOpen, setIsReleaseOpen] = useState(false);
-  const [showInsights, setShowInsights] = useState(false);
+  // Jira opens one side panel at a time: Insights or View settings.
+  const [sidePanel, setSidePanel] = useState<"insights" | "view" | null>(null);
+  const showInsights = sidePanel === "insights";
+  const togglePanel = (panel: "insights" | "view") =>
+    setSidePanel((current) => (current === panel ? null : panel));
+  const [isFullScreen, setIsFullScreen] = useState(false);
+  const [isEditSprintOpen, setIsEditSprintOpen] = useState(false);
+  const boardScrollRef = useRef<HTMLDivElement>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [deleteColumnId, setDeleteColumnId] = useState<string | null>(null);
   const justDragged = useRef(false);
@@ -466,6 +480,36 @@ export default function ProjectBoardPage() {
     const timer = window.setTimeout(() => setNotice(null), 2500);
     return () => window.clearTimeout(timer);
   }, [notice]);
+
+  // Jira's columns reach the bottom of the window whatever sits above them.
+  useEffect(() => {
+    const fit = () => {
+      const element = boardScrollRef.current;
+      if (!element) return;
+      const top = element.getBoundingClientRect().top + (element.closest(".app-content")?.scrollTop ?? 0);
+      element.style.setProperty("--board-fill", `${Math.max(320, window.innerHeight - top - 16)}px`);
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    const observer = new ResizeObserver(fit);
+    const page = boardScrollRef.current?.closest(".board-page");
+    if (page) observer.observe(page);
+    return () => {
+      window.removeEventListener("resize", fit);
+      observer.disconnect();
+    };
+  }, [isLoading, projectId, cycles.length]);
+
+  useEffect(() => {
+    if (!isFullScreen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !document.querySelector("[role=dialog], [role=menu]")) {
+        setIsFullScreen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isFullScreen]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -574,7 +618,7 @@ export default function ProjectBoardPage() {
       ? groupQueryLanes(visible, laneQueries, jqlContext)
       : groupLanes(visible, swimlanes, members);
   const displayOf = (issue: Issue): CardDisplay => ({
-    fields: config.cardFields,
+    fields: config.cardFields.filter((field) => !view.hiddenFields.includes(field)),
     color: cardColorFor(issue, config.cardColors, {
       ctx: jqlContext,
       compiled: colorQueries,
@@ -943,6 +987,7 @@ export default function ProjectBoardPage() {
     />
   );
 
+  const settingsHref = `/projects/${projectId}/settings?tab=board&board=${encodeURIComponent(boardId)}`;
   const boardMenu = (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
@@ -952,13 +997,31 @@ export default function ProjectBoardPage() {
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content className="planning-menu" align="end" sideOffset={4}>
-          <DropdownMenu.Item className="planning-menu-item" asChild>
-            <Link
-              href={`/projects/${projectId}/settings?tab=board&board=${encodeURIComponent(boardId)}`}
+          {boardType === "SCRUM" && activeSprints.length === 1 && !isViewer && (
+            <DropdownMenu.Item
+              className="planning-menu-item"
+              onSelect={() => setIsEditSprintOpen(true)}
             >
+              <Pencil size={14} aria-hidden="true" />
+              Edit sprint
+            </DropdownMenu.Item>
+          )}
+          <DropdownMenu.Item className="planning-menu-item" asChild>
+            <Link href={settingsHref}>
               <Settings2 size={14} aria-hidden="true" />
-              Board settings
+              Configure board
             </Link>
+          </DropdownMenu.Item>
+          <DropdownMenu.Item
+            className="planning-menu-item"
+            onSelect={() => setIsFullScreen((current) => !current)}
+          >
+            {isFullScreen ? (
+              <Minimize2 size={14} aria-hidden="true" />
+            ) : (
+              <Maximize2 size={14} aria-hidden="true" />
+            )}
+            {isFullScreen ? "Exit full screen" : "Enter full screen"}
           </DropdownMenu.Item>
           {boardType === "SCRUM" && (
             <DropdownMenu.Item className="planning-menu-item" asChild>
@@ -1065,11 +1128,25 @@ export default function ProjectBoardPage() {
   return (
     <div
       className={
-        showInsights ? "page board-page with-insights" : "page board-page"
+        [
+          "page board-page",
+          sidePanel ? "with-insights" : "",
+          isFullScreen ? "fullscreen" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")
       }
     >
       <div className="board-titlebar">
-        <h2 className="board-name">{boardName}</h2>
+        <div className="board-title">
+          <h2 className="board-name">{boardName}</h2>
+          {activeSprint?.goal && shownSprints.length === 1 && (
+            <p className="board-sprint-goal" title={activeSprint.goal}>
+              <Target size={13} aria-hidden="true" />
+              {activeSprint.goal}
+            </p>
+          )}
+        </div>
         <div className="board-titlebar-actions">
           {activeSprint && shownSprints.length === 1 && (
             <Tooltip.Provider delayDuration={200}>
@@ -1179,6 +1256,16 @@ export default function ProjectBoardPage() {
               }))
             }
           />
+          {canAdminBoards && (
+            <Link
+              className="board-add-people"
+              href={`/projects/${projectId}/settings?tab=access`}
+              aria-label="Add people to this project"
+              title="Add people"
+            >
+              <UserPlus size={14} aria-hidden="true" />
+            </Link>
+          )}
           <EpicFilter epics={epics} filters={filters} setFilters={setFilters} />
           <TypeFilter
             kinds={boardKinds}
@@ -1283,68 +1370,21 @@ export default function ProjectBoardPage() {
             className={showInsights ? "planning-filter active" : "planning-filter"}
             type="button"
             aria-pressed={showInsights}
-            onClick={() => setShowInsights((current) => !current)}
+            onClick={() => togglePanel("insights")}
           >
             <Lightbulb size={14} aria-hidden="true" />
             Insights
           </button>
-          <DropdownMenu.Root>
-            <DropdownMenu.Trigger asChild>
-              <button
-                className="icon-button"
-                type="button"
-                aria-label="View settings"
-                title="View settings"
-              >
-                <SlidersHorizontal size={16} aria-hidden="true" />
-              </button>
-            </DropdownMenu.Trigger>
-            <DropdownMenu.Portal>
-              <DropdownMenu.Content
-                className="planning-menu"
-                align="end"
-                sideOffset={4}
-              >
-                <MenuLabel>View settings</MenuLabel>
-                <FilterCheckItem
-                  checked={view.daysInColumn}
-                  onToggle={() =>
-                    updateView((current) => ({
-                      ...current,
-                      daysInColumn: !current.daysInColumn,
-                    }))
-                  }
-                >
-                  Days in column
-                </FilterCheckItem>
-                <FilterCheckItem
-                  checked={view.compact}
-                  onToggle={() =>
-                    updateView((current) => ({ ...current, compact: !current.compact }))
-                  }
-                >
-                  Compact cards
-                </FilterCheckItem>
-                {collapsedColumns.size > 0 && (
-                  <DropdownMenu.Item
-                    className="planning-menu-item"
-                    onSelect={() =>
-                      updateView((current) => ({ ...current, collapsedColumns: [] }))
-                    }
-                  >
-                    Expand all columns
-                  </DropdownMenu.Item>
-                )}
-                <DropdownMenu.Item className="planning-menu-item" asChild>
-                  <Link
-                    href={`/projects/${projectId}/settings?tab=board&board=${encodeURIComponent(boardId)}`}
-                  >
-                    Card layout and colours
-                  </Link>
-                </DropdownMenu.Item>
-              </DropdownMenu.Content>
-            </DropdownMenu.Portal>
-          </DropdownMenu.Root>
+          <button
+            className={sidePanel === "view" ? "icon-button active" : "icon-button"}
+            type="button"
+            aria-label="View settings"
+            aria-pressed={sidePanel === "view"}
+            title="View settings"
+            onClick={() => togglePanel("view")}
+          >
+            <SlidersHorizontal size={16} aria-hidden="true" />
+          </button>
         </div>
       </div>
 
@@ -1368,7 +1408,7 @@ export default function ProjectBoardPage() {
         onDragEnd={handleDragEnd}
         onDragCancel={() => setActiveId(null)}
       >
-        <div className="board-scroll">
+        <div className="board-scroll" ref={boardScrollRef}>
           <div className="board-grid-row">
           <div
             className={
@@ -1547,17 +1587,48 @@ export default function ProjectBoardPage() {
           )}
         </DragOverlay>
       </DndContext>
+      {sidePanel === "view" && (
+        <ViewSettingsPanel
+          view={view}
+          boardFields={config.cardFields}
+          hasLanes={swimlanes !== "NONE" && lanes.length > 0}
+          allLanesCollapsed={
+            lanes.length > 0 && lanes.every((lane) => collapsedLanes.has(lane.id))
+          }
+          isFullScreen={isFullScreen}
+          settingsHref={canAdminBoards ? settingsHref : null}
+          onUpdate={updateView}
+          onToggleLanes={() =>
+            setCollapsedLanes((current) =>
+              lanes.every((lane) => current.has(lane.id))
+                ? new Set()
+                : new Set(lanes.map((lane) => lane.id)),
+            )
+          }
+          onToggleFullScreen={() => setIsFullScreen((current) => !current)}
+          onClose={() => setSidePanel(null)}
+        />
+      )}
       {showInsights && (
         <InsightsPanel
           projectId={projectId}
           sprints={boardType === "SCRUM" ? shownSprints : []}
           issues={boardIssues}
           cycles={cycles}
-          onClose={() => setShowInsights(false)}
+          onClose={() => setSidePanel(null)}
         />
       )}
       </div>
 
+      {isEditSprintOpen && activeSprint && (
+        <EditSprintDialog
+          key={activeSprint.id}
+          sprint={activeSprint}
+          open
+          onOpenChange={(open) => !open && setIsEditSprintOpen(false)}
+          onSave={(fields) => planning.updateSprint(activeSprint.id, fields)}
+        />
+      )}
       {deletingColumn && (
         <ConfirmDialog
           title={`Delete the ${deletingColumn.name} column?`}

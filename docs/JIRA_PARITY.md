@@ -62,7 +62,8 @@ Out of scope by decision: Rovo / AI, paid plans, Confluence, Marketplace apps, J
 | Several boards per project with a JQL filter | ✅ 🌐 | |
 | Column menu: rename, column limit, move, collapse, delete; "+" creates a column with a new status | ✅ 🌐 | Collapse is per viewer |
 | Status drop zones when a column holds several statuses | ✅ | |
-| View settings: days in column, compact cards | ✅ 🌐 | Days in column uses the new statusChangedAt field |
+| View settings panel: card fields per viewer, days in column, compact cards, expand or collapse swimlanes and columns, full screen | ✅ 🌐 | Days in column uses the new statusChangedAt field |
+| Title row with sprint goal, Edit sprint, Configure board, add people button, columns filling the window | ✅ 🌐 | |
 | Inline create with work type picker, Jira title row and toolbar layout | ✅ 🌐 | |
 
 ## 6. Backlog and sprints

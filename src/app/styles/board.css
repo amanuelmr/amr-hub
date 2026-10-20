@@ -421,7 +421,8 @@
 }
 
 .board-grid.no-lanes .board-cell {
-  min-height: calc(100dvh - var(--shell-topbar-h, 56px) - var(--project-header-h, 94px) - 240px);
+  /* --board-fill is measured on the page so columns reach the window bottom. */
+  min-height: calc(var(--board-fill, 70dvh) - 38px);
   border-radius: 0 0 var(--radius) var(--radius);
 }
 
@@ -1049,7 +1050,7 @@
   }
 
   .board-grid.no-lanes .board-cell {
-    min-height: 50vh;
+    min-height: calc(var(--board-fill, 60dvh) - 38px);
   }
 }
 
@@ -1625,4 +1626,154 @@
   font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Title row: sprint name with its goal underneath, like Jira. */
+.board-title {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.board-sprint-goal {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink-secondary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-sprint-goal svg {
+  flex: none;
+}
+
+.board-add-people {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-left: -4px;
+  border: 2px dashed var(--gray-300);
+  border-radius: 50%;
+  color: var(--ink-secondary);
+}
+
+.board-add-people:hover,
+.board-add-people:focus-visible {
+  border-color: var(--console-cyan);
+  color: var(--ink);
+}
+
+.board-page .icon-button.active {
+  border-color: var(--console-cyan);
+  color: var(--ink);
+  background: color-mix(in srgb, var(--console-cyan) 16%, transparent);
+}
+
+/* Full screen: hide the app and project chrome, keep the board. */
+.shell-frame:has(.board-page.fullscreen) .shell-topbar,
+.shell-frame:has(.board-page.fullscreen) .shell-sidebar,
+.project-shell:has(.board-page.fullscreen) .project-shell-header {
+  display: none;
+}
+
+.shell-frame:has(.board-page.fullscreen) .app-content {
+  height: 100dvh;
+  margin: 0;
+}
+
+/* View settings side panel. */
+.view-settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 0;
+  border-top: 1px solid var(--gray-200);
+}
+
+.view-settings-section h3 {
+  margin: 0 0 4px;
+  color: var(--gray-500);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.view-settings-section .secondary-button {
+  justify-content: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.view-settings-toggle {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+  color: var(--ink);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.view-settings-toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.view-settings-toggle i {
+  position: relative;
+  flex: none;
+  width: 32px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--gray-300);
+  transition: background 120ms ease;
+}
+
+.view-settings-toggle i::after {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--surface);
+  content: "";
+  transition: transform 120ms ease;
+}
+
+.view-settings-toggle input:checked + i {
+  background: var(--console-cyan);
+}
+
+.view-settings-toggle input:checked + i::after {
+  transform: translateX(14px);
+}
+
+.view-settings-toggle input:focus-visible + i {
+  outline: 2px solid var(--console-cyan);
+  outline-offset: 2px;
+}
+
+.view-settings-link {
+  margin-top: 4px;
+  color: var(--ink-secondary);
+  font-size: 12px;
+}
+
+.planning-insights.view-settings {
+  width: 300px;
+  flex-basis: 300px;
+  gap: 0;
 }
