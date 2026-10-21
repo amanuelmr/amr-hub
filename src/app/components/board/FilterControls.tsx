@@ -12,10 +12,12 @@ export function PlanningSearch({
   value,
   onChange,
   label,
+  placeholder = "Search",
 }: {
   value: string;
   onChange: (value: string) => void;
   label: string;
+  placeholder?: string;
 }) {
   return (
     <label className="planning-search">
@@ -24,7 +26,7 @@ export function PlanningSearch({
       <input
         type="search"
         value={value}
-        placeholder="Search"
+        placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
       />
       {value && (
@@ -261,6 +263,20 @@ export function TypeFilter({
   );
 }
 
+/** Values picked in the board's Filter panel (the badge on the button). */
+export function panelFilterCount(filters: IssueFilters) {
+  return (
+    filters.assigneeIds.length +
+    filters.kinds.length +
+    filters.epicIds.length +
+    filters.labelIds.length +
+    filters.priorities.length +
+    filters.statuses.length +
+    filters.componentIds.length +
+    filters.versionIds.length
+  );
+}
+
 export function hasActiveFilters(filters: IssueFilters) {
   return (
     filters.query.trim() !== "" ||
@@ -272,7 +288,8 @@ export function hasActiveFilters(filters: IssueFilters) {
     filters.labelId !== null ||
     filters.kinds.length > 0 ||
     filters.quickFilterIds.length > 0 ||
-    filters.versionId !== null
+    filters.versionId !== null ||
+    panelFilterCount(filters) > 0
   );
 }
 
