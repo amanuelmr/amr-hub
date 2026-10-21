@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, use, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { MailCheck } from "lucide-react";
@@ -27,12 +27,19 @@ type Step = "email" | "details" | "verify";
 
 const RESEND_COOLDOWN_SECONDS = 30;
 
-export default function SignupPage() {
+export default function SignupPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  // The landing page's email box carries the address over (?email=).
+  const prefill = use(searchParams).email;
+  const initialEmail = typeof prefill === "string" && prefill.includes("@") ? prefill.trim() : "";
   const router = useRouter();
   const { data: session } = authClient.useSession();
-  const [step, setStep] = useState<Step>("email");
+  const [step, setStep] = useState<Step>(initialEmail ? "details" : "email");
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
