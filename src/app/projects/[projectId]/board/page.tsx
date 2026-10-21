@@ -297,10 +297,12 @@ function ColumnCreate({
       <button
         className="board-column-create"
         type="button"
+        aria-label="Create work item"
+        title="Create work item"
         onClick={() => setIsOpen(true)}
       >
-        <Plus size={14} aria-hidden="true" />
-        Create
+        <Plus size={16} aria-hidden="true" />
+        <span className="board-column-create-label">Create</span>
       </button>
     );
   }

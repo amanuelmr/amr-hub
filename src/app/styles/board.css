@@ -1835,7 +1835,6 @@
 .board-grid.no-lanes .board-cell {
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
 }
 
 .board-body > .planning-insights {
@@ -2044,4 +2043,109 @@
   .board-filter-panel {
     grid-template-columns: 130px minmax(0, 1fr);
   }
+}
+
+/*
+ * Board cards, the clean Jira way: soft border and corners, outlined
+ * labels, the due date on its own line, key bottom left, avatar bottom right.
+ */
+.board-card.planning-card {
+  gap: 10px;
+  padding: 12px 12px 10px;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.18);
+}
+
+.board-card.planning-card:hover {
+  border-color: var(--gray-300);
+  background: var(--surface);
+  filter: brightness(1.04);
+}
+
+.board-card.planning-card.overlay {
+  box-shadow: 0 8px 20px rgb(0 0 0 / 0.3);
+}
+
+.board-card .board-card-head .board-card-title {
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.board-card-label {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  padding: 2px 8px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--label-color, var(--gray-500)) 75%, transparent);
+  border-radius: 6px;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-card-date {
+  margin: 0;
+  color: var(--ink-secondary);
+  font-size: 13px;
+}
+
+.board-card-date.overdue {
+  color: var(--red-600);
+}
+
+.board-card .board-card-meta {
+  flex-wrap: nowrap;
+  gap: 8px;
+  min-height: 30px;
+}
+
+.board-card .board-card-meta .board-card-id {
+  white-space: nowrap;
+}
+
+.board-card .board-card-meta .board-card-id {
+  font-size: 13px;
+}
+
+/* Column create: a dashed "+" bar under the cards, always visible. */
+.board-cell .board-column-create {
+  justify-content: center;
+  min-height: 36px;
+  margin-top: 2px;
+  border: 1px dashed var(--gray-300);
+  border-radius: 8px;
+  color: var(--gray-500);
+  opacity: 1;
+}
+
+.board-cell .board-column-create:hover,
+.board-cell .board-column-create:focus-visible {
+  border-color: var(--gray-500);
+  color: var(--ink);
+  background: var(--gray-50);
+}
+
+.board-cell .board-column-create .board-column-create-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+/* Columns still scroll, without a visible scrollbar. */
+.board-grid .board-cell {
+  scrollbar-width: none;
+}
+
+.board-grid .board-cell::-webkit-scrollbar {
+  display: none;
+}
+
+.board-cell .board-inline-create {
+  border-radius: 8px;
 }
