@@ -5,7 +5,7 @@ import {
   type JqlNode,
 } from "../../data/jql";
 import type { Cycle, Issue, IssuePriority } from "../../data/issues";
-import { isDoneStatus } from "../../data/workflow";
+import { isDoneStatus, statusCategory } from "../../data/workflow";
 import type { BoardCardColors, BoardQuery } from "../../data/projects";
 import type { Lane } from "./boardModel";
 
@@ -187,4 +187,60 @@ export function averageVelocity(cycles: Cycle[], projectId: string, count = 3) {
     0,
   );
   return { average: Math.round((total / closed.length) * 10) / 10, sprints: closed.length };
+}
+
+export type AttentionReason = "due" | "stuck" | "blocked" | "flagged";
+
+export const ATTENTION_LABELS: Record<AttentionReason, string> = {
+  due: "Due",
+  stuck: "Stuck",
+  blocked: "Blocked",
+  flagged: "Flagged",
+};
+
+/** Days an in-progress item may sit in one status before it counts as stuck. */
+export const STUCK_AFTER_DAYS = 7;
+
+/**
+ * Why an unfinished work item needs attention: due within two days (or
+ * overdue), stuck in an in-progress status, blocked by unfinished work, or
+ * flagged. Done work never needs attention.
+ */
+export function attentionReasons(
+  issue: Issue,
+  { now, blockedIds }: { now: Date; blockedIds: ReadonlySet<string> },
+): AttentionReason[] {
+  if (isDoneStatus(issue.status)) return [];
+  const reasons: AttentionReason[] = [];
+  if (issue.dueDate && Date.parse(issue.dueDate) <= now.getTime() + 2 * DAY_MS) {
+    reasons.push("due");
+  }
+  if (
+    statusCategory(issue.status) === "IN_PROGRESS" &&
+    issue.statusChangedAt &&
+    now.getTime() - Date.parse(issue.statusChangedAt) >= STUCK_AFTER_DAYS * DAY_MS
+  ) {
+    reasons.push("stuck");
+  }
+  if (blockedIds.has(issue.id)) reasons.push("blocked");
+  if (issue.flagged) reasons.push("flagged");
+  return reasons;
+}
+
+/** Average whole days the current work items have spent in each status. */
+export function timeInStatus(issues: Issue[], now: Date) {
+  const byStatus = new Map<string, { total: number; count: number }>();
+  for (const issue of issues) {
+    if (!issue.statusChangedAt) continue;
+    const days = Math.max(0, (now.getTime() - Date.parse(issue.statusChangedAt)) / DAY_MS);
+    const entry = byStatus.get(issue.status) ?? { total: 0, count: 0 };
+    entry.total += days;
+    entry.count += 1;
+    byStatus.set(issue.status, entry);
+  }
+  return [...byStatus.entries()].map(([status, { total, count }]) => ({
+    status,
+    count,
+    averageDays: Math.round((total / count) * 10) / 10,
+  }));
 }

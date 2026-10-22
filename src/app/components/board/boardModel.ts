@@ -161,6 +161,8 @@ export type IssueFilters = {
   statuses: string[];
   componentIds: string[];
   versionIds: string[];
+  /** Advanced or JQL tab of the Filter panel; applied by the page. */
+  jql: string;
 };
 
 export const EMPTY_FILTERS: IssueFilters = {
@@ -180,6 +182,7 @@ export const EMPTY_FILTERS: IssueFilters = {
   statuses: [],
   componentIds: [],
   versionIds: [],
+  jql: "",
 };
 
 export const UNASSIGNED = "__unassigned";

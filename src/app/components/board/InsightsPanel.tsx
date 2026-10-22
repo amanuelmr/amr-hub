@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Line,
   LineChart,
@@ -10,15 +10,44 @@ import {
   YAxis,
 } from "recharts";
 import { X } from "lucide-react";
-import { apiRequest } from "../../IssueProvider";
+import { apiRequest, useIssues } from "../../IssueProvider";
 import type { Cycle, Issue } from "../../data/issues";
 import type { BurndownPoint } from "../../data/reports";
-import { isDoneStatus, statusCategory } from "../../data/workflow";
+import { isDoneStatus, statusCategory, statusName } from "../../data/workflow";
 import { useWorkflows } from "../../WorkflowProvider";
 import { KindIcon } from "../IssueVisuals";
 import { useChartTheme } from "../reports/useChartTheme";
 import { epicColor, epicOf, pointBreakdown } from "./boardModel";
-import { averageVelocity } from "./boardRules";
+import {
+  ATTENTION_LABELS,
+  attentionReasons,
+  averageVelocity,
+  timeInStatus,
+  type AttentionReason,
+} from "./boardRules";
+import { useSelectedIssue } from "../issue/selectedIssue";
+
+type Dependency = { blockerId: string; blockedId: string };
+
+/** Work items blocked by unfinished work, from the project's "blocks" links. */
+function useBlockedIds(projectId: string, isDone: (id: string) => boolean) {
+  const [links, setLinks] = useState<Dependency[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    apiRequest<Dependency[]>(`/api/projects/${encodeURIComponent(projectId)}/dependencies`)
+      .then((loaded) => !cancelled && setLinks(loaded))
+      .catch(() => !cancelled && setLinks([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+  return useMemo(
+    () => new Set(links.filter((link) => !isDone(link.blockerId)).map((link) => link.blockedId)),
+    [links, isDone],
+  );
+}
+
+const ATTENTION_FILTERS: (AttentionReason | "all")[] = ["all", "due", "stuck", "blocked", "flagged"];
 
 type BurndownPayload = { burndown: { points: BurndownPoint[]; committed: number } };
 
@@ -131,7 +160,7 @@ function Burndown({ sprint }: { sprint: Cycle }) {
   );
 }
 
-/** Jira's board/backlog "Insights" drawer. */
+/** The board and backlog "Insights" drawer. */
 export function InsightsPanel({
   projectId,
   sprints,
@@ -147,8 +176,17 @@ export function InsightsPanel({
   cycles: Cycle[];
   onClose: () => void;
 }) {
-  const { typeMeta } = useWorkflows();
+  const { typeMeta, getWorkflow } = useWorkflows();
+  const { issues: allIssues } = useIssues();
+  const { open: openIssue } = useSelectedIssue();
   const [sprintId, setSprintId] = useState<string | null>(null);
+  const [attentionFilter, setAttentionFilter] = useState<AttentionReason | "all">("all");
+  const [now] = useState(() => new Date());
+  const isDone = useMemo(() => {
+    const done = new Set(allIssues.filter((item) => isDoneStatus(item.status)).map((item) => item.id));
+    return (id: string) => done.has(id);
+  }, [allIssues]);
+  const blockedIds = useBlockedIds(projectId, isDone);
   const sprint =
     sprints.find((candidate) => candidate.id === sprintId) ?? sprints[0] ?? null;
   const scoped = sprint
@@ -180,6 +218,17 @@ export function InsightsPanel({
     if (isDoneStatus(issue.status)) entry.done += 1;
     epics.set(key, entry);
   }
+
+  const attention = scoped
+    .map((issue) => ({ issue, reasons: attentionReasons(issue, { now, blockedIds }) }))
+    .filter((entry) => entry.reasons.length > 0);
+  const attentionShown =
+    attentionFilter === "all"
+      ? attention
+      : attention.filter((entry) => entry.reasons.includes(attentionFilter));
+  const statusTimes = timeInStatus(scoped, now);
+  const longestStatus = Math.max(1, ...statusTimes.map((row) => row.averageDays));
+  const workflowStatuses = getWorkflow(projectId).statuses;
 
   const velocity = averageVelocity(cycles, projectId);
   const committed = sprint ? (sprint.committedPoints ?? points.total) : 0;
@@ -213,6 +262,76 @@ export function InsightsPanel({
           </select>
         </label>
       )}
+
+      <section className="insights-card">
+        <h3>Work items for attention</h3>
+        <div className="insights-chips" role="group" aria-label="Show work items that are">
+          {ATTENTION_FILTERS.map((filter) => {
+            const count =
+              filter === "all"
+                ? attention.length
+                : attention.filter((entry) => entry.reasons.includes(filter)).length;
+            return (
+              <button
+                key={filter}
+                type="button"
+                className={attentionFilter === filter ? "active" : undefined}
+                aria-pressed={attentionFilter === filter}
+                onClick={() => setAttentionFilter(filter)}
+              >
+                {filter === "all" ? "All" : ATTENTION_LABELS[filter]} {count}
+              </button>
+            );
+          })}
+        </div>
+        {attentionShown.length === 0 ? (
+          <p className="insights-muted">Nothing needs attention right now.</p>
+        ) : (
+          <ul className="insights-attention">
+            {attentionShown.slice(0, 12).map(({ issue, reasons }) => (
+              <li key={issue.id}>
+                <button type="button" onClick={() => openIssue(issue.id)}>
+                  <KindIcon kind={issue.kind} projectId={projectId} />
+                  <span className="insights-attention-key">{issue.id}</span>
+                  <span className="insights-attention-title">{issue.title}</span>
+                </button>
+                <span className="insights-attention-reasons">
+                  {reasons.map((reason) => (
+                    <span key={reason} className={`insights-reason ${reason}`}>
+                      {ATTENTION_LABELS[reason]}
+                    </span>
+                  ))}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="insights-card">
+        <h3>Time spent in status</h3>
+        {statusTimes.length === 0 ? (
+          <p className="insights-muted">No status history yet.</p>
+        ) : (
+          <ul className="insights-list statuses">
+            {statusTimes.map((row) => (
+              <li key={row.status}>
+                <span>{statusName(row.status, workflowStatuses)}</span>
+                <strong>
+                  {row.averageDays} {row.averageDays === 1 ? "day" : "days"}
+                </strong>
+                <span className="insights-bar small" aria-hidden="true">
+                  <i
+                    className="progress"
+                    style={{ width: `${(row.averageDays / longestStatus) * 100}%` }}
+                  />
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="insights-muted">Average time the current work items have been in each status.</p>
+      </section>
 
       <section className="insights-card">
         <h3>{sprint ? "Sprint progress" : "Board progress"}</h3>

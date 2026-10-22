@@ -273,7 +273,8 @@ export function panelFilterCount(filters: IssueFilters) {
     filters.priorities.length +
     filters.statuses.length +
     filters.componentIds.length +
-    filters.versionIds.length
+    filters.versionIds.length +
+    (filters.jql.trim() ? 1 : 0)
   );
 }
 

@@ -43,6 +43,7 @@ import {
   Target,
   Undo2,
   UserPlus,
+  Users,
   SlidersHorizontal,
 } from "lucide-react";
 import { apiRequest, useIssues } from "../../../IssueProvider";
@@ -94,7 +95,7 @@ import {
   BoardAddColumn,
   BoardColumnHeader,
 } from "../../../components/board/BoardColumnHeader";
-import { useBoardView } from "../../../components/board/useBoardView";
+import { DEFAULT_BOARD_VIEW, useBoardView } from "../../../components/board/useBoardView";
 import { ViewSettingsPanel } from "../../../components/board/ViewSettingsPanel";
 import {
   BoardFilterPanel,
@@ -103,7 +104,7 @@ import {
 import { MemberAvatar } from "../../../components/board/PlanningVisuals";
 import { ConfirmDialog } from "../../../components/ConfirmDialog";
 import { DEFAULT_BOARD_ID } from "../../../data/projects";
-import { parseJql, searchIssuesWithJql } from "../../../data/jql";
+import { evaluateJql, parseJql, searchIssuesWithJql } from "../../../data/jql";
 import { usePlanningActions } from "../../../components/board/sprintApi";
 import { useWorkflow, useWorkflows } from "../../../WorkflowProvider";
 import {
@@ -471,6 +472,8 @@ export default function ProjectBoardPage() {
     setSidePanel((current) => (current === panel ? null : panel));
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [isEditSprintOpen, setIsEditSprintOpen] = useState(false);
+  // Stand-up walks the board one person at a time, then restores the filters.
+  const [standup, setStandup] = useState<{ index: number; saved: IssueFilters } | null>(null);
   // The last card move, so the toolbar's undo can put it back.
   const [lastMove, setLastMove] = useState<{
     issueId: string;
@@ -555,12 +558,14 @@ export default function ProjectBoardPage() {
   const typeColor = (kind: string) =>
     workflow.types.find((type) => type.key === kind)?.color ?? null;
 
+  // A viewer may override how long done work stays on a Kanban board.
+  const doneDays = view.doneDays === undefined ? config.kanbanDoneDays : view.doneDays;
   const planningBoardIssues = projectIssues.filter((issue) => {
     if (!isPlanningIssue(issue)) return false;
     if (boardType === "SCRUM") {
       return !!issue.cycleId && shownSprintIds.includes(issue.cycleId);
     }
-    return !isHiddenKanbanDone(issue, config.kanbanDoneDays, now);
+    return !isHiddenKanbanDone(issue, doneDays, now);
   });
   // Subtask lanes need the subtasks of every parent on the board; subtasks
   // follow their parent's sprint, as in Jira.
@@ -574,7 +579,7 @@ export default function ProjectBoardPage() {
               isSubtaskLevel(issue.kind) &&
               !!issue.parentId &&
               onBoardParents.has(issue.parentId) &&
-              !isHiddenKanbanDone(issue, config.kanbanDoneDays, now),
+              !isHiddenKanbanDone(issue, doneDays, now),
           ),
         ]
       : planningBoardIssues;
@@ -591,10 +596,13 @@ export default function ProjectBoardPage() {
   const columnOf = (issue: Issue) =>
     columnForStatus(columns, issue.status, boardType);
   const onBoard = filteredBoardIssues.filter((issue) => columnOf(issue) !== null);
+  // The Filter panel's Advanced and JQL tabs narrow the board further.
+  const panelJql = filters.jql.trim() ? parseJql(filters.jql, now) : null;
   const visible = onBoard.filter(
     (issue) =>
       matchesFilters(issue, filters, meId) &&
-      matchesQuickFilters(issue, filters.quickFilterIds, quickFilters, jqlContext),
+      matchesQuickFilters(issue, filters.quickFilterIds, quickFilters, jqlContext) &&
+      (!panelJql || (panelJql.ok && evaluateJql(panelJql.query.where, issue, jqlContext))),
   );
   // Parents shown as subtask-lane headers aren't cards, so they don't count.
   const laneHeaderIds = new Set(
@@ -1030,6 +1038,30 @@ export default function ProjectBoardPage() {
     />
   );
 
+  const standupPeople = [
+    ...boardMembers.map((member) => ({ id: member.id, name: member.name, member })),
+    ...(hasUnassigned ? [{ id: UNASSIGNED, name: "Unassigned", member: null }] : []),
+  ];
+  const showStandupPerson = (index: number) => {
+    const person = standupPeople[index];
+    if (!person) return;
+    setFilters((current) => ({ ...current, assigneeIds: [person.id] }));
+  };
+  const startStandup = () => {
+    if (standupPeople.length === 0) return;
+    setStandup({ index: 0, saved: filters });
+    showStandupPerson(0);
+  };
+  const moveStandup = (index: number) => {
+    setStandup((current) => (current ? { ...current, index } : current));
+    showStandupPerson(index);
+  };
+  const endStandup = () => {
+    if (standup) setFilters(standup.saved);
+    setStandup(null);
+  };
+  const standupPerson = standup ? standupPeople[standup.index] : null;
+
   const settingsHref = `/projects/${projectId}/settings?tab=board&board=${encodeURIComponent(boardId)}`;
   const boardMenu = (
     <DropdownMenu.Root>
@@ -1065,6 +1097,14 @@ export default function ProjectBoardPage() {
               <Maximize2 size={14} aria-hidden="true" />
             )}
             {isFullScreen ? "Exit full screen" : "Enter full screen"}
+          </DropdownMenu.Item>
+          <DropdownMenu.Item
+            className="planning-menu-item"
+            disabled={standupPeople.length === 0}
+            onSelect={() => (standup ? endStandup() : startStandup())}
+          >
+            <Users size={14} aria-hidden="true" />
+            {standup ? "End stand-up" : "Start stand-up"}
           </DropdownMenu.Item>
           {boardType === "SCRUM" && (
             <DropdownMenu.Item className="planning-menu-item" asChild>
@@ -1116,7 +1156,9 @@ export default function ProjectBoardPage() {
   const columnStyle = {
     "--board-columns": columns.length,
     "--board-template": columns
-      .map((column) => track(column, "minmax(250px, 1fr)"))
+      .map((column) =>
+        track(column, view.columnSize === "fixed" ? "272px" : "minmax(250px, 1fr)"),
+      )
       .join(" "),
     "--board-template-narrow": columns
       .map((column) => track(column, "minmax(240px, 80vw)"))
@@ -1260,6 +1302,7 @@ export default function ProjectBoardPage() {
         [
           "page board-page",
           sidePanel ? "with-insights" : "",
+          view.scroll === "board" ? "scroll-board" : "",
           isFullScreen ? "fullscreen" : "",
         ]
           .filter(Boolean)
@@ -1399,6 +1442,22 @@ export default function ProjectBoardPage() {
             fields={filterFields}
             filters={filters}
             setFilters={setFilters}
+            choices={{
+              assignee: boardMembers.map((member) => member.name),
+              status: boardStatuses.map((key) => statusName(key, workflow.statuses)),
+              priority: Object.values(PRIORITY_LABELS),
+              type: workflow.types.map((type) => type.name),
+              labels: labels.map((label) => label.name),
+            }}
+            jqlSource={{
+              projects,
+              members,
+              labels,
+              cycles,
+              statuses: workflow.statuses.map((status) => ({ name: status.name })),
+              types: workflow.types.map((type) => ({ name: type.name })),
+            }}
+            jqlError={panelJql && !panelJql.ok ? panelJql.error : null}
           />
           <FilterMenu label="Custom filters" count={customCount}>
             {QUICK_FILTERS.map(([key, label]) => (
@@ -1535,6 +1594,41 @@ export default function ProjectBoardPage() {
           {boardMenu}
         </div>
       </div>
+
+      {standup && standupPerson && (
+        <div className="board-standup" role="region" aria-label="Stand-up">
+          <span className="board-standup-label">Stand-up</span>
+          <MemberAvatar member={standupPerson.member} />
+          <strong>{standupPerson.name}</strong>
+          <span className="board-standup-count">
+            {standup.index + 1} of {standupPeople.length}
+          </span>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={standup.index === 0}
+            onClick={() => moveStandup(standup.index - 1)}
+          >
+            Previous
+          </button>
+          {standup.index < standupPeople.length - 1 ? (
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => moveStandup(standup.index + 1)}
+            >
+              Next person
+            </button>
+          ) : (
+            <button type="button" className="primary-button" onClick={endStandup}>
+              Finish stand-up
+            </button>
+          )}
+          <button type="button" className="text-button" onClick={endStandup}>
+            End
+          </button>
+        </div>
+      )}
 
       {planning.error && (
         <p className="form-submit-error" role="alert">
@@ -1754,6 +1848,15 @@ export default function ProjectBoardPage() {
             )
           }
           onToggleFullScreen={() => setIsFullScreen((current) => !current)}
+          showDoneDays={boardType === "KANBAN"}
+          boardDoneDays={config.kanbanDoneDays}
+          onReset={() => {
+            setFilters(EMPTY_FILTERS);
+            setSwimlaneChoice(null);
+            setCollapsedLanes(new Set());
+            setStandup(null);
+            updateView(() => DEFAULT_BOARD_VIEW);
+          }}
           onClose={() => setSidePanel(null)}
         />
       )}

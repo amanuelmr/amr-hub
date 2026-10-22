@@ -5,6 +5,7 @@ import {
   EVERYTHING_ELSE,
   PRIORITY_COLORS,
   activeSprintsOf,
+  attentionReasons,
   averageVelocity,
   cardColorFor,
   compileQueries,
@@ -12,6 +13,7 @@ import {
   hashColor,
   isHiddenKanbanDone,
   matchesQuickFilters,
+  timeInStatus,
   visibleSprintIds,
 } from "./boardRules";
 
@@ -198,5 +200,55 @@ describe("parallel sprint selection", () => {
   it("averages closed sprint velocity", () => {
     expect(averageVelocity(cycles, "p")).toEqual({ average: 10, sprints: 1 });
     expect(averageVelocity([], "p")).toBeNull();
+  });
+});
+
+describe("attentionReasons", () => {
+  const none = new Set<string>();
+
+  it("flags due, stuck, blocked and flagged work", () => {
+    const item = issue({
+      id: "AMR-9",
+      status: "IN_PROGRESS",
+      dueDate: "2026-10-19",
+      statusChangedAt: "2026-10-01T00:00:00.000Z",
+      flagged: true,
+    });
+    expect(attentionReasons(item, { now: NOW, blockedIds: new Set(["AMR-9"]) })).toEqual([
+      "due",
+      "stuck",
+      "blocked",
+      "flagged",
+    ]);
+  });
+
+  it("ignores done work, far due dates and fresh or to-do statuses", () => {
+    expect(attentionReasons(issue({ status: "DONE", flagged: true }), { now: NOW, blockedIds: none })).toEqual([]);
+    expect(
+      attentionReasons(
+        issue({ status: "OPEN", dueDate: "2026-11-30", statusChangedAt: "2026-01-01T00:00:00.000Z" }),
+        { now: NOW, blockedIds: none },
+      ),
+    ).toEqual([]);
+    expect(
+      attentionReasons(issue({ status: "IN_PROGRESS", statusChangedAt: "2026-10-16T00:00:00.000Z" }), {
+        now: NOW,
+        blockedIds: none,
+      }),
+    ).toEqual([]);
+  });
+});
+
+describe("timeInStatus", () => {
+  it("averages days per status and skips items without a timestamp", () => {
+    const rows = timeInStatus(
+      [
+        issue({ id: "A", status: "OPEN", statusChangedAt: "2026-10-16T12:00:00.000Z" }),
+        issue({ id: "B", status: "OPEN", statusChangedAt: "2026-10-14T12:00:00.000Z" }),
+        issue({ id: "C", status: "DONE" }),
+      ],
+      NOW,
+    );
+    expect(rows).toEqual([{ status: "OPEN", count: 2, averageDays: 3 }]);
   });
 });
