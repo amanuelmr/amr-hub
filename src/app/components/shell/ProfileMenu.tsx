@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { BellRing, LogOut, Moon, Sun, UserRound } from "lucide-react";
+import { BellRing, CircleUser, LogOut, Moon, Sun, UserRound } from "lucide-react";
 import { authClient } from "../../../lib/auth-client";
 import { THEME_STORAGE_KEY } from "../ThemeToggle";
 
@@ -80,6 +80,15 @@ export function ProfileMenu() {
           </div>
           <DropdownMenu.Separator className="shell-menu-separator" />
           <DropdownMenu.Label className="shell-menu-label">Account</DropdownMenu.Label>
+          {session?.user.id && (
+            <DropdownMenu.Item
+              className="shell-menu-item"
+              onSelect={() => router.push(`/people/${session.user.id}`)}
+            >
+              <CircleUser size={15} aria-hidden="true" />
+              Profile
+            </DropdownMenu.Item>
+          )}
           <DropdownMenu.Item className="shell-menu-item" onSelect={() => router.push("/account")}>
             <UserRound size={15} aria-hidden="true" />
             Account settings
