@@ -274,13 +274,31 @@ export type TimelinePrefs = {
   showWarnings: boolean;
   /** "custom": one colour per epic; "status": colour by status category. */
   barColor: "custom" | "status";
+  showStatus: boolean;
+  showAssignee: boolean;
+  showReleases: boolean;
+  sortBy: TimelineSort;
 };
+
+export type TimelineSort = "rank" | "status" | "assignee" | "start" | "due";
+
+export const TIMELINE_SORTS: { value: TimelineSort; label: string }[] = [
+  { value: "rank", label: "Rank" },
+  { value: "status", label: "Status" },
+  { value: "assignee", label: "Assignee" },
+  { value: "start", label: "Start date" },
+  { value: "due", label: "Due date" },
+];
 
 export const DEFAULT_TIMELINE_PREFS: TimelinePrefs = {
   hideDone: false,
   showDependencies: true,
   showWarnings: true,
   barColor: "custom",
+  showStatus: true,
+  showAssignee: true,
+  showReleases: true,
+  sortBy: "rank",
 };
 
 export function parseTimelinePrefs(raw: string | null): TimelinePrefs {
@@ -292,8 +310,43 @@ export function parseTimelinePrefs(raw: string | null): TimelinePrefs {
       showDependencies: value.showDependencies !== false,
       showWarnings: value.showWarnings !== false,
       barColor: value.barColor === "status" ? "status" : "custom",
+      showStatus: value.showStatus !== false,
+      showAssignee: value.showAssignee !== false,
+      showReleases: value.showReleases !== false,
+      sortBy: TIMELINE_SORTS.some((option) => option.value === value.sortBy)
+        ? (value.sortBy as TimelineSort)
+        : "rank",
     };
   } catch {
     return DEFAULT_TIMELINE_PREFS;
   }
+}
+
+const STATUS_ORDER = { TODO: 0, IN_PROGRESS: 1, DONE: 2 } as const;
+
+/**
+ * Orders timeline rows. Rank keeps the backlog order; the other sorts fall
+ * back to rank, and items without the value (no assignee, no date) go last.
+ */
+export function compareTimelineItems<
+  T extends {
+    rank: number;
+    statusCategory: keyof typeof STATUS_ORDER;
+    assigneeName: string | null;
+    startDate: string | null;
+    dueDate: string | null;
+  },
+>(sortBy: TimelineSort, left: T, right: T) {
+  const last = (value: string | null) => value ?? "\uffff";
+  const byKey =
+    sortBy === "status"
+      ? STATUS_ORDER[left.statusCategory] - STATUS_ORDER[right.statusCategory]
+      : sortBy === "assignee"
+        ? last(left.assigneeName).localeCompare(last(right.assigneeName))
+        : sortBy === "start"
+          ? last(left.startDate).localeCompare(last(right.startDate))
+          : sortBy === "due"
+            ? last(left.dueDate).localeCompare(last(right.dueDate))
+            : 0;
+  return byKey || left.rank - right.rank;
 }
