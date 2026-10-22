@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_CALENDAR_PREFS,
   buildMonthWeeks,
+  buildWeek,
+  parseCalendarPrefs,
+  weekdayNames,
   issueRange,
   layoutWeek,
   moveToDay,
@@ -107,5 +111,27 @@ describe("helpers", () => {
     ];
     expect(sprintForDay("2026-10-14", sprints)?.id).toBe("s1");
     expect(sprintForDay("2026-10-15", sprints)).toBeNull();
+  });
+});
+
+describe("week options", () => {
+  it("builds Monday-first months and single weeks", () => {
+    const weeks = buildMonthWeeks(new Date(2026, 9, 15), 1);
+    expect(weeks[0][0]).toBe("2026-09-28");
+    expect(buildWeek(new Date(2026, 9, 22), 1)).toEqual([
+      ["2026-10-19", "2026-10-20", "2026-10-21", "2026-10-22", "2026-10-23", "2026-10-24", "2026-10-25"],
+    ]);
+    expect(weekdayNames(1)[0]).toBe("Mon");
+  });
+
+  it("parses stored calendar settings safely", () => {
+    expect(parseCalendarPrefs(null)).toEqual(DEFAULT_CALENDAR_PREFS);
+    expect(parseCalendarPrefs("{bad")).toEqual(DEFAULT_CALENDAR_PREFS);
+    expect(parseCalendarPrefs('{"mode":"week","weekStartsOn":1,"colorBy":"type","showKey":true}')).toEqual({
+      mode: "week",
+      weekStartsOn: 1,
+      colorBy: "type",
+      showKey: true,
+    });
   });
 });
