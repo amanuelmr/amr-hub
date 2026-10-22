@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_TIMELINE_PREFS,
+  parseTimelinePrefs,
   addDays,
   applyDrag,
   barGeometry,
@@ -133,5 +135,17 @@ describe("headerSegments", () => {
     const { top, bottom } = headerSegments("2026-01-01", "2026-12-31", "QUARTERS");
     expect(top).toHaveLength(1);
     expect(bottom.map((segment) => segment.label)).toEqual(["Q1", "Q2", "Q3", "Q4"]);
+  });
+});
+
+describe("parseTimelinePrefs", () => {
+  it("defaults and reads stored values", () => {
+    expect(parseTimelinePrefs(null)).toEqual(DEFAULT_TIMELINE_PREFS);
+    expect(parseTimelinePrefs('{"hideDone":true,"showDependencies":false,"barColor":"status"}')).toEqual({
+      hideDone: true,
+      showDependencies: false,
+      showWarnings: true,
+      barColor: "status",
+    });
   });
 });

@@ -266,3 +266,34 @@ export function barGeometry(
   const days = diffDays(span.start, span.end) + 1;
   return { left: offset * dayWidth, width: Math.max(days * dayWidth, 6) };
 }
+
+export type TimelinePrefs = {
+  hideDone: boolean;
+  showDependencies: boolean;
+  /** Draw overlapping dependencies in red. */
+  showWarnings: boolean;
+  /** "custom": one colour per epic; "status": colour by status category. */
+  barColor: "custom" | "status";
+};
+
+export const DEFAULT_TIMELINE_PREFS: TimelinePrefs = {
+  hideDone: false,
+  showDependencies: true,
+  showWarnings: true,
+  barColor: "custom",
+};
+
+export function parseTimelinePrefs(raw: string | null): TimelinePrefs {
+  if (!raw) return DEFAULT_TIMELINE_PREFS;
+  try {
+    const value = JSON.parse(raw) as Partial<TimelinePrefs>;
+    return {
+      hideDone: value.hideDone === true,
+      showDependencies: value.showDependencies !== false,
+      showWarnings: value.showWarnings !== false,
+      barColor: value.barColor === "status" ? "status" : "custom",
+    };
+  } catch {
+    return DEFAULT_TIMELINE_PREFS;
+  }
+}

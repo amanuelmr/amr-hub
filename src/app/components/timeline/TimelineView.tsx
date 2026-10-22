@@ -16,10 +16,14 @@ import {
   CalendarPlus,
   ChevronDown,
   ChevronRight,
+  CircleHelp,
   GitBranch,
   Plus,
   Search,
+  SlidersHorizontal,
 } from "lucide-react";
+import * as Popover from "@radix-ui/react-popover";
+import { useStoredPrefs } from "../useStoredPrefs";
 import { apiRequest, useIssues } from "../../IssueProvider";
 import { DependencyLayer } from "./DependencyLayer";
 import type { Dependency } from "../../../server/dependencies";
@@ -44,10 +48,12 @@ import {
   barSpan,
   diffDays,
   headerSegments,
+  parseTimelinePrefs,
   pixelsToDays,
   timelineRange,
   toDayKey,
   type DragMode,
+  type TimelinePrefs,
   type TimelineZoom,
 } from "./timelineMath";
 import { isDoneStatus, isEpicLevel, statusCategory } from "../../data/workflow";
@@ -132,7 +138,11 @@ export function TimelineView({
   const scrollRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const [dependencies, setDependencies] = useState<Dependency[]>([]);
-  const [showDependencies, setShowDependencies] = useState(true);
+  const { value: view, update: updateView } = useStoredPrefs(
+    `amr.timeline.${mode}.${projectKey}`,
+    parseTimelinePrefs,
+  );
+  const showDependencies = view.showDependencies;
 
   useEffect(() => {
     let cancelled = false;
@@ -176,7 +186,9 @@ export function TimelineView({
       (assigneeFilter === "ALL" ||
         (assigneeFilter === "UNASSIGNED"
           ? !issue.assignee
-          : issue.assignee?.id === assigneeFilter));
+          : issue.assignee?.id === assigneeFilter)) &&
+      (!view.hideDone || !isDoneStatus(issue.status));
+    const statusColor = (issue: Issue) => STATUS_BAR_COLORS[statusCategory(issue.status)];
     const order = projectKey.split(",");
     const epics = projectIssues
       .filter((issue) => isEpicLevel(issue.kind))
@@ -222,7 +234,7 @@ export function TimelineView({
       result.push({
         issue: epic,
         depth: 0,
-        color,
+        color: view.barColor === "status" ? statusColor(epic) : color,
         progress: children.length ? done / children.length : null,
         childCount: children.length,
       });
@@ -231,7 +243,7 @@ export function TimelineView({
           result.push({
             issue: child,
             depth: 1,
-            color,
+            color: view.barColor === "status" ? statusColor(child) : color,
             progress: isDoneStatus(child.status) ? 1 : null,
             childCount: 0,
           });
@@ -249,6 +261,8 @@ export function TimelineView({
     projectKey,
     projects,
     mode,
+    view.hideDone,
+    view.barColor,
   ]);
   const { rows, headers: projectHeaders } = rowModel;
 
@@ -434,16 +448,8 @@ export function TimelineView({
           </select>
         </label>
         <div className="jira-toolbar-spacer" />
-        <button
-          type="button"
-          className={showDependencies ? "secondary-button active" : "secondary-button"}
-          aria-pressed={showDependencies}
-          onClick={() => setShowDependencies((current) => !current)}
-          title="Show arrows between work items that block each other"
-        >
-          <GitBranch size={14} aria-hidden="true" />
-          Dependencies
-        </button>
+        <TimelineLegend />
+        <TimelineSettings view={view} onUpdate={updateView} />
         <div
           className="filter-tabs timeline-zoom"
           role="tablist"
@@ -470,6 +476,7 @@ export function TimelineView({
             {showDependencies && (
               <DependencyLayer
                 gridRef={gridRef}
+                showWarnings={view.showWarnings}
                 dependencies={dependencies}
                 spans={barSpans}
                 version={`${zoom}|${rows.length}|${[...expanded].join(",")}|${preview ? `${preview.id}:${preview.span.start}:${preview.span.end}` : ""}`}
@@ -801,5 +808,107 @@ function TimelineBar({
         </>
       )}
     </div>
+  );
+}
+
+const STATUS_BAR_COLORS: Record<StatusCategory, string> = {
+  TODO: "var(--gray-400)",
+  IN_PROGRESS: "var(--console-cyan)",
+  DONE: "var(--green-500)",
+};
+
+function TimelineSettings({
+  view,
+  onUpdate,
+}: {
+  view: TimelinePrefs;
+  onUpdate: (change: (current: TimelinePrefs) => TimelinePrefs) => void;
+}) {
+  const toggle = (key: "hideDone" | "showDependencies" | "showWarnings", label: string) => (
+    <label className="timeline-settings-check">
+      <input
+        type="checkbox"
+        checked={view[key]}
+        onChange={() => onUpdate((current) => ({ ...current, [key]: !current[key] }))}
+      />
+      <span>{label}</span>
+    </label>
+  );
+  return (
+    <Popover.Root>
+      <Popover.Trigger asChild>
+        <button type="button" className="icon-button" aria-label="View settings" title="View settings">
+          <SlidersHorizontal size={16} aria-hidden="true" />
+        </button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content className="timeline-popover" align="end" sideOffset={6}>
+          <h3>View settings</h3>
+          {toggle("hideDone", "Hide done work items")}
+          {toggle("showDependencies", "Show dependencies")}
+          {toggle("showWarnings", "Highlight date conflicts")}
+          <fieldset>
+            <legend>Bar colour</legend>
+            <label className="timeline-settings-check">
+              <input
+                type="radio"
+                name="timeline-bar-color"
+                checked={view.barColor === "custom"}
+                onChange={() => onUpdate((current) => ({ ...current, barColor: "custom" }))}
+              />
+              <span>One colour per epic</span>
+            </label>
+            <label className="timeline-settings-check">
+              <input
+                type="radio"
+                name="timeline-bar-color"
+                checked={view.barColor === "status"}
+                onChange={() => onUpdate((current) => ({ ...current, barColor: "status" }))}
+              />
+              <span>Match work item status</span>
+            </label>
+          </fieldset>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
+function TimelineLegend() {
+  return (
+    <Popover.Root>
+      <Popover.Trigger asChild>
+        <button type="button" className="icon-button" aria-label="Legend" title="Legend">
+          <CircleHelp size={16} aria-hidden="true" />
+        </button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content className="timeline-popover timeline-legend" align="end" sideOffset={6}>
+          <h3>Legend</h3>
+          <ul>
+            <li>
+              <span className="legend-swatch arrow" aria-hidden="true" />
+              Dependency: the first item blocks the second
+            </li>
+            <li>
+              <span className="legend-swatch arrow conflict" aria-hidden="true" />
+              Date conflict: the blocker ends after the blocked item starts
+            </li>
+            <li>
+              <span className="legend-swatch today" aria-hidden="true" />
+              Today
+            </li>
+            <li>
+              <span className="legend-swatch progress" aria-hidden="true" />
+              Filled part of an epic bar: share of its child items done
+            </li>
+            <li>
+              <GitBranch size={13} aria-hidden="true" />
+              Drag a bar to move it; drag its ends to change start and due dates
+            </li>
+          </ul>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }

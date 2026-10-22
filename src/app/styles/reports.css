@@ -1744,3 +1744,166 @@ a.calendar-chip-title:hover {
   color: var(--gray-500);
   font-size: 12px;
 }
+
+/* Calendar: month/week switch, view settings and chip colouring. */
+.calendar-mode {
+  display: inline-flex;
+  margin-left: 8px;
+  overflow: hidden;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius);
+}
+
+.calendar-mode button {
+  padding: 4px 10px;
+  border: 0;
+  color: var(--ink-secondary);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.calendar-mode button.active {
+  color: var(--console-ink);
+  background: var(--console-lime);
+  font-weight: 700;
+}
+
+.calendar-settings {
+  z-index: 120;
+  display: flex;
+  width: 240px;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 2px solid var(--console-line);
+  border-radius: var(--radius);
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: var(--console-shadow-small);
+  font-size: 13px;
+}
+
+.calendar-settings h3 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.calendar-settings label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.calendar-settings select {
+  height: 30px;
+  padding: 0 6px;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius);
+  color: var(--ink);
+  background: var(--surface);
+  font: inherit;
+}
+
+.calendar-settings .calendar-settings-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.calendar-chip.colored {
+  border-left-color: var(--chip-color);
+}
+
+.calendar-panel.week-mode .calendar-day {
+  min-height: 420px;
+}
+
+/* Timeline view settings and legend. */
+.timeline-popover {
+  z-index: 120;
+  display: flex;
+  width: 280px;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 2px solid var(--console-line);
+  border-radius: var(--radius);
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: var(--console-shadow-small);
+  font-size: 13px;
+}
+
+.timeline-popover h3 {
+  margin: 0 0 2px;
+  font-size: 13px;
+}
+
+.timeline-popover fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 0;
+  padding: 8px 0 0;
+  border: 0;
+  border-top: 1px solid var(--gray-200);
+}
+
+.timeline-popover legend {
+  padding: 0;
+  color: var(--gray-500);
+  font-size: 12px;
+}
+
+.timeline-settings-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.timeline-legend ul {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.timeline-legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1.4;
+}
+
+.legend-swatch {
+  flex: none;
+  width: 22px;
+  height: 10px;
+}
+
+.legend-swatch.arrow {
+  height: 0;
+  border-top: 2px solid var(--gray-500);
+}
+
+.legend-swatch.arrow.conflict {
+  border-top: 2px dashed var(--red-500);
+}
+
+.legend-swatch.today {
+  width: 2px;
+  height: 16px;
+  margin: 0 10px;
+  background: var(--red-500);
+}
+
+.legend-swatch.progress {
+  border: 1px solid var(--console-line);
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--console-cyan) 60%, var(--gray-100) 60%);
+}

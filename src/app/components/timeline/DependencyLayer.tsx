@@ -22,7 +22,7 @@ function arrowPath(x1: number, y1: number, x2: number, y2: number) {
 }
 
 /**
- * Jira Plans-style dependency arrows: an SVG layer over the timeline grid
+ * Dependency arrows: an SVG layer over the timeline grid
  * that connects the end of each blocker's bar to the start of the work it
  * blocks. Bars are measured after layout, so zoom, scroll and drag previews
  * stay in sync without duplicating the bar geometry maths.
@@ -32,12 +32,15 @@ export function DependencyLayer({
   dependencies,
   spans,
   version,
+  showWarnings = true,
 }: {
   gridRef: RefObject<HTMLDivElement | null>;
   dependencies: Dependency[];
   spans: Map<string, Span>;
   /** Changes whenever bars may have moved (rows, zoom, drag preview). */
   version: string;
+  /** Draw overlapping dependencies in the conflict colour. */
+  showWarnings?: boolean;
 }) {
   const [arrows, setArrows] = useState<Arrow[]>([]);
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -116,7 +119,7 @@ export function DependencyLayer({
           <path d="M 0 0 L 8 4 L 0 8 z" className="timeline-dep-head conflict" />
         </marker>
       </defs>
-      {arrows.map((arrow) => (
+      {arrows.map(({ conflict: overlaps, ...arrow }) => ({ ...arrow, conflict: overlaps && showWarnings })).map((arrow) => (
         <path
           key={arrow.key}
           d={arrow.path}
