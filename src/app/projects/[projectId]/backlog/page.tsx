@@ -55,6 +55,9 @@ import {
   type MoveDestination,
   type RowAction,
 } from "../../../components/board/BacklogRow";
+import { BacklogViewSettings, SprintWorkload } from "../../../components/board/BacklogViewControls";
+import { parseBacklogView } from "../../../components/board/backlogView";
+import { useStoredPrefs } from "../../../components/useStoredPrefs";
 import {
   AssigneeStack,
   EpicFilter,
@@ -115,7 +118,7 @@ import {
   type IssueStatus,
 } from "../../../data/issues";
 import { DEFAULT_BOARD_CONFIG } from "../../../data/projects";
-import { isEpicLevel } from "../../../data/workflow";
+import { isEpicLevel, isSubtaskLevel } from "../../../data/workflow";
 import { useWorkflow } from "../../../WorkflowProvider";
 
 const BACKLOG_KEY = "backlog";
@@ -434,6 +437,33 @@ export default function ProjectBacklogPage() {
   const showEpics = panel === "epics";
   const showVersions = panel === "versions";
   const [showInsights, setShowInsights] = useState(false);
+  const { value: backlogView, update: updateBacklogView } = useStoredPrefs(
+    `amr.backlog.${projectId}`,
+    parseBacklogView,
+  );
+  const togglePanel = (next: "epics" | "versions") =>
+    setPanel((current) => (current === next ? null : next));
+
+  // V and E toggle the version and epic panels while not typing.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
+      ) {
+        return;
+      }
+      // With a work item open, its own shortcuts (e = edit) take over.
+      if (selectedIssueId) return;
+      const key = event.key.toLowerCase();
+      if (key === "v") setPanel((current) => (current === "versions" ? null : "versions"));
+      if (key === "e") setPanel((current) => (current === "epics" ? null : "epics"));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedIssueId]);
   const [notice, setNotice] = useState<string | null>(null);
   const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
   const [now] = useState(() => new Date());
@@ -939,6 +969,14 @@ export default function ProjectBacklogPage() {
             <Lightbulb size={14} aria-hidden="true" />
             Insights
           </button>
+          <BacklogViewSettings
+            view={backlogView}
+            onUpdate={updateBacklogView}
+            showVersions={showVersions}
+            showEpics={showEpics}
+            onToggleVersions={() => togglePanel("versions")}
+            onToggleEpics={() => togglePanel("epics")}
+          />
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
               <button
@@ -1369,6 +1407,17 @@ export default function ProjectBacklogPage() {
                             {totals.total}/{sprint.capacity}
                           </span>
                         )}
+                        {sprint && (
+                          <SprintWorkload
+                            sprintName={sprint.name}
+                            issues={section.allIssues}
+                            subtasks={projectIssues.filter(
+                              (issue) =>
+                                isSubtaskLevel(issue.kind) &&
+                                section.allIssues.some((parent) => parent.id === issue.parentId),
+                            )}
+                          />
+                        )}
                         <PointPills issues={section.allIssues} />
                         {sprint && !isViewer && (
                           <>
@@ -1422,6 +1471,8 @@ export default function ProjectBacklogPage() {
                               isViewer={isViewer}
                               meId={meId}
                               color={colorOf(issue)}
+                              hidden={backlogView.hidden}
+                              compact={backlogView.density === "compact"}
                               destinations={destinations.filter(
                                 (destination) =>
                                   destination.id !== section.cycleId,
@@ -1461,6 +1512,7 @@ export default function ProjectBacklogPage() {
                 <div className="backlog-row overlay">
                   <BacklogRowBody
                     issue={activeIssue}
+                    hidden={backlogView.hidden}
                     selectionCount={dragCount}
                   />
                 </div>
