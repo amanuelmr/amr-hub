@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -15,6 +15,7 @@ import {
   ListTodo,
   Plus,
   Settings2,
+  SlidersHorizontal,
   Star,
   Target,
   Users,
@@ -26,6 +27,8 @@ import { ProjectAvatar } from "./ProjectAvatar";
 import { RecentFlyout } from "./RecentFlyout";
 import { StarredFlyout } from "./StarredFlyout";
 import { useRecentProjectIds } from "./recentProjects";
+import { CustomizeSidebarDialog } from "./CustomizeSidebarDialog";
+import { useSidebarPrefs, type SidebarItemKey } from "./useSidebarPrefs";
 
 const PROJECT_PATH = /^\/projects\/([^/]+)/;
 
@@ -71,6 +74,8 @@ export function Sidebar({
   const isViewer = activeMember?.role === "viewer";
   const { projects, setActiveProjectId } = useProjects();
   const [isProjectsOpen, setIsProjectsOpen] = useState(true);
+  const [isCustomizing, setIsCustomizing] = useState(false);
+  const { prefs, save } = useSidebarPrefs();
 
   const routeProjectId = pathname.match(PROJECT_PATH)?.[1] ?? null;
   const currentProjectId =
@@ -108,8 +113,230 @@ export function Sidebar({
   if (showCollapsed) classes.push("collapsed");
   if (isDrawerOpen) classes.push("drawer-open");
 
+  const sidebarItems: Record<SidebarItemKey, ReactNode> = {
+    recent: (
+      <RecentFlyout
+        recentProjects={recentProjects}
+        onNavigate={onCloseDrawer}
+      />
+    ),
+    starred: (
+      <StarredFlyout projects={sortedProjects} onNavigate={onCloseDrawer} />
+    ),
+    projects: (
+      <>
+        {showCollapsed ? (
+          <NavLink
+            href="/projects"
+            label="Projects"
+            icon={FolderKanban}
+            isActive={isActive("/projects")}
+            onNavigate={onCloseDrawer}
+          />
+        ) : (
+          <div
+            className={
+              isProjectsIndex ? "shell-nav-group active" : "shell-nav-group"
+            }
+          >
+            <div className="shell-nav-item shell-nav-item-split">
+              <button
+                type="button"
+                className="shell-nav-expander"
+                onClick={() => setIsProjectsOpen((current) => !current)}
+                aria-expanded={isProjectsOpen}
+                aria-controls="shell-project-list"
+                aria-label={
+                  isProjectsOpen ? "Collapse projects" : "Expand projects"
+                }
+              >
+                <FolderKanban
+                  className="shell-nav-expander-icon"
+                  size={16}
+                  aria-hidden="true"
+                />
+                {isProjectsOpen ? (
+                  <ChevronDown
+                    className="shell-nav-expander-chevron"
+                    size={14}
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <ChevronRight
+                    className="shell-nav-expander-chevron"
+                    size={14}
+                    aria-hidden="true"
+                  />
+                )}
+              </button>
+              <Link
+                href="/projects"
+                className="shell-nav-split-link"
+                title="Projects"
+                aria-current={pathname === "/projects" ? "page" : undefined}
+                onClick={onCloseDrawer}
+              >
+                <span className="shell-nav-label">Projects</span>
+              </Link>
+              {!isViewer && (
+                <Link
+                  href="/projects/new"
+                  className="shell-nav-action"
+                  aria-label="Create project"
+                  title="Create project"
+                  onClick={onCloseDrawer}
+                >
+                  <Plus size={14} aria-hidden="true" />
+                </Link>
+              )}
+            </div>
+
+            {isProjectsOpen && (
+              <ul id="shell-project-list" className="shell-project-list">
+                {sortedProjects.length === 0 ? (
+                  <li className="shell-project-empty">No projects yet</li>
+                ) : (
+                  sortedProjects.map((project) => {
+                    const active = currentProjectId === project.id;
+                    return (
+                      <li key={project.id}>
+                        <Link
+                          href={`/projects/${project.id}`}
+                          onClick={() => {
+                            setActiveProjectId(project.id);
+                            onCloseDrawer();
+                          }}
+                          className={
+                            active
+                              ? "shell-project-item active"
+                              : "shell-project-item"
+                          }
+                          aria-current={active ? "page" : undefined}
+                          title={project.name}
+                        >
+                          <ProjectAvatar project={project} />
+                          <span className="shell-project-name">
+                            {project.name}
+                          </span>
+                          {project.starred && (
+                            <Star
+                              className="shell-project-star"
+                              size={12}
+                              aria-label="Starred"
+                            />
+                          )}
+                        </Link>
+                      </li>
+                    );
+                  })
+                )}
+                <li>
+                  <Link
+                    href="/projects"
+                    className="shell-project-item shell-project-all"
+                    onClick={onCloseDrawer}
+                  >
+                    View all projects
+                  </Link>
+                </li>
+              </ul>
+            )}
+          </div>
+        )}
+      </>
+    ),
+    filters: (
+      <NavLink
+        href="/filters"
+        label="Filters"
+        icon={Filter}
+        isActive={isActive("/filters")}
+        onNavigate={onCloseDrawer}
+      />
+    ),
+    dashboards: (
+      <NavLink
+        href="/dashboards"
+        label="Dashboards"
+        icon={Gauge}
+        isActive={isActive("/dashboards")}
+        onNavigate={onCloseDrawer}
+      />
+    ),
+    roadmap: (
+      <NavLink
+        href="/roadmap"
+        label="Roadmap"
+        icon={GanttChart}
+        isActive={isActive("/roadmap")}
+        onNavigate={onCloseDrawer}
+      />
+    ),
+    goals: (
+      <NavLink
+        href="/goals"
+        label="Goals"
+        icon={Target}
+        isActive={isActive("/goals")}
+        onNavigate={onCloseDrawer}
+      />
+    ),
+    people: (
+      <NavLink
+        href="/people"
+        label="People"
+        icon={UsersRound}
+        isActive={isActive("/people")}
+        onNavigate={onCloseDrawer}
+      />
+    ),
+    teams: (
+      <NavLink
+        href="/teams"
+        label="Teams"
+        icon={Users}
+        isActive={isActive("/teams")}
+        onNavigate={onCloseDrawer}
+      />
+    ),
+    overview: (
+      <NavLink
+        href="/dashboard"
+        label="Overview"
+        icon={LayoutDashboard}
+        isActive={isActive("/dashboard")}
+        onNavigate={onCloseDrawer}
+      />
+    ),
+    issues: (
+      <NavLink
+        href="/issues"
+        label="Issues"
+        icon={ListTodo}
+        isActive={isActive("/issues")}
+        onNavigate={onCloseDrawer}
+      />
+    ),
+    settings: (
+      <NavLink
+        href="/admin"
+        label="Workspace settings"
+        icon={Settings2}
+        isActive={isActive("/admin")}
+        onNavigate={onCloseDrawer}
+      />
+    ),
+  };
+
   return (
     <>
+      {isCustomizing && (
+        <CustomizeSidebarDialog
+          prefs={prefs}
+          onSave={save}
+          onClose={() => setIsCustomizing(false)}
+        />
+      )}
       <div
         className={
           isDrawerOpen ? "shell-drawer-scrim visible" : "shell-drawer-scrim"
@@ -130,194 +357,21 @@ export function Sidebar({
             isActive={isActive("/your-work")}
             onNavigate={onCloseDrawer}
           />
-          <RecentFlyout
-            recentProjects={recentProjects}
-            onNavigate={onCloseDrawer}
-          />
-          <StarredFlyout projects={sortedProjects} onNavigate={onCloseDrawer} />
-
-          {showCollapsed ? (
-            <NavLink
-              href="/projects"
-              label="Projects"
-              icon={FolderKanban}
-              isActive={isActive("/projects")}
-              onNavigate={onCloseDrawer}
-            />
-          ) : (
-            <div
-              className={
-                isProjectsIndex ? "shell-nav-group active" : "shell-nav-group"
-              }
+          {prefs.order
+            .filter((key) => !prefs.hidden.includes(key))
+            .map((key) => (
+              <Fragment key={key}>{sidebarItems[key]}</Fragment>
+            ))}
+          {!showCollapsed && (
+            <button
+              type="button"
+              className="shell-nav-item shell-nav-customize"
+              onClick={() => setIsCustomizing(true)}
             >
-              <div className="shell-nav-item shell-nav-item-split">
-                <button
-                  type="button"
-                  className="shell-nav-expander"
-                  onClick={() => setIsProjectsOpen((current) => !current)}
-                  aria-expanded={isProjectsOpen}
-                  aria-controls="shell-project-list"
-                  aria-label={
-                    isProjectsOpen ? "Collapse projects" : "Expand projects"
-                  }
-                >
-                  <FolderKanban
-                    className="shell-nav-expander-icon"
-                    size={16}
-                    aria-hidden="true"
-                  />
-                  {isProjectsOpen ? (
-                    <ChevronDown
-                      className="shell-nav-expander-chevron"
-                      size={14}
-                      aria-hidden="true"
-                    />
-                  ) : (
-                    <ChevronRight
-                      className="shell-nav-expander-chevron"
-                      size={14}
-                      aria-hidden="true"
-                    />
-                  )}
-                </button>
-                <Link
-                  href="/projects"
-                  className="shell-nav-split-link"
-                  title="Projects"
-                  aria-current={pathname === "/projects" ? "page" : undefined}
-                  onClick={onCloseDrawer}
-                >
-                  <span className="shell-nav-label">Projects</span>
-                </Link>
-                {!isViewer && (
-                  <Link
-                    href="/projects/new"
-                    className="shell-nav-action"
-                    aria-label="Create project"
-                    title="Create project"
-                    onClick={onCloseDrawer}
-                  >
-                    <Plus size={14} aria-hidden="true" />
-                  </Link>
-                )}
-              </div>
-
-              {isProjectsOpen && (
-                <ul id="shell-project-list" className="shell-project-list">
-                  {sortedProjects.length === 0 ? (
-                    <li className="shell-project-empty">No projects yet</li>
-                  ) : (
-                    sortedProjects.map((project) => {
-                      const active = currentProjectId === project.id;
-                      return (
-                        <li key={project.id}>
-                          <Link
-                            href={`/projects/${project.id}`}
-                            onClick={() => {
-                              setActiveProjectId(project.id);
-                              onCloseDrawer();
-                            }}
-                            className={
-                              active
-                                ? "shell-project-item active"
-                                : "shell-project-item"
-                            }
-                            aria-current={active ? "page" : undefined}
-                            title={project.name}
-                          >
-                            <ProjectAvatar project={project} />
-                            <span className="shell-project-name">
-                              {project.name}
-                            </span>
-                            {project.starred && (
-                              <Star
-                                className="shell-project-star"
-                                size={12}
-                                aria-label="Starred"
-                              />
-                            )}
-                          </Link>
-                        </li>
-                      );
-                    })
-                  )}
-                  <li>
-                    <Link
-                      href="/projects"
-                      className="shell-project-item shell-project-all"
-                      onClick={onCloseDrawer}
-                    >
-                      View all projects
-                    </Link>
-                  </li>
-                </ul>
-              )}
-            </div>
+              <SlidersHorizontal size={16} aria-hidden="true" />
+              <span className="shell-nav-label">Customize sidebar</span>
+            </button>
           )}
-
-          <NavLink
-            href="/filters"
-            label="Filters"
-            icon={Filter}
-            isActive={isActive("/filters")}
-            onNavigate={onCloseDrawer}
-          />
-          <NavLink
-            href="/dashboards"
-            label="Dashboards"
-            icon={Gauge}
-            isActive={isActive("/dashboards")}
-            onNavigate={onCloseDrawer}
-          />
-          <NavLink
-            href="/roadmap"
-            label="Roadmap"
-            icon={GanttChart}
-            isActive={isActive("/roadmap")}
-            onNavigate={onCloseDrawer}
-          />
-          <NavLink
-            href="/goals"
-            label="Goals"
-            icon={Target}
-            isActive={isActive("/goals")}
-            onNavigate={onCloseDrawer}
-          />
-          <NavLink
-            href="/people"
-            label="People"
-            icon={UsersRound}
-            isActive={isActive("/people")}
-            onNavigate={onCloseDrawer}
-          />
-          <NavLink
-            href="/teams"
-            label="Teams"
-            icon={Users}
-            isActive={isActive("/teams")}
-            onNavigate={onCloseDrawer}
-          />
-          <NavLink
-            href="/dashboard"
-            label="Overview"
-            icon={LayoutDashboard}
-            isActive={isActive("/dashboard")}
-            onNavigate={onCloseDrawer}
-          />
-          <NavLink
-            href="/issues"
-            label="Issues"
-            icon={ListTodo}
-            isActive={isActive("/issues")}
-            onNavigate={onCloseDrawer}
-          />
-          <NavLink
-            href="/admin"
-            label="Workspace settings"
-            icon={Settings2}
-            isActive={isActive("/admin")}
-            onNavigate={onCloseDrawer}
-          />
         </nav>
 
         <div

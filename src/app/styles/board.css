@@ -421,8 +421,7 @@
 }
 
 .board-grid.no-lanes .board-cell {
-  /* --board-fill is measured on the page so columns reach the window bottom. */
-  min-height: calc(var(--board-fill, 70dvh) - 38px);
+  min-height: 0;
   border-radius: 0 0 var(--radius) var(--radius);
 }
 
@@ -1050,7 +1049,7 @@
   }
 
   .board-grid.no-lanes .board-cell {
-    min-height: calc(var(--board-fill, 60dvh) - 38px);
+    min-height: 0;
   }
 }
 
@@ -1776,4 +1775,688 @@
   width: 300px;
   flex-basis: 300px;
   gap: 0;
+}
+
+/*
+ * Jira keeps the page still: the header and toolbar stay put, each column
+ * scrolls on its own, and with swimlanes only the board area scrolls.
+ */
+.shell-frame .app-content:has(.board-page) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.project-shell:has(> .board-page) {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.board-page {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  padding-bottom: 12px;
+}
+
+.board-page > .board-body {
+  min-height: 0;
+  flex: 1;
+  align-items: stretch;
+}
+
+.board-body > .board-scroll {
+  height: 100%;
+  overflow: auto;
+  padding-bottom: 0;
+}
+
+.board-grid-row {
+  min-height: 100%;
+}
+
+.board-grid-row:has(> .board-grid.no-lanes) {
+  height: 100%;
+}
+
+.board-grid.no-lanes {
+  height: 100%;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.board-grid.no-lanes .board-lane {
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.board-grid.no-lanes .board-cell {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.board-body > .planning-insights {
+  position: static;
+  max-height: none;
+  align-self: stretch;
+}
+
+/* Jira's toolbar: outlined buttons, a Filter button with a count badge. */
+.board-toolbar {
+  margin-bottom: 12px;
+}
+
+.board-toolbar .planning-search {
+  width: min(220px, 100%);
+}
+
+.board-toolbar-button,
+.board-filter-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 2px solid var(--console-line);
+  border-radius: 3px;
+  color: var(--ink);
+  background: var(--surface);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.board-toolbar-button:hover,
+.board-filter-button:hover,
+.board-toolbar-button[data-state="open"],
+.board-filter-button[data-state="open"] {
+  border-color: var(--gray-500);
+}
+
+.board-toolbar-button.active,
+.board-filter-button.active {
+  border-color: var(--console-cyan);
+  color: var(--console-cyan);
+  background: color-mix(in srgb, var(--console-cyan) 10%, var(--surface));
+}
+
+.board-toolbar .planning-filter {
+  border: 2px solid var(--console-line);
+  background: var(--surface);
+}
+
+.board-filter-count {
+  display: inline-grid;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  place-items: center;
+  border-radius: 3px;
+  color: var(--console-navy, #14172b);
+  background: var(--console-cyan);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.board-toolbar .icon-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.board-filter-panel {
+  z-index: 120;
+  display: flex;
+  width: 470px;
+  flex-direction: column;
+  max-width: calc(100vw - 32px);
+  max-height: min(440px, 70dvh);
+  border: 2px solid var(--console-line);
+  border-radius: 3px;
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: var(--console-shadow-small);
+  overflow: hidden;
+}
+
+.board-filter-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  overflow-y: auto;
+  border-right: 2px solid var(--console-line);
+  background: var(--gray-50);
+}
+
+.board-filter-fields button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 3px;
+  color: var(--ink-secondary);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.board-filter-fields button:hover {
+  color: var(--ink);
+  background: var(--gray-100);
+}
+
+.board-filter-fields button.active {
+  color: var(--ink);
+  background: var(--gray-100);
+  box-shadow: inset 3px 0 0 var(--console-cyan);
+  font-weight: 700;
+}
+
+.board-filter-values {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+}
+
+.board-filter-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 2px solid var(--console-line);
+  border-radius: 3px;
+  color: var(--gray-500);
+}
+
+.board-filter-search:focus-within {
+  border-color: var(--console-cyan);
+}
+
+.board-filter-search input {
+  min-width: 0;
+  flex: 1;
+  height: 30px;
+  border: 0;
+  color: var(--ink);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.board-filter-options {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.board-filter-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 3px;
+  color: var(--ink);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.board-filter-option:hover,
+.board-filter-option:focus-visible {
+  background: var(--gray-100);
+}
+
+.board-filter-option-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-filter-empty {
+  margin: 8px 6px;
+  color: var(--gray-500);
+  font-size: 13px;
+}
+
+.board-filter-reset {
+  align-self: flex-start;
+}
+
+@media (max-width: 720px) {
+  .board-filter-basic {
+    grid-template-columns: 130px minmax(0, 1fr);
+  }
+}
+
+/*
+ * Board cards, the clean Jira way: soft border and corners, outlined
+ * labels, the due date on its own line, key bottom left, avatar bottom right.
+ */
+.board-card.planning-card {
+  gap: 10px;
+  padding: 12px 12px 10px;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.18);
+}
+
+.board-card.planning-card:hover {
+  border-color: var(--gray-300);
+  background: var(--surface);
+  filter: brightness(1.04);
+}
+
+.board-card.planning-card.overlay {
+  box-shadow: 0 8px 20px rgb(0 0 0 / 0.3);
+}
+
+.board-card .board-card-head .board-card-title {
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.board-card-label {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  padding: 2px 8px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--label-color, var(--gray-500)) 75%, transparent);
+  border-radius: 6px;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-card-date {
+  margin: 0;
+  color: var(--ink-secondary);
+  font-size: 13px;
+}
+
+.board-card-date.overdue {
+  color: var(--red-600);
+}
+
+.board-card .board-card-meta {
+  flex-wrap: nowrap;
+  gap: 8px;
+  min-height: 30px;
+}
+
+.board-card .board-card-meta .board-card-id {
+  white-space: nowrap;
+}
+
+.board-card .board-card-meta .board-card-id {
+  font-size: 13px;
+}
+
+/* Column create: a dashed "+" bar under the cards, always visible. */
+.board-cell .board-column-create {
+  justify-content: center;
+  min-height: 36px;
+  margin-top: 2px;
+  border: 1px dashed var(--gray-300);
+  border-radius: 8px;
+  color: var(--gray-500);
+  opacity: 1;
+}
+
+.board-cell .board-column-create:hover,
+.board-cell .board-column-create:focus-visible {
+  border-color: var(--gray-500);
+  color: var(--ink);
+  background: var(--gray-50);
+}
+
+.board-cell .board-column-create .board-column-create-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+/* Columns still scroll, without a visible scrollbar. */
+.board-grid .board-cell {
+  scrollbar-width: none;
+}
+
+.board-grid .board-cell::-webkit-scrollbar {
+  display: none;
+}
+
+.board-cell .board-inline-create {
+  border-radius: 8px;
+}
+
+/* Insights: work items for attention and time in status. */
+.insights-list.statuses li {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.insights-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.insights-chips button {
+  padding: 2px 8px;
+  border: 1px solid var(--gray-300);
+  border-radius: 999px;
+  color: var(--ink-secondary);
+  background: transparent;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.insights-chips button.active {
+  border-color: var(--console-cyan);
+  color: var(--ink);
+  background: color-mix(in srgb, var(--console-cyan) 18%, transparent);
+}
+
+.insights-attention {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.insights-attention li {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px;
+  border: 1px solid var(--gray-200);
+  border-radius: 4px;
+}
+
+.insights-attention li > button {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  color: var(--ink);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.insights-attention li > button:hover .insights-attention-title {
+  text-decoration: underline;
+}
+
+.insights-attention-key {
+  flex: none;
+  color: var(--gray-500);
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+
+.insights-attention-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.insights-attention-reasons {
+  display: flex;
+  gap: 4px;
+}
+
+.insights-reason {
+  padding: 0 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.insights-reason.due {
+  color: var(--red-700);
+  background: var(--red-50);
+}
+
+.insights-reason.stuck {
+  color: var(--console-ink);
+  background: var(--console-orange);
+}
+
+.insights-reason.blocked {
+  color: var(--console-ink);
+  background: var(--console-pink);
+}
+
+.insights-reason.flagged {
+  color: var(--console-ink);
+  background: var(--console-lime);
+}
+
+.board-filter-modes {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border-bottom: 2px solid var(--console-line);
+}
+
+.board-filter-modes button {
+  padding: 4px 12px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--ink-secondary);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.board-filter-modes button.active {
+  border-color: var(--console-cyan);
+  color: var(--ink);
+  background: color-mix(in srgb, var(--console-cyan) 14%, transparent);
+}
+
+.board-filter-shortcut {
+  margin-left: auto;
+  color: var(--gray-500);
+  font-size: 11px;
+}
+
+.board-filter-basic {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: 170px minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.board-filter-advanced,
+.board-filter-jql {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  overflow-y: auto;
+}
+
+.board-filter-condition {
+  display: grid;
+  grid-template-columns: 120px 96px minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.board-filter-condition select,
+.board-filter-condition input {
+  min-width: 0;
+  height: 30px;
+  padding: 0 6px;
+  border: 1px solid var(--gray-300);
+  border-radius: 3px;
+  color: var(--ink);
+  background: var(--surface);
+  font: inherit;
+  font-size: 13px;
+}
+
+.board-filter-advanced-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.board-filter-advanced-actions .text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.board-filter-applied {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--gray-500);
+  font-size: 12px;
+}
+
+.board-filter-applied code {
+  color: var(--ink);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.board-filter-jql .text-button {
+  align-self: flex-start;
+}
+
+/* "Whole board" scrolling: columns grow and the board area scrolls. */
+.board-page.scroll-board .board-grid.no-lanes,
+.board-page.scroll-board .board-grid-row:has(> .board-grid.no-lanes) {
+  height: auto;
+}
+
+.board-page.scroll-board .board-grid.no-lanes {
+  grid-template-rows: auto;
+}
+
+.board-page.scroll-board .board-grid.no-lanes .board-lane {
+  grid-template-rows: auto;
+}
+
+.board-page.scroll-board .board-grid .board-cell {
+  overflow: visible;
+}
+
+/* Stand-up bar. */
+.board-standup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 8px 12px;
+  border: 2px solid var(--console-cyan);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--console-cyan) 10%, var(--surface));
+}
+
+.board-standup-label {
+  padding: 2px 8px;
+  border-radius: 3px;
+  color: var(--console-ink);
+  background: var(--console-cyan);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.board-standup-count {
+  color: var(--gray-500);
+  font-size: 13px;
+}
+
+.board-standup .secondary-button {
+  margin-left: auto;
+}
+
+/* View settings: selects and segmented choices. */
+.view-settings-select {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.view-settings-select select {
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--gray-300);
+  border-radius: 4px;
+  color: var(--ink);
+  background: var(--surface);
+  font: inherit;
+}
+
+.view-settings-segment {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-top: 6px;
+  font-size: 13px;
+}
+
+.view-settings-segment > span {
+  grid-column: 1 / -1;
+}
+
+.view-settings-segment button {
+  padding: 6px 8px;
+  border: 1px solid var(--gray-300);
+  border-radius: 4px;
+  color: var(--ink-secondary);
+  background: var(--surface);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.view-settings-segment button.active {
+  border-color: var(--console-cyan);
+  color: var(--ink);
+  background: color-mix(in srgb, var(--console-cyan) 14%, var(--surface));
 }

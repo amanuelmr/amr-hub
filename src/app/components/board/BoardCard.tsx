@@ -4,17 +4,16 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { CalendarClock, ListTree, Package, Puzzle } from "lucide-react";
+import { ListTree, Package, Puzzle } from "lucide-react";
 import type { Issue } from "../../data/issues";
 import {
   DEFAULT_BOARD_CONFIG,
   type CardField,
 } from "../../data/projects";
 import { isDoneStatus } from "../../data/workflow";
-import { IssueLabelChip } from "../IssueLabelChip";
 import { KindIcon, PriorityBadge } from "../IssueVisuals";
 import { selectedIssueHref } from "../issue/selectedIssue";
-import { epicOf, formatShortDate, isOverdue } from "./boardModel";
+import { epicOf, isOverdue } from "./boardModel";
 import { EpicChip, FlagMark, MemberAvatar, PointsBadge } from "./PlanningVisuals";
 import {
   IssueActionsMenu,
@@ -33,6 +32,16 @@ export type CardDisplay = {
   /** View settings "Compact cards": title, key and assignee only. */
   compact?: boolean;
 };
+
+/** Jira writes the due date out in full on its own line. */
+function formatCardDate(value: string) {
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(value));
+}
 
 /** Jira's days-in-column dots: more dots the longer an item sits still. */
 function DaysInColumn({ days }: { days: number }) {
@@ -107,7 +116,13 @@ export function BoardCardBody({
         <div className="board-card-labels">
           {epic && <EpicChip epic={epic} />}
           {labels.map((label) => (
-            <IssueLabelChip label={label} compact key={label.id} />
+            <span
+              className="board-card-label"
+              key={label.id}
+              style={{ "--label-color": label.color } as React.CSSProperties}
+            >
+              {label.name}
+            </span>
           ))}
           {components.map((component) => (
             <span
@@ -131,6 +146,15 @@ export function BoardCardBody({
         </div>
       )}
 
+      {show("dueDate") && issue.dueDate && (
+        <p
+          className={overdue ? "board-card-date overdue" : "board-card-date"}
+          title={overdue ? "Overdue" : "Due date"}
+        >
+          {formatCardDate(issue.dueDate)}
+        </p>
+      )}
+
       <div className="board-card-meta">
         <KindIcon kind={issue.kind} projectId={issue.projectId} />
         <Link
@@ -149,15 +173,6 @@ export function BoardCardBody({
             {issue.doneChildCount}/{issue.childCount}
           </span>
         )}
-        {show("dueDate") && issue.dueDate && (
-          <span
-            className={overdue ? "board-card-due overdue" : "board-card-due"}
-            title={overdue ? "Overdue" : "Due date"}
-          >
-            <CalendarClock size={12} aria-hidden="true" />
-            {formatShortDate(issue.dueDate)}
-          </span>
-        )}
         {display.daysInColumn != null && <DaysInColumn days={display.daysInColumn} />}
         <span className="board-card-meta-end">
           {show("storyPoints") && issue.estimate !== null && (
@@ -168,7 +183,7 @@ export function BoardCardBody({
               <PriorityBadge priority={issue.priority} />
             </span>
           )}
-          {show("assignee") && <MemberAvatar member={issue.assignee} />}
+          {show("assignee") && <MemberAvatar member={issue.assignee} size="regular" />}
         </span>
       </div>
     </>

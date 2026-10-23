@@ -154,6 +154,15 @@ export type IssueFilters = {
   quickFilterIds: string[];
   /** Backlog versions panel. */
   versionId: string | null;
+  /** Board "Filter" panel: multi-select fields, OR within a field. */
+  epicIds: string[];
+  labelIds: string[];
+  priorities: string[];
+  statuses: string[];
+  componentIds: string[];
+  versionIds: string[];
+  /** Advanced or JQL tab of the Filter panel; applied by the page. */
+  jql: string;
 };
 
 export const EMPTY_FILTERS: IssueFilters = {
@@ -167,6 +176,13 @@ export const EMPTY_FILTERS: IssueFilters = {
   kinds: [],
   quickFilterIds: [],
   versionId: null,
+  epicIds: [],
+  labelIds: [],
+  priorities: [],
+  statuses: [],
+  componentIds: [],
+  versionIds: [],
+  jql: "",
 };
 
 export const UNASSIGNED = "__unassigned";
@@ -207,6 +223,24 @@ export function matchesFilters(
     return false;
   }
   if (filters.versionId && issue.fixVersion?.id !== filters.versionId) {
+    return false;
+  }
+  const anyOf = (wanted: string[], value: string | null | undefined) =>
+    wanted.length === 0 || (value != null && wanted.includes(value));
+  if (!anyOf(filters.epicIds, epicOf(issue)?.id)) return false;
+  if (!anyOf(filters.priorities, issue.priority)) return false;
+  if (!anyOf(filters.statuses, issue.status)) return false;
+  if (!anyOf(filters.versionIds, issue.fixVersion?.id)) return false;
+  if (
+    filters.labelIds.length > 0 &&
+    !issue.labels.some((label) => filters.labelIds.includes(label.id))
+  ) {
+    return false;
+  }
+  if (
+    filters.componentIds.length > 0 &&
+    !issue.components.some((component) => filters.componentIds.includes(component.id))
+  ) {
     return false;
   }
   return true;

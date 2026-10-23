@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { Check, ChevronDown, ListTree } from "lucide-react";
+import { CalendarClock, Check, ChevronDown, ListTree } from "lucide-react";
 import {
   ISSUE_ESTIMATES,
   type Issue,
@@ -20,7 +20,8 @@ import {
 } from "../../data/workflow";
 import { useWorkflow } from "../../WorkflowProvider";
 import { KindIcon, PriorityBadge } from "../IssueVisuals";
-import { epicOf } from "./boardModel";
+import type { BacklogField } from "./backlogView";
+import { epicOf, formatShortDate, isOverdue } from "./boardModel";
 import { EpicChip, FlagMark, MemberAvatar, PointsBadge } from "./PlanningVisuals";
 import {
   IssueActionsMenu,
@@ -35,7 +36,7 @@ const categoryClass = (status: IssueStatus) => statusTone(status);
 
 const stop = (event: React.SyntheticEvent) => event.stopPropagation();
 
-/** Jira's status lozenge that doubles as an inline transition menu. */
+/** A status lozenge that doubles as an inline transition menu. */
 export function StatusLozenge({
   status,
   onChange,
@@ -176,20 +177,26 @@ export function EstimateMenu({
 export function BacklogRowBody({
   issue,
   selectionCount = 0,
+  hidden = [],
   onStatusChange,
   onEstimateChange,
 }: {
   issue: Issue;
   selectionCount?: number;
+  /** Fields this viewer turned off in the backlog's view settings. */
+  hidden?: BacklogField[];
   onStatusChange?: (status: IssueStatus) => void;
   onEstimateChange?: (estimate: IssueEstimate | null) => void;
 }) {
-  const epic = epicOf(issue);
+  const show = (field: BacklogField) => !hidden.includes(field);
+  const epic = show("epic") ? epicOf(issue) : null;
   const isDone = isDoneStatus(issue.status);
+  const overdue = isOverdue(issue);
 
   return (
     <>
-      <KindIcon kind={issue.kind} projectId={issue.projectId} />
+      {show("type") && <KindIcon kind={issue.kind} projectId={issue.projectId} />}
+      {show("key") && (
       <Link
         className={isDone ? "backlog-row-key done" : "backlog-row-key"}
         href={`/issues/${issue.id}`}
@@ -206,29 +213,45 @@ export function BacklogRowBody({
       >
         {issue.id}
       </Link>
+      )}
       <span className="backlog-row-title">
         {issue.flagged && <FlagMark />}
         <span>{issue.title}</span>
       </span>
       <span className="backlog-row-tags">
-        {issue.childCount > 0 && (
+        {show("subtasks") && issue.childCount > 0 && (
           <span className="board-card-subtasks" title="Subtasks done">
             <ListTree size={12} aria-hidden="true" />
             {issue.doneChildCount}/{issue.childCount}
           </span>
         )}
         {epic && <EpicChip epic={epic} />}
+        {show("dueDate") && issue.dueDate && (
+          <span
+            className={overdue ? "board-card-due overdue" : "board-card-due"}
+            title={overdue ? "Overdue" : "Due date"}
+          >
+            <CalendarClock size={12} aria-hidden="true" />
+            {formatShortDate(issue.dueDate)}
+          </span>
+        )}
       </span>
-      <StatusLozenge
-        status={issue.status}
-        onChange={onStatusChange}
-        projectId={issue.projectId}
-      />
-      <span className="board-card-priority">
-        <PriorityBadge priority={issue.priority} />
-      </span>
-      <EstimateMenu estimate={issue.estimate} onChange={onEstimateChange} />
-      <MemberAvatar member={issue.assignee} />
+      {show("status") && (
+        <StatusLozenge
+          status={issue.status}
+          onChange={onStatusChange}
+          projectId={issue.projectId}
+        />
+      )}
+      {show("priority") && (
+        <span className="board-card-priority">
+          <PriorityBadge priority={issue.priority} />
+        </span>
+      )}
+      {show("estimate") && (
+        <EstimateMenu estimate={issue.estimate} onChange={onEstimateChange} />
+      )}
+      {show("assignee") && <MemberAvatar member={issue.assignee} />}
       {selectionCount > 1 && (
         <span className="backlog-drag-count">{selectionCount}</span>
       )}
@@ -244,6 +267,8 @@ export function SortableBacklogRow({
   isViewer,
   meId,
   color = null,
+  hidden = [],
+  compact = false,
   destinations,
   onSelect,
   onAction,
@@ -258,6 +283,8 @@ export function SortableBacklogRow({
   meId: string | null;
   /** Left color bar from the board's card color strategy. */
   color?: string | null;
+  hidden?: BacklogField[];
+  compact?: boolean;
   destinations: MoveDestination[];
   onSelect: (issue: Issue, event: React.MouseEvent) => void;
   onAction: (issue: Issue, action: RowAction) => void;
@@ -287,6 +314,7 @@ export function SortableBacklogRow({
         isDragging ? "dragging" : "",
         issue.flagged ? "flagged" : "",
         color ? "colored" : "",
+        compact ? "compact" : "",
       ]
         .filter(Boolean)
         .join(" ")}
@@ -305,6 +333,7 @@ export function SortableBacklogRow({
     >
       <BacklogRowBody
         issue={issue}
+        hidden={hidden}
         onStatusChange={
           isViewer ? undefined : (status) => onStatusChange(issue, status)
         }

@@ -28,19 +28,22 @@ import {
   ChevronDown,
   ChevronRight,
   CircleAlert,
+  ChartLine,
   Clock,
   CornerDownLeft,
-  Lightbulb,
   MoreHorizontal,
   Package,
   Plus,
   Rows3,
+  Layers,
   Maximize2,
   Minimize2,
   Pencil,
   Settings2,
   Target,
+  Undo2,
   UserPlus,
+  Users,
   SlidersHorizontal,
 } from "lucide-react";
 import { apiRequest, useIssues } from "../../../IssueProvider";
@@ -73,13 +76,10 @@ import {
 import { useJqlContext } from "../../../components/search/useJqlContext";
 import {
   AssigneeStack,
-  EpicFilter,
   FilterCheckItem,
   FilterMenu,
   MenuLabel,
   PlanningSearch,
-  QuickFilterButtons,
-  TypeFilter,
   hasActiveFilters,
   toggleValue,
 } from "../../../components/board/FilterControls";
@@ -95,11 +95,16 @@ import {
   BoardAddColumn,
   BoardColumnHeader,
 } from "../../../components/board/BoardColumnHeader";
-import { useBoardView } from "../../../components/board/useBoardView";
+import { DEFAULT_BOARD_VIEW, useBoardView } from "../../../components/board/useBoardView";
 import { ViewSettingsPanel } from "../../../components/board/ViewSettingsPanel";
+import {
+  BoardFilterPanel,
+  type FilterField,
+} from "../../../components/board/BoardFilterPanel";
+import { MemberAvatar } from "../../../components/board/PlanningVisuals";
 import { ConfirmDialog } from "../../../components/ConfirmDialog";
 import { DEFAULT_BOARD_ID } from "../../../data/projects";
-import { parseJql, searchIssuesWithJql } from "../../../data/jql";
+import { evaluateJql, parseJql, searchIssuesWithJql } from "../../../data/jql";
 import { usePlanningActions } from "../../../components/board/sprintApi";
 import { useWorkflow, useWorkflows } from "../../../WorkflowProvider";
 import {
@@ -130,11 +135,12 @@ import {
   type IssueFilters,
   type Lane,
 } from "../../../components/board/boardModel";
-import type {
-  Issue,
-  IssueKind,
-  IssuePriority,
-  NewIssueInput,
+import {
+  PRIORITY_LABELS,
+  type Issue,
+  type IssueKind,
+  type IssuePriority,
+  type NewIssueInput,
 } from "../../../data/issues";
 import {
   DEFAULT_BOARD_CONFIG,
@@ -292,10 +298,12 @@ function ColumnCreate({
       <button
         className="board-column-create"
         type="button"
+        aria-label="Create work item"
+        title="Create work item"
         onClick={() => setIsOpen(true)}
       >
-        <Plus size={14} aria-hidden="true" />
-        Create
+        <Plus size={16} aria-hidden="true" />
+        <span className="board-column-create-label">Create</span>
       </button>
     );
   }
@@ -464,7 +472,15 @@ export default function ProjectBoardPage() {
     setSidePanel((current) => (current === panel ? null : panel));
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [isEditSprintOpen, setIsEditSprintOpen] = useState(false);
-  const boardScrollRef = useRef<HTMLDivElement>(null);
+  // Stand-up walks the board one person at a time, then restores the filters.
+  const [standup, setStandup] = useState<{ index: number; saved: IssueFilters } | null>(null);
+  // The last card move, so the toolbar's undo can put it back.
+  const [lastMove, setLastMove] = useState<{
+    issueId: string;
+    status: string;
+    afterId?: string;
+    beforeId?: string;
+  } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [deleteColumnId, setDeleteColumnId] = useState<string | null>(null);
   const justDragged = useRef(false);
@@ -480,25 +496,6 @@ export default function ProjectBoardPage() {
     const timer = window.setTimeout(() => setNotice(null), 2500);
     return () => window.clearTimeout(timer);
   }, [notice]);
-
-  // Jira's columns reach the bottom of the window whatever sits above them.
-  useEffect(() => {
-    const fit = () => {
-      const element = boardScrollRef.current;
-      if (!element) return;
-      const top = element.getBoundingClientRect().top + (element.closest(".app-content")?.scrollTop ?? 0);
-      element.style.setProperty("--board-fill", `${Math.max(320, window.innerHeight - top - 16)}px`);
-    };
-    fit();
-    window.addEventListener("resize", fit);
-    const observer = new ResizeObserver(fit);
-    const page = boardScrollRef.current?.closest(".board-page");
-    if (page) observer.observe(page);
-    return () => {
-      window.removeEventListener("resize", fit);
-      observer.disconnect();
-    };
-  }, [isLoading, projectId, cycles.length]);
 
   useEffect(() => {
     if (!isFullScreen) return;
@@ -555,21 +552,20 @@ export default function ProjectBoardPage() {
     .applyOverrides(allIssues.filter((issue) => issue.projectId === projectId))
     .sort(compareRank);
   const epics = projectIssues.filter((issue) => isEpicLevel(issue.kind));
-  const boardKinds: IssueKind[] = workflow.types
-    .filter((type) => type.level === 0)
-    .map((type) => type.key);
   const createTypes = workflow.types
     .filter((type) => type.level === 0)
     .map((type) => ({ key: type.key, name: type.name }));
   const typeColor = (kind: string) =>
     workflow.types.find((type) => type.key === kind)?.color ?? null;
 
+  // A viewer may override how long done work stays on a Kanban board.
+  const doneDays = view.doneDays === undefined ? config.kanbanDoneDays : view.doneDays;
   const planningBoardIssues = projectIssues.filter((issue) => {
     if (!isPlanningIssue(issue)) return false;
     if (boardType === "SCRUM") {
       return !!issue.cycleId && shownSprintIds.includes(issue.cycleId);
     }
-    return !isHiddenKanbanDone(issue, config.kanbanDoneDays, now);
+    return !isHiddenKanbanDone(issue, doneDays, now);
   });
   // Subtask lanes need the subtasks of every parent on the board; subtasks
   // follow their parent's sprint, as in Jira.
@@ -583,7 +579,7 @@ export default function ProjectBoardPage() {
               isSubtaskLevel(issue.kind) &&
               !!issue.parentId &&
               onBoardParents.has(issue.parentId) &&
-              !isHiddenKanbanDone(issue, config.kanbanDoneDays, now),
+              !isHiddenKanbanDone(issue, doneDays, now),
           ),
         ]
       : planningBoardIssues;
@@ -600,10 +596,13 @@ export default function ProjectBoardPage() {
   const columnOf = (issue: Issue) =>
     columnForStatus(columns, issue.status, boardType);
   const onBoard = filteredBoardIssues.filter((issue) => columnOf(issue) !== null);
+  // The Filter panel's Advanced and JQL tabs narrow the board further.
+  const panelJql = filters.jql.trim() ? parseJql(filters.jql, now) : null;
   const visible = onBoard.filter(
     (issue) =>
       matchesFilters(issue, filters, meId) &&
-      matchesQuickFilters(issue, filters.quickFilterIds, quickFilters, jqlContext),
+      matchesQuickFilters(issue, filters.quickFilterIds, quickFilters, jqlContext) &&
+      (!panelJql || (panelJql.ok && evaluateJql(panelJql.query.where, issue, jqlContext))),
   );
   // Parents shown as subtask-lane headers aren't cards, so they don't count.
   const laneHeaderIds = new Set(
@@ -654,7 +653,7 @@ export default function ProjectBoardPage() {
     const sourceColumn = columnOf(issue);
     // A column with no mapped statuses has nowhere to transition the issue to.
     if (sourceColumn !== targetColumn.id && targetColumn.statuses.length === 0) {
-      return;
+      return false;
     }
     // Jira: dropping on a column moves to the first of its statuses that the
     // workflow allows; a status drop zone names the status instead.
@@ -678,7 +677,7 @@ export default function ProjectBoardPage() {
             workflow.statuses,
           )} to ${wanted ? statusName(wanted, workflow.statuses) : targetColumn.name}.`,
         );
-        return;
+        return false;
       }
     }
     const rankOf = (id: string) =>
@@ -693,7 +692,7 @@ export default function ProjectBoardPage() {
         },
       ],
     ]);
-    await planning.rank(
+    return planning.rank(
       {
         issueIds: [issue.id],
         afterId: target.afterId,
@@ -702,6 +701,44 @@ export default function ProjectBoardPage() {
       },
       optimistic,
     );
+  };
+
+  /** Puts the last moved card back where it was, status and position. */
+  const undoLastMove = async () => {
+    if (!lastMove) return;
+    const issue = projectIssues.find((candidate) => candidate.id === lastMove.issueId);
+    if (!issue) {
+      setLastMove(null);
+      return;
+    }
+    const statusChanged = issue.status !== lastMove.status;
+    const rankOf = (id: string) =>
+      projectIssues.find((candidate) => candidate.id === id)?.rank ?? 0;
+    const target = { afterId: lastMove.afterId, beforeId: lastMove.beforeId, order: [] };
+    const ranks = optimisticRanks(target, [issue.id], rankOf);
+    const undone = await planning.rank(
+      {
+        issueIds: [issue.id],
+        afterId: lastMove.afterId,
+        beforeId: lastMove.beforeId,
+        ...(statusChanged ? { status: lastMove.status } : {}),
+      },
+      new Map([
+        [
+          issue.id,
+          {
+            rank: ranks.get(issue.id) ?? issue.rank,
+            ...(statusChanged
+              ? { status: lastMove.status, statusChangedAt: new Date().toISOString() }
+              : {}),
+          },
+        ],
+      ]),
+    );
+    if (undone) {
+      setLastMove(null);
+      setNotice(`Moved ${issue.id} back`);
+    }
   };
 
   // Columns the viewer can configure (Kanban's implied Backlog column isn't
@@ -810,7 +847,21 @@ export default function ProjectBoardPage() {
       overId: overData?.type === "card" ? String(over.id) : null,
     });
     if (!target) return;
-    void moveIssue(issue, targetColumn, target, onZone ? overData?.status : undefined);
+    const sourceLane = laneOf(issue);
+    const sourceColumn = columns.find((column) => column.id === columnOf(issue));
+    const before = sourceLane && sourceColumn
+      ? cellIssues(sourceLane.issues, sourceColumn).map((item) => item.id)
+      : [];
+    const index = before.indexOf(issue.id);
+    const previous = {
+      issueId: issue.id,
+      status: issue.status,
+      afterId: index > 0 ? before[index - 1] : undefined,
+      beforeId: index >= 0 && index < before.length - 1 ? before[index + 1] : undefined,
+    };
+    void moveIssue(issue, targetColumn, target, onZone ? overData?.status : undefined).then(
+      (moved) => moved && setLastMove(previous),
+    );
   };
 
   /** Sprints and the backlog a board card can move to (Scrum only). */
@@ -987,6 +1038,30 @@ export default function ProjectBoardPage() {
     />
   );
 
+  const standupPeople = [
+    ...boardMembers.map((member) => ({ id: member.id, name: member.name, member })),
+    ...(hasUnassigned ? [{ id: UNASSIGNED, name: "Unassigned", member: null }] : []),
+  ];
+  const showStandupPerson = (index: number) => {
+    const person = standupPeople[index];
+    if (!person) return;
+    setFilters((current) => ({ ...current, assigneeIds: [person.id] }));
+  };
+  const startStandup = () => {
+    if (standupPeople.length === 0) return;
+    setStandup({ index: 0, saved: filters });
+    showStandupPerson(0);
+  };
+  const moveStandup = (index: number) => {
+    setStandup((current) => (current ? { ...current, index } : current));
+    showStandupPerson(index);
+  };
+  const endStandup = () => {
+    if (standup) setFilters(standup.saved);
+    setStandup(null);
+  };
+  const standupPerson = standup ? standupPeople[standup.index] : null;
+
   const settingsHref = `/projects/${projectId}/settings?tab=board&board=${encodeURIComponent(boardId)}`;
   const boardMenu = (
     <DropdownMenu.Root>
@@ -1022,6 +1097,14 @@ export default function ProjectBoardPage() {
               <Maximize2 size={14} aria-hidden="true" />
             )}
             {isFullScreen ? "Exit full screen" : "Enter full screen"}
+          </DropdownMenu.Item>
+          <DropdownMenu.Item
+            className="planning-menu-item"
+            disabled={standupPeople.length === 0}
+            onSelect={() => (standup ? endStandup() : startStandup())}
+          >
+            <Users size={14} aria-hidden="true" />
+            {standup ? "End stand-up" : "Start stand-up"}
           </DropdownMenu.Item>
           {boardType === "SCRUM" && (
             <DropdownMenu.Item className="planning-menu-item" asChild>
@@ -1073,7 +1156,9 @@ export default function ProjectBoardPage() {
   const columnStyle = {
     "--board-columns": columns.length,
     "--board-template": columns
-      .map((column) => track(column, "minmax(250px, 1fr)"))
+      .map((column) =>
+        track(column, view.columnSize === "fixed" ? "272px" : "minmax(250px, 1fr)"),
+      )
       .join(" "),
     "--board-template-narrow": columns
       .map((column) => track(column, "minmax(240px, 80vw)"))
@@ -1098,8 +1183,94 @@ export default function ProjectBoardPage() {
       : [];
   const deletingColumn =
     columns.find((column) => column.id === deleteColumnId) ?? null;
-  const quickCount = QUICK_FILTERS.filter(([key]) => filters[key]).length +
-    (filters.labelId ? 1 : 0);
+  const customCount =
+    QUICK_FILTERS.filter(([key]) => filters[key]).length +
+    filters.quickFilterIds.length;
+  const uniqueBy = <T,>(items: T[], key: (item: T) => string) =>
+    [...new Map(items.map((item) => [key(item), item])).values()];
+  const boardStatuses = uniqueBy(
+    columns.flatMap((column) => column.statuses),
+    (key) => key,
+  );
+  const filterFields: FilterField[] = [
+    {
+      key: "assigneeIds",
+      label: "Assignee",
+      options: [
+        ...(hasUnassigned
+          ? [{ value: UNASSIGNED, label: "Unassigned", visual: <MemberAvatar member={null} /> }]
+          : []),
+        ...boardMembers.map((member) => ({
+          value: member.id,
+          label: member.name,
+          visual: <MemberAvatar member={member} />,
+        })),
+      ],
+    },
+    {
+      key: "kinds",
+      label: "Work type",
+      options: workflow.types
+        .filter((type) => onBoard.some((issue) => issue.kind === type.key))
+        .map((type) => ({
+          value: type.key,
+          label: type.name,
+          visual: <KindIcon kind={type.key} projectId={projectId} />,
+        })),
+    },
+    {
+      key: "epicIds",
+      label: "Parent",
+      options: epics.map((epic) => ({ value: epic.id, label: `${epic.id} ${epic.title}` })),
+    },
+    {
+      key: "labelIds",
+      label: "Label",
+      options: labels.map((label) => ({
+        value: label.id,
+        label: label.name,
+        visual: (
+          <span
+            className="planning-epic-swatch"
+            style={{ background: label.color }}
+            aria-hidden="true"
+          />
+        ),
+      })),
+    },
+    {
+      key: "priorities",
+      label: "Priority",
+      options: (Object.keys(PRIORITY_LABELS) as IssuePriority[]).map((priority) => ({
+        value: priority,
+        label: PRIORITY_LABELS[priority],
+      })),
+    },
+    {
+      key: "statuses",
+      label: "Status",
+      options: boardStatuses.map((key) => ({
+        value: key,
+        label: statusName(key, workflow.statuses),
+      })),
+    },
+    {
+      key: "componentIds",
+      label: "Component",
+      options: uniqueBy(
+        onBoard.flatMap((issue) => issue.components),
+        (component) => component.id,
+      ).map((component) => ({ value: component.id, label: component.name })),
+    },
+    {
+      key: "versionIds",
+      label: "Fix version",
+      options: uniqueBy(
+        onBoard.flatMap((issue) => (issue.fixVersion ? [issue.fixVersion] : [])),
+        (version) => version.id,
+      ).map((version) => ({ value: version.id, label: version.name })),
+    },
+  ];
   const groupLabel =
     groupOptions.find((option) => option.value === swimlanes)?.label ?? "None";
   const remaining = activeSprint ? daysRemaining(activeSprint.endDate) : 0;
@@ -1131,6 +1302,7 @@ export default function ProjectBoardPage() {
         [
           "page board-page",
           sidePanel ? "with-insights" : "",
+          view.scroll === "board" ? "scroll-board" : "",
           isFullScreen ? "fullscreen" : "",
         ]
           .filter(Boolean)
@@ -1208,7 +1380,6 @@ export default function ProjectBoardPage() {
             </DropdownMenu.Root>
           )}
           {boardSwitcher}
-          {boardMenu}
         </div>
       </div>
       {boardFilter && !boardFilter.ok && (
@@ -1238,10 +1409,11 @@ export default function ProjectBoardPage() {
         </div>
       )}
 
-      <div className="planning-toolbar" role="toolbar" aria-label="Board filters">
+      <div className="planning-toolbar board-toolbar" role="toolbar" aria-label="Board filters">
         <div className="planning-toolbar-start">
           <PlanningSearch
             label="Search board"
+            placeholder="Search board"
             value={filters.query}
             onChange={(query) => setFilters((current) => ({ ...current, query }))}
           />
@@ -1266,14 +1438,28 @@ export default function ProjectBoardPage() {
               <UserPlus size={14} aria-hidden="true" />
             </Link>
           )}
-          <EpicFilter epics={epics} filters={filters} setFilters={setFilters} />
-          <TypeFilter
-            kinds={boardKinds}
+          <BoardFilterPanel
+            fields={filterFields}
             filters={filters}
             setFilters={setFilters}
-            projectId={projectId}
+            choices={{
+              assignee: boardMembers.map((member) => member.name),
+              status: boardStatuses.map((key) => statusName(key, workflow.statuses)),
+              priority: Object.values(PRIORITY_LABELS),
+              type: workflow.types.map((type) => type.name),
+              labels: labels.map((label) => label.name),
+            }}
+            jqlSource={{
+              projects,
+              members,
+              labels,
+              cycles,
+              statuses: workflow.statuses.map((status) => ({ name: status.name })),
+              types: workflow.types.map((type) => ({ name: type.name })),
+            }}
+            jqlError={panelJql && !panelJql.ok ? panelJql.error : null}
           />
-          <FilterMenu label="Quick filters" count={quickCount}>
+          <FilterMenu label="Custom filters" count={customCount}>
             {QUICK_FILTERS.map(([key, label]) => (
               <FilterCheckItem
                 key={key}
@@ -1285,60 +1471,66 @@ export default function ProjectBoardPage() {
                 {label}
               </FilterCheckItem>
             ))}
-            {labels.length > 0 && (
+            {quickFilters.length > 0 && (
               <>
                 <DropdownMenu.Separator className="planning-menu-separator" />
-                <MenuLabel>Labels</MenuLabel>
-                {labels.map((label) => (
+                <MenuLabel>Board filters</MenuLabel>
+                {quickFilters.map((query) => (
                   <FilterCheckItem
-                    key={label.id}
-                    checked={filters.labelId === label.id}
+                    key={query.id}
+                    checked={filters.quickFilterIds.includes(query.id)}
                     onToggle={() =>
                       setFilters((current) => ({
                         ...current,
-                        labelId: current.labelId === label.id ? null : label.id,
+                        quickFilterIds: toggleValue(current.quickFilterIds, query.id),
                       }))
                     }
                   >
                     <span
-                      className="planning-epic-swatch"
-                      style={{ background: label.color }}
-                      aria-hidden="true"
-                    />
-                    <span className="planning-menu-text">{label.name}</span>
+                      className="planning-menu-text"
+                      title={query.error ? `Invalid JQL: ${query.error}` : undefined}
+                    >
+                      {query.name}
+                    </span>
                   </FilterCheckItem>
                 ))}
               </>
             )}
+            {canAdminBoards && (
+              <>
+                <DropdownMenu.Separator className="planning-menu-separator" />
+                <DropdownMenu.Item className="planning-menu-item" asChild>
+                  <Link href={settingsHref}>Manage custom filters</Link>
+                </DropdownMenu.Item>
+              </>
+            )}
           </FilterMenu>
-          <QuickFilterButtons
-            filters={filters}
-            queries={quickFilters}
-            setFilters={setFilters}
-          />
           {hasActiveFilters(filters) && (
             <button
-              className="text-button planning-clear"
+              className="board-toolbar-button"
               type="button"
               onClick={() => setFilters(EMPTY_FILTERS)}
             >
               Clear filters
             </button>
           )}
-        </div>
-
-        <div className="planning-toolbar-end">
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
-              <button className="planning-filter" type="button">
-                Group: {groupLabel}
-                <ChevronDown size={14} aria-hidden="true" />
+              <button
+                className={
+                  swimlanes === "NONE" ? "board-toolbar-button" : "board-toolbar-button active"
+                }
+                type="button"
+                title={`Group by ${groupLabel.toLowerCase()}`}
+              >
+                <Layers size={15} aria-hidden="true" />
+                {swimlanes === "NONE" ? "Group" : `Group: ${groupLabel}`}
               </button>
             </DropdownMenu.Trigger>
             <DropdownMenu.Portal>
               <DropdownMenu.Content
                 className="planning-menu"
-                align="end"
+                align="start"
                 sideOffset={4}
               >
                 <MenuLabel>Group by</MenuLabel>
@@ -1366,14 +1558,18 @@ export default function ProjectBoardPage() {
               </DropdownMenu.Content>
             </DropdownMenu.Portal>
           </DropdownMenu.Root>
+        </div>
+
+        <div className="planning-toolbar-end">
           <button
-            className={showInsights ? "planning-filter active" : "planning-filter"}
+            className={showInsights ? "icon-button active" : "icon-button"}
             type="button"
+            aria-label="Insights"
             aria-pressed={showInsights}
+            title="Insights"
             onClick={() => togglePanel("insights")}
           >
-            <Lightbulb size={14} aria-hidden="true" />
-            Insights
+            <ChartLine size={16} aria-hidden="true" />
           </button>
           <button
             className={sidePanel === "view" ? "icon-button active" : "icon-button"}
@@ -1385,8 +1581,54 @@ export default function ProjectBoardPage() {
           >
             <SlidersHorizontal size={16} aria-hidden="true" />
           </button>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Undo last move"
+            title={lastMove ? `Undo moving ${lastMove.issueId}` : "Nothing to undo"}
+            disabled={!lastMove || isViewer}
+            onClick={() => void undoLastMove()}
+          >
+            <Undo2 size={16} aria-hidden="true" />
+          </button>
+          {boardMenu}
         </div>
       </div>
+
+      {standup && standupPerson && (
+        <div className="board-standup" role="region" aria-label="Stand-up">
+          <span className="board-standup-label">Stand-up</span>
+          <MemberAvatar member={standupPerson.member} />
+          <strong>{standupPerson.name}</strong>
+          <span className="board-standup-count">
+            {standup.index + 1} of {standupPeople.length}
+          </span>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={standup.index === 0}
+            onClick={() => moveStandup(standup.index - 1)}
+          >
+            Previous
+          </button>
+          {standup.index < standupPeople.length - 1 ? (
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => moveStandup(standup.index + 1)}
+            >
+              Next person
+            </button>
+          ) : (
+            <button type="button" className="primary-button" onClick={endStandup}>
+              Finish stand-up
+            </button>
+          )}
+          <button type="button" className="text-button" onClick={endStandup}>
+            End
+          </button>
+        </div>
+      )}
 
       {planning.error && (
         <p className="form-submit-error" role="alert">
@@ -1408,7 +1650,7 @@ export default function ProjectBoardPage() {
         onDragEnd={handleDragEnd}
         onDragCancel={() => setActiveId(null)}
       >
-        <div className="board-scroll" ref={boardScrollRef}>
+        <div className="board-scroll">
           <div className="board-grid-row">
           <div
             className={
@@ -1606,6 +1848,15 @@ export default function ProjectBoardPage() {
             )
           }
           onToggleFullScreen={() => setIsFullScreen((current) => !current)}
+          showDoneDays={boardType === "KANBAN"}
+          boardDoneDays={config.kanbanDoneDays}
+          onReset={() => {
+            setFilters(EMPTY_FILTERS);
+            setSwimlaneChoice(null);
+            setCollapsedLanes(new Set());
+            setStandup(null);
+            updateView(() => DEFAULT_BOARD_VIEW);
+          }}
           onClose={() => setSidePanel(null)}
         />
       )}

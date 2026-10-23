@@ -10,6 +10,12 @@ export type BoardView = {
   collapsedColumns: string[];
   /** Card fields this viewer hid; the board settings decide what's offered. */
   hiddenFields: CardField[];
+  /** Fixed-width columns, or columns that grow to fill the board. */
+  columnSize: "fixed" | "flexible";
+  /** Scroll inside each column, or the whole board together. */
+  scroll: "columns" | "board";
+  /** Hide done work after this many days; undefined keeps the board's setting, null never hides. */
+  doneDays?: number | null;
 };
 
 export const DEFAULT_BOARD_VIEW: BoardView = {
@@ -17,6 +23,8 @@ export const DEFAULT_BOARD_VIEW: BoardView = {
   compact: false,
   collapsedColumns: [],
   hiddenFields: [],
+  columnSize: "flexible",
+  scroll: "columns",
 };
 
 const listeners = new Set<() => void>();
@@ -54,6 +62,11 @@ export function parseBoardView(raw: string | null): BoardView {
       hiddenFields: Array.isArray(value.hiddenFields)
         ? value.hiddenFields.filter((field): field is CardField => typeof field === "string")
         : [],
+      columnSize: value.columnSize === "fixed" ? "fixed" : "flexible",
+      scroll: value.scroll === "board" ? "board" : "columns",
+      ...(value.doneDays === null || typeof value.doneDays === "number"
+        ? { doneDays: value.doneDays }
+        : {}),
     };
   } catch {
     return DEFAULT_BOARD_VIEW;

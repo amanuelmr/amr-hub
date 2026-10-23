@@ -31,6 +31,8 @@ describe("parseBoardView", () => {
       compact: true,
       collapsedColumns: ["a"],
       hiddenFields: [],
+      columnSize: "flexible",
+      scroll: "columns",
     });
   });
 });

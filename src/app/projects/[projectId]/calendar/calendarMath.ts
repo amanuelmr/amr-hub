@@ -20,11 +20,13 @@ export function dateOfKey(key: string) {
   return parseISO(key.slice(0, 10));
 }
 
-/** Weeks (Sunday-first) covering the month containing `month`. */
-export function buildMonthWeeks(month: Date): DayKey[][] {
+export type WeekStart = 0 | 1;
+
+/** Weeks (Sunday- or Monday-first) covering the month containing `month`. */
+export function buildMonthWeeks(month: Date, weekStartsOn: WeekStart = 0): DayKey[][] {
   const days = eachDayOfInterval({
-    start: startOfWeek(startOfMonth(month)),
-    end: endOfWeek(endOfMonth(month)),
+    start: startOfWeek(startOfMonth(month), { weekStartsOn }),
+    end: endOfWeek(endOfMonth(month), { weekStartsOn }),
   }).map(dayKeyOf);
   const weeks: DayKey[][] = [];
   for (let index = 0; index < days.length; index += 7) {
@@ -129,4 +131,46 @@ export function sprintForDay<T extends { startDate: string; endDate: string }>(
         sprint.startDate.slice(0, 10) <= day && sprint.endDate.slice(0, 10) >= day,
     ) ?? null
   );
+}
+
+/** The single week containing `date`. */
+export function buildWeek(date: Date, weekStartsOn: WeekStart = 0): DayKey[][] {
+  const start = startOfWeek(date, { weekStartsOn });
+  return [Array.from({ length: 7 }, (_, index) => dayKeyOf(addDays(start, index)))];
+}
+
+const WEEKDAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+export function weekdayNames(weekStartsOn: WeekStart) {
+  return [...WEEKDAY_NAMES.slice(weekStartsOn), ...WEEKDAY_NAMES.slice(0, weekStartsOn)];
+}
+
+export type CalendarPrefs = {
+  mode: "month" | "week";
+  weekStartsOn: WeekStart;
+  colorBy: "status" | "priority" | "type";
+  showKey: boolean;
+};
+
+export const DEFAULT_CALENDAR_PREFS: CalendarPrefs = {
+  mode: "month",
+  weekStartsOn: 0,
+  colorBy: "status",
+  showKey: false,
+};
+
+export function parseCalendarPrefs(raw: string | null): CalendarPrefs {
+  if (!raw) return DEFAULT_CALENDAR_PREFS;
+  try {
+    const value = JSON.parse(raw) as Partial<CalendarPrefs>;
+    return {
+      mode: value.mode === "week" ? "week" : "month",
+      weekStartsOn: value.weekStartsOn === 1 ? 1 : 0,
+      colorBy:
+        value.colorBy === "priority" || value.colorBy === "type" ? value.colorBy : "status",
+      showKey: value.showKey === true,
+    };
+  } catch {
+    return DEFAULT_CALENDAR_PREFS;
+  }
 }

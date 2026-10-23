@@ -2,165 +2,171 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import {
   ArrowRight,
-  Bot,
+  ChartLine,
   ClipboardList,
   Columns3,
-  LayoutDashboard,
-  Package,
-  Paperclip,
-  Rows3,
+  Inbox,
+  KeyRound,
+  Rocket,
   Search,
-  ShieldCheck,
   Target,
-  Timer,
-  UsersRound,
-  Webhook,
   Workflow,
 } from "lucide-react";
-import { ThemeToggle } from "./components/ThemeToggle";
-import { FeatureTabs } from "./components/landing/FeatureTabs";
-import { AppWindow, BoardMock } from "./components/landing/mocks";
+import { LandingNav } from "./components/landing/LandingNav";
+import { ProductDemo } from "./components/landing/ProductDemo";
+import { TypingPrompt } from "./components/landing/TypingPrompt";
+import { Carousel } from "./components/landing/Carousel";
+import { AppWindow, BoardMock, MockAvatar, ReportsMock } from "./components/landing/mocks";
 
 export const metadata: Metadata = {
   title: {
     absolute: "AMR Hub | Plan, track and ship work as a team",
   },
   description:
-    "AMR Hub is a Jira-style work management app: boards, backlogs and sprints, timelines, JQL search, automation, dashboards and reports for software teams.",
+    "Free work management for software teams: boards, backlogs and sprints, timelines, JQL search, automation, dashboards and reports.",
 };
 
-const FEATURES = [
+/* Section content. The layout follows Jira's product page; the words are ours. */
+
+const WORKS_WITH = ["Jira CSV import", "REST API", "Webhooks", "Email", "Passkeys"];
+
+const FLOW = [
   {
-    icon: Workflow,
-    title: "Custom workflows & work types",
-    body: "Define statuses, transitions and your own work types alongside epics, stories, tasks, bugs and subtasks.",
-  },
-  {
-    icon: Search,
-    title: "JQL search, saved filters & bulk change",
-    body: "Find anything with a query language you already know, save it as a filter, and update many items at once.",
-  },
-  {
-    icon: Bot,
-    title: "Automation rules",
-    body: "Trigger actions when work is created, updated, commented on or changes status, so routine updates happen on their own.",
-  },
-  {
-    icon: LayoutDashboard,
-    title: "Dashboards with gadgets",
-    body: "Assigned to me, filter results, pie charts, created vs resolved, sprint health, activity streams and more.",
-  },
-  {
-    icon: Target,
-    title: "Goals",
-    body: "Set goals, link the work that delivers them and post progress updates so everyone sees where things stand.",
+    icon: Inbox,
+    title: "Capture",
+    body: "Collect requests through forms, import from Jira, or create work from anywhere with C.",
   },
   {
     icon: ClipboardList,
-    title: "Forms",
-    body: "Collect requests through forms that create work items in the right project with the right fields.",
-  },
-  {
-    icon: Package,
-    title: "Releases & components",
-    body: "Group work into versions, track what ships in each release, and organise a project by component.",
-  },
-  {
-    icon: Timer,
-    title: "Time tracking & work logs",
-    body: "Estimate, log time against work items and compare original estimates with time spent.",
-  },
-  {
-    icon: Paperclip,
-    title: "Subtasks, links, attachments, watchers & votes",
-    body: "Break work down, link related items, attach files, and follow or vote on what matters to you.",
-  },
-  {
-    icon: UsersRound,
-    title: "Teams & people",
-    body: "Organise members into teams, see who is working on what, and assign work to the right people.",
-  },
-  {
-    icon: Webhook,
-    title: "API, webhooks, import/export & audit log",
-    body: "REST API v1 with personal tokens, outbound webhooks, CSV import and export, and a workspace audit log.",
-  },
-  {
-    icon: ShieldCheck,
-    title: "Security built in",
-    body: "Two-factor (TOTP), passkeys, recovery codes, session management, and owner, member and viewer roles.",
-  },
-];
-
-const STEPS = [
-  {
-    title: "Create your workspace",
-    body: "Sign up and invite teammates by email. Each workspace keeps its projects, members and data separate.",
-  },
-  {
-    title: "Create a project",
-    body: "Pick the Scrum or Kanban template, give the project a key, and your board and workflow are ready.",
-  },
-  {
-    title: "Plan in the backlog & run sprints",
-    body: "Rank and estimate work, pull it into a sprint, and move it across the board as the team delivers.",
-  },
-  {
-    title: "Track with reports and dashboards",
-    body: "Follow burndown and velocity, build dashboards from gadgets, and keep stakeholders up to date.",
-  },
-];
-
-const TEMPLATES = [
-  {
-    icon: Rows3,
-    name: "Scrum",
-    body: "Plan work in sprints from a prioritized backlog. Best for teams shipping on a regular cadence.",
-    includes: ["Backlog with sprint planning", "Burndown, burnup and velocity", "Sprint start and completion"],
+    title: "Plan",
+    body: "Rank the backlog, estimate, and pull the top of it into a sprint with a goal.",
   },
   {
     icon: Columns3,
-    name: "Kanban",
-    body: "Visualize a continuous flow of work on a board with WIP limits. Best for support and ops teams.",
-    includes: ["Continuous-flow board", "WIP limits per column", "Cumulative flow and control chart"],
+    title: "Track",
+    body: "Move cards across the board, filter by anyone, and see what's stuck at a glance.",
+  },
+  {
+    icon: Rocket,
+    title: "Ship",
+    body: "Release a version, publish the notes, and review the sprint report together.",
   },
 ];
 
-const FAQS = [
+const MORE = [
   {
-    q: "Is AMR Hub free to start?",
-    a: "Yes. Create a workspace from the sign-up page and start a project straight away.",
+    tone: "cyan",
+    title: "Search the way you think",
+    body: "JQL with autocomplete, saved filters you can share, and email subscriptions.",
+    link: "Try JQL",
+    visual: "jql",
   },
   {
-    q: "Does AMR Hub include AI features?",
-    a: "No. There is no AI assistant or generated content. Automation is rule-based: you choose the trigger, conditions and actions.",
+    tone: "ink",
+    title: "Let rules do the busywork",
+    body: "When, if and then automation with smart values, schedules and a run log.",
+    link: "See automation",
+    visual: "rules",
   },
   {
-    q: "Can I import my work from Jira?",
-    a: "Yes. Export a CSV from Jira, then go to Workspace settings → Import. Common Jira export headers are mapped to fields automatically. You can export to CSV the same way.",
-  },
-  {
-    q: "Is there an API?",
-    a: "Yes. A REST API (v1) covers projects and work items, authenticated with API tokens you create in Workspace settings. Webhooks notify your systems when work changes.",
-  },
-  {
-    q: "What roles are available?",
-    a: "Workspace members are owners, members or viewers. Owners manage the workspace and its settings, members create and edit work, and viewers have read-only access.",
-  },
-  {
-    q: "How is my account protected?",
-    a: "Sign in with a password or a passkey, add two-factor authentication with an authenticator app, keep recovery codes, and review or revoke active sessions at any time.",
+    tone: "lime",
+    title: "Dashboards that keep up",
+    body: "Gadgets for burndown, created vs resolved, workload and your own filters.",
+    link: "Build a dashboard",
+    visual: "gadgets",
   },
 ];
 
-function Brand() {
+const STATS = [
+  { value: "Free", body: "for every team, with no seat limit and no credit card" },
+  { value: "12", body: "built-in reports, from burndown to control charts" },
+  { value: "2", body: "templates to start from: Scrum and Kanban" },
+];
+
+const TEAMS = [
+  {
+    tone: "cyan",
+    initials: "EN",
+    team: "Engineering teams",
+    body: "Run two-week sprints, track bugs with priorities and environments, and ship releases with notes generated from the work in them.",
+  },
+  {
+    tone: "lime",
+    initials: "PM",
+    team: "Product managers",
+    body: "Plan epics on the timeline, link work to goals, and share dashboards so stakeholders stop asking for status updates.",
+  },
+  {
+    tone: "orange",
+    initials: "OP",
+    team: "Support and ops",
+    body: "Take requests through forms, work them on a Kanban board with WIP limits, and watch cycle time on the control chart.",
+  },
+  {
+    tone: "pink",
+    initials: "AG",
+    team: "Agencies",
+    body: "Give each client a project with its own access, keep private work private, and share a read-only dashboard.",
+  },
+];
+
+const LATEST = [
+  { tone: "cyan", tag: "Release", title: "A Filter panel, column menus and days in column on the board", cta: "Try it" },
+  { tone: "ink", tag: "Release", title: "Share filters and dashboards with viewers and editors", cta: "Try it" },
+  { tone: "orange", tag: "Guide", title: "Move from Jira in three steps with a CSV export", cta: "Read the guide" },
+  { tone: "lime", tag: "Guide", title: "JQL cheat sheet: ten queries every team uses", cta: "Read the guide" },
+  { tone: "pink", tag: "Guide", title: "Five automation rules to set up on day one", cta: "Read the guide" },
+];
+
+const SUITE = [
+  { icon: Columns3, label: "Projects" },
+  { icon: Target, label: "Goals" },
+  { icon: ChartLine, label: "Dashboards" },
+  { icon: Workflow, label: "Automation" },
+];
+
+function MoreVisual({ kind }: { kind: string }) {
+  if (kind === "jql") {
+    return (
+      <div className="lp-more-jql" aria-hidden="true">
+        <p>
+          <span className="lp-jql-field">assignee</span> = <span className="lp-jql-fn">currentUser()</span>{" "}
+          <span className="lp-jql-kw">AND</span> <span className="lp-jql-field">status</span> != Done
+        </p>
+        <ul>
+          <li>currentUser()</li>
+          <li>EMPTY</li>
+          <li>membersOf()</li>
+        </ul>
+        <span className="lp-more-jql-count">
+          <Search size={12} /> 3 work items
+        </span>
+      </div>
+    );
+  }
+  if (kind === "rules") {
+    return (
+      <ol className="lp-more-rules" aria-hidden="true">
+        <li>
+          <b className="lp-rule-when">When</b> moved to Done
+        </li>
+        <li>
+          <b className="lp-rule-if">If</b> type is Bug
+        </li>
+        <li>
+          <b className="lp-rule-then">Then</b> notify reporter
+        </li>
+      </ol>
+    );
+  }
   return (
-    <Link className="lp-brand" href="/" aria-label="AMR Hub home">
-      <span className="lp-brand-mark" aria-hidden="true">
-        A
-      </span>
-      <span>AMR Hub</span>
-    </Link>
+    <div className="lp-more-gadgets" aria-hidden="true">
+      <span style={{ height: "70%" }} />
+      <span style={{ height: "52%" }} />
+      <span style={{ height: "40%" }} />
+      <span style={{ height: "28%" }} />
+      <span style={{ height: "12%" }} />
+    </div>
   );
 }
 
@@ -170,82 +176,79 @@ export default function LandingPage() {
       <a className="lp-skip" href="#main">
         Skip to content
       </a>
-      <header className="lp-nav">
-        <div className="lp-container lp-nav-inner">
-          <Brand />
-          <nav className="lp-nav-links" aria-label="Page sections">
-            <a href="#features">Features</a>
-            <a href="#how-it-works">How it works</a>
-            <a href="#templates">Templates</a>
-            <a href="#faq">FAQ</a>
-          </nav>
-          <div className="lp-nav-actions">
-            <ThemeToggle />
-            <Link className="lp-nav-login" href="/login">
-              Log in
-            </Link>
-            <Link className="primary-button lp-btn" href="/signup">
-              Get it free
-            </Link>
-          </div>
-        </div>
-      </header>
+      <LandingNav />
 
       <main id="main">
+        {/* Hero: headline on the left, sign-up on the right. */}
         <section className="lp-hero">
           <div className="lp-container lp-hero-inner">
             <div className="lp-hero-copy">
-              <p className="lp-eyebrow">Work management for software teams</p>
-              <h1>Plan, track and ship great work together</h1>
+              <h1>Turn plans into shipped work</h1>
               <p className="lp-lede">
-                AMR Hub brings your backlog, sprints, boards and reports into one workspace,
-                so the whole team can see what is planned, what is moving and what has shipped.
+                AMR Hub gives software teams one place to plan sprints, track every work item
+                and see what shipped, from the first idea to the release notes.
               </p>
-              <div className="lp-cta-row">
-                <Link className="primary-button lp-btn lp-btn-lg" href="/signup">
-                  Get it free <ArrowRight size={16} aria-hidden="true" />
-                </Link>
-                <Link className="secondary-button lp-btn lp-btn-lg" href="/login">
-                  Log in
-                </Link>
-              </div>
-              <p className="lp-hero-note">Scrum and Kanban templates · JQL search · REST API</p>
             </div>
-            <div className="lp-hero-visual">
-              <AppWindow label="Illustration of an AMR Hub board with To do, In progress, In review and Done columns">
-                <BoardMock compact />
-              </AppWindow>
-            </div>
+            <form className="lp-hero-form" action="/signup" method="get">
+              <label htmlFor="hero-email">Work email</label>
+              <input
+                id="hero-email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                placeholder="you@company.com"
+                required
+              />
+              <p className="lp-hero-form-note">Use your work email so teammates can find you.</p>
+              <button className="primary-button lp-btn lp-btn-lg" type="submit">
+                Sign up
+              </button>
+              <p className="lp-hero-form-or">Or continue with</p>
+              <Link className="secondary-button lp-btn lp-btn-lg" href="/login">
+                <KeyRound size={16} aria-hidden="true" /> A passkey
+              </Link>
+            </form>
+          </div>
+          <div className="lp-container" id="product">
+            <ProductDemo />
           </div>
         </section>
 
-        <section className="lp-section" id="views" aria-labelledby="views-title">
+        {/* Proof strip. */}
+        <section className="lp-proof" aria-label="What's included">
           <div className="lp-container">
-            <div className="lp-section-head">
-              <p className="lp-eyebrow">One project, every view</p>
-              <h2 id="views-title">Move work forward in the view that fits</h2>
-              <p>
-                Every project comes with a board, backlog, timeline, list, calendar and reports,
-                all working from the same work items.
-              </p>
-            </div>
-            <FeatureTabs />
+            <p>Everything a software team needs, free for every team</p>
+            <ul className="lp-proof-list">
+              <li>Scrum</li>
+              <li>Kanban</li>
+              <li>JQL</li>
+              <li>Timeline</li>
+              <li>Automation</li>
+              <li>Dashboards</li>
+              <li>REST API</li>
+            </ul>
           </div>
         </section>
 
-        <section className="lp-section lp-section-alt" id="features" aria-labelledby="features-title">
+        {/* Dark band: terminal, works with, four steps. */}
+        <section className="lp-dark" id="workflow" aria-labelledby="flow-title">
           <div className="lp-container">
-            <div className="lp-section-head">
-              <p className="lp-eyebrow">Features</p>
-              <h2 id="features-title">Everything a team needs to run its work</h2>
-              <p>From the first idea in the backlog to the release notes, without bolting on extra tools.</p>
+            <h2 id="flow-title" className="sr-only">
+              How work moves through AMR Hub
+            </h2>
+            <TypingPrompt title="AMR Hub for software teams" />
+            <div className="lp-works-with">
+              <span>Works with</span>
+              <ul>
+                {WORKS_WITH.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
             </div>
-            <ul className="lp-feature-grid">
-              {FEATURES.map(({ icon: Icon, title, body }) => (
-                <li className="lp-feature" key={title}>
-                  <span className="lp-feature-icon" aria-hidden="true">
-                    <Icon size={18} />
-                  </span>
+            <ul className="lp-flow">
+              {FLOW.map(({ icon: Icon, title, body }) => (
+                <li key={title}>
+                  <Icon size={28} aria-hidden="true" />
                   <h3>{title}</h3>
                   <p>{body}</p>
                 </li>
@@ -254,90 +257,170 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <section className="lp-section" id="how-it-works" aria-labelledby="how-title">
+        {/* Keep the team in the know: heading, button, big screen. */}
+        <section className="lp-section" aria-labelledby="know-title">
           <div className="lp-container">
-            <div className="lp-section-head">
-              <p className="lp-eyebrow">How it works</p>
-              <h2 id="how-title">From sign-up to your first sprint</h2>
+            <h2 id="know-title" className="lp-h2">
+              Keep your whole team in the know
+            </h2>
+            <p className="lp-section-lede">
+              Engineering, product, design and support plan in one shared place, track progress
+              on the same board and move faster together.
+            </p>
+            <Link className="lp-pill-button" href="/signup">
+              Get started for free <ArrowRight size={16} aria-hidden="true" />
+            </Link>
+            <div className="lp-know-visual">
+              <AppWindow label="An AMR Hub board shared by several teams">
+                <BoardMock />
+              </AppWindow>
+              <span className="lp-tag-cursor lp-tag-design" aria-hidden="true">
+                Design
+              </span>
+              <span className="lp-tag-cursor lp-tag-support" aria-hidden="true">
+                Support
+              </span>
+              <span className="lp-tag-cursor lp-tag-eng" aria-hidden="true">
+                Engineering
+              </span>
             </div>
-            <ol className="lp-steps">
-              {STEPS.map((step, index) => (
-                <li className="lp-step" key={step.title}>
-                  <span className="lp-step-num" aria-hidden="true">
-                    {String(index + 1).padStart(2, "0")}
-                  </span>
-                  <h3>{step.title}</h3>
-                  <p>{step.body}</p>
+          </div>
+        </section>
+
+        {/* More than project management: three tall cards. */}
+        <section className="lp-section" id="more" aria-labelledby="more-title">
+          <div className="lp-container">
+            <h2 id="more-title" className="lp-h2">
+              More than a board
+            </h2>
+            <ul className="lp-more">
+              {MORE.map((item) => (
+                <li key={item.title}>
+                  <div className={`lp-more-visual lp-tone-${item.tone}`}>
+                    <MoreVisual kind={item.visual} />
+                  </div>
+                  <h3>{item.title}</h3>
+                  <p>{item.body}</p>
+                  <Link href="/signup">
+                    {item.link} <ArrowRight size={14} aria-hidden="true" />
+                  </Link>
                 </li>
               ))}
-            </ol>
+            </ul>
           </div>
         </section>
 
-        <section className="lp-section lp-section-alt" id="templates" aria-labelledby="templates-title">
+        {/* Built for teams: stats panel and a carousel. */}
+        <section className="lp-section" id="teams" aria-labelledby="teams-title">
           <div className="lp-container">
-            <div className="lp-section-head">
-              <p className="lp-eyebrow">Templates</p>
-              <h2 id="templates-title">Start with a template</h2>
-              <p>Choose how your team works. You can switch between Scrum and Kanban later in project settings.</p>
-            </div>
-            <div className="lp-templates">
-              {TEMPLATES.map(({ icon: Icon, name, body, includes }) => (
-                <article className="lp-template" key={name}>
-                  <div className="lp-template-head">
-                    <span className="lp-feature-icon" aria-hidden="true">
-                      <Icon size={18} />
-                    </span>
-                    <h3>{name}</h3>
+            <h2 id="teams-title" className="lp-h2">
+              Built for teams big and small
+            </h2>
+            <p className="lp-section-lede">Every kind of team can run its work in AMR Hub.</p>
+            <ul className="lp-stats" id="pricing">
+              {STATS.map((stat) => (
+                <li key={stat.value}>
+                  <strong>{stat.value}</strong>
+                  <span>{stat.body}</span>
+                </li>
+              ))}
+            </ul>
+            <Carousel label="team stories">
+              {TEAMS.map((item) => (
+                <article className={`lp-team-card lp-tone-${item.tone}`} key={item.team} role="listitem">
+                  <div className="lp-team-face" aria-hidden="true">
+                    <MockAvatar initials={item.initials} tone={0} />
                   </div>
-                  <p>{body}</p>
-                  <ul className="lp-checks">
-                    {includes.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                  <Link
-                    className="secondary-button lp-btn"
-                    href="/signup"
-                    aria-label={`Use the ${name} template`}
-                  >
-                    Use template <ArrowRight size={14} aria-hidden="true" />
-                  </Link>
+                  <div className="lp-team-body">
+                    <strong>{item.team}</strong>
+                    <p>{item.body}</p>
+                    <Link href="/signup">
+                      Start with a template <ArrowRight size={14} aria-hidden="true" />
+                    </Link>
+                  </div>
                 </article>
               ))}
-            </div>
+            </Carousel>
           </div>
         </section>
 
-        <section className="lp-section" id="faq" aria-labelledby="faq-title">
-          <div className="lp-container lp-faq-wrap">
-            <div className="lp-section-head">
-              <p className="lp-eyebrow">FAQ</p>
-              <h2 id="faq-title">Frequently asked questions</h2>
-            </div>
-            <div className="lp-faq">
-              {FAQS.map((item) => (
-                <details className="lp-faq-item" key={item.q}>
-                  <summary>{item.q}</summary>
-                  <p>{item.a}</p>
-                </details>
+        {/* Discover the latest: a row of coloured cards. */}
+        <section className="lp-section lp-section-alt" id="latest" aria-labelledby="latest-title">
+          <div className="lp-container">
+            <h2 id="latest-title" className="lp-h2">
+              Discover the latest for AMR Hub
+            </h2>
+            <p className="lp-section-lede">New features and guides for getting more from your board.</p>
+            <Carousel label="updates">
+              {LATEST.map((item) => (
+                <article className={`lp-latest-card lp-tone-${item.tone}`} key={item.title} role="listitem">
+                  <div className="lp-latest-art" aria-hidden="true">
+                    <span>{item.tag === "Release" ? "New" : "How to"}</span>
+                  </div>
+                  <div className="lp-latest-body">
+                    <span className="lp-latest-tag">{item.tag}</span>
+                    <h3>{item.title}</h3>
+                    <Link href="/signup">
+                      {item.cta} <ArrowRight size={14} aria-hidden="true" />
+                    </Link>
+                  </div>
+                </article>
               ))}
+            </Carousel>
+          </div>
+        </section>
+
+        {/* The wider workspace: copy on the left, big visual on the right. */}
+        <section className="lp-section" aria-labelledby="suite-title">
+          <div className="lp-container lp-suite">
+            <div className="lp-suite-copy">
+              <p className="lp-suite-kicker">
+                <strong>AMR Hub</strong> workspace
+              </p>
+              <ul className="lp-suite-apps">
+                {SUITE.map(({ icon: Icon, label }) => (
+                  <li key={label}>
+                    <Icon size={16} aria-hidden="true" />
+                    {label}
+                  </li>
+                ))}
+              </ul>
+              <h2 id="suite-title" className="lp-h2">
+                One workspace for the whole cycle
+              </h2>
+              <p className="lp-section-lede">
+                Set goals, plan projects, run sprints and report on results without switching
+                tools or copying updates between them.
+              </p>
+              <Link className="lp-text-link" href="/signup">
+                Explore the workspace <ArrowRight size={14} aria-hidden="true" />
+              </Link>
+            </div>
+            <div className="lp-suite-visual">
+              <AppWindow label="AMR Hub reports for a sprint" active="Reports">
+                <ReportsMock />
+              </AppWindow>
+              <span className="lp-tag-cursor lp-tag-eng" aria-hidden="true">
+                Maya
+              </span>
+              <span className="lp-tag-cursor lp-tag-design" aria-hidden="true">
+                Jon
+              </span>
             </div>
           </div>
         </section>
 
+        {/* Final call to action. */}
         <section className="lp-final" aria-labelledby="final-title">
           <div className="lp-container lp-final-inner">
-            <h2 id="final-title">Get your team on the same board</h2>
-            <p>Create a workspace, pick a template and plan your first sprint today.</p>
-            <div className="lp-cta-row">
-              <Link className="primary-button lp-btn lp-btn-lg" href="/signup">
-                Get it free <ArrowRight size={16} aria-hidden="true" />
-              </Link>
-              <Link className="secondary-button lp-btn lp-btn-lg" href="/login">
-                Log in
-              </Link>
-            </div>
+            <span className="lp-final-mark" aria-hidden="true">
+              A
+            </span>
+            <h2 id="final-title">The work system for software teams</h2>
+            <p>Get started for free, no credit card required.</p>
+            <Link className="primary-button lp-btn lp-btn-lg" href="/signup">
+              Get it free
+            </Link>
           </div>
         </section>
       </main>
@@ -345,19 +428,30 @@ export default function LandingPage() {
       <footer className="lp-footer">
         <div className="lp-container lp-footer-inner">
           <div className="lp-footer-brand">
-            <Brand />
-            <p>Plan, track and ship work as a team.</p>
+            <Link className="lp-brand" href="/" aria-label="AMR Hub home">
+              <span className="lp-brand-mark" aria-hidden="true">
+                A
+              </span>
+              <span>AMR Hub</span>
+            </Link>
+            <p>Free work management for software teams.</p>
           </div>
           <nav className="lp-footer-col" aria-label="Product">
             <strong>Product</strong>
-            <a href="#views">Views</a>
-            <a href="#features">Features</a>
-            <a href="#templates">Templates</a>
-            <a href="#faq">FAQ</a>
+            <a href="#product">Board</a>
+            <a href="#workflow">Backlog and sprints</a>
+            <a href="#more">Search and automation</a>
+            <a href="#teams">Teams</a>
+          </nav>
+          <nav className="lp-footer-col" aria-label="Resources">
+            <strong>Resources</strong>
+            <a href="#latest">What&apos;s new</a>
+            <a href="#latest">Guides</a>
+            <a href="#pricing">Pricing</a>
           </nav>
           <nav className="lp-footer-col" aria-label="Account">
             <strong>Account</strong>
-            <Link href="/login">Log in</Link>
+            <Link href="/login">Sign in</Link>
             <Link href="/signup">Sign up</Link>
           </nav>
         </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Maximize2, Minimize2, X } from "lucide-react";
+import { Maximize2, Minimize2, RotateCcw, X } from "lucide-react";
 import { CARD_FIELD_LABELS, type CardField } from "../../data/projects";
 import type { BoardView } from "./useBoardView";
 
@@ -34,9 +34,12 @@ export function ViewSettingsPanel({
   allLanesCollapsed,
   isFullScreen,
   settingsHref,
+  showDoneDays,
+  boardDoneDays,
   onUpdate,
   onToggleLanes,
   onToggleFullScreen,
+  onReset,
   onClose,
 }: {
   view: BoardView;
@@ -46,9 +49,14 @@ export function ViewSettingsPanel({
   allLanesCollapsed: boolean;
   isFullScreen: boolean;
   settingsHref: string | null;
+  /** Kanban boards hide old done work; Scrum boards keep the whole sprint. */
+  showDoneDays: boolean;
+  boardDoneDays: number | null;
   onUpdate: (change: (current: BoardView) => BoardView) => void;
   onToggleLanes: () => void;
   onToggleFullScreen: () => void;
+  /** Clears filters, grouping and these view settings. */
+  onReset: () => void;
   onClose: () => void;
 }) {
   const toggleField = (field: CardField) =>
@@ -98,6 +106,72 @@ export function ViewSettingsPanel({
       </section>
 
       <section className="view-settings-section">
+        <h3>Board</h3>
+        {showDoneDays && (
+          <label className="view-settings-select">
+            <span>Hide done work items after</span>
+            <select
+              value={
+                view.doneDays === undefined
+                  ? "board"
+                  : view.doneDays === null
+                    ? "never"
+                    : String(view.doneDays)
+              }
+              onChange={(event) => {
+                const value = event.target.value;
+                onUpdate((current) => {
+                  const next = { ...current };
+                  if (value === "board") delete next.doneDays;
+                  else next.doneDays = value === "never" ? null : Number(value);
+                  return next;
+                });
+              }}
+            >
+              <option value="board">
+                Board default ({boardDoneDays === null ? "never" : `${boardDoneDays} days`})
+              </option>
+              <option value="1">1 day</option>
+              <option value="7">7 days</option>
+              <option value="14">14 days</option>
+              <option value="30">30 days</option>
+              <option value="never">Never hide</option>
+            </select>
+          </label>
+        )}
+        <div className="view-settings-segment" role="radiogroup" aria-label="Column size">
+          <span>Column size</span>
+          {(["fixed", "flexible"] as const).map((size) => (
+            <button
+              key={size}
+              type="button"
+              role="radio"
+              aria-checked={view.columnSize === size}
+              className={view.columnSize === size ? "active" : undefined}
+              onClick={() => onUpdate((current) => ({ ...current, columnSize: size }))}
+            >
+              {size === "fixed" ? "Fixed" : "Flexible"}
+            </button>
+          ))}
+        </div>
+        <div className="view-settings-segment" role="radiogroup" aria-label="Scrolling">
+          <span>Scrolling</span>
+          {(["columns", "board"] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              role="radio"
+              aria-checked={view.scroll === mode}
+              className={view.scroll === mode ? "active" : undefined}
+              onClick={() => onUpdate((current) => ({ ...current, scroll: mode }))}
+            >
+              {mode === "columns" ? "Within columns" : "Whole board"}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="view-settings-section">
         <h3>Layout</h3>
         <Toggle
           label="Compact cards"
@@ -125,6 +199,10 @@ export function ViewSettingsPanel({
             <Maximize2 size={14} aria-hidden="true" />
           )}
           {isFullScreen ? "Exit full screen" : "Full screen"}
+        </button>
+        <button type="button" className="secondary-button" onClick={onReset}>
+          <RotateCcw size={14} aria-hidden="true" />
+          Reset board view
         </button>
       </section>
     </aside>

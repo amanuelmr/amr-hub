@@ -1,10 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { CircleHelp, Menu, PanelLeft, Plus, Search, Settings } from "lucide-react";
 import { OPEN_SHORTCUTS_EVENT, openCommandPalette } from "../CommandPalette";
 import { NotificationInbox } from "../NotificationInbox";
 import { ThemeToggle } from "../ThemeToggle";
+import { HelpPanel } from "./HelpPanel";
 import { ProfileMenu } from "./ProfileMenu";
 
 export function openShortcutsHelp() {
@@ -26,8 +28,12 @@ export function TopBar({
   canCreate: boolean;
   onCreate: () => void;
 }) {
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
   return (
     <header className="shell-topbar">
+      {isHelpOpen && (
+        <HelpPanel onClose={() => setIsHelpOpen(false)} onOpenShortcuts={openShortcutsHelp} />
+      )}
       <div className="shell-topbar-start">
         <button
           type="button"
@@ -89,9 +95,10 @@ export function TopBar({
         <button
           type="button"
           className="shell-icon-button shell-hide-mobile"
-          onClick={openShortcutsHelp}
-          aria-label="Help and keyboard shortcuts"
-          title="Help  [?]"
+          onClick={() => setIsHelpOpen((open) => !open)}
+          aria-label="Help"
+          aria-expanded={isHelpOpen}
+          title="Help"
         >
           <CircleHelp size={17} aria-hidden="true" />
         </button>

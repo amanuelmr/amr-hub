@@ -16,10 +16,21 @@ import {
   CalendarPlus,
   ChevronDown,
   ChevronRight,
-  GitBranch,
+  CircleHelp,
+  Download,
+  MoreHorizontal,
+  MoveHorizontal,
   Plus,
+  Printer,
   Search,
+  SlidersHorizontal,
 } from "lucide-react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import * as Popover from "@radix-ui/react-popover";
+import { MemberAvatar } from "../board/PlanningVisuals";
+import { useProjectVersions, type VersionSummary } from "../board/KanbanRelease";
+import { downloadCsv, toCsv } from "../search/csv";
+import { useStoredPrefs } from "../useStoredPrefs";
 import { apiRequest, useIssues } from "../../IssueProvider";
 import { DependencyLayer } from "./DependencyLayer";
 import type { Dependency } from "../../../server/dependencies";
@@ -44,10 +55,15 @@ import {
   barSpan,
   diffDays,
   headerSegments,
+  TIMELINE_SORTS,
+  compareTimelineItems,
+  parseTimelinePrefs,
   pixelsToDays,
   timelineRange,
   toDayKey,
   type DragMode,
+  type TimelinePrefs,
+  type TimelineSort,
   type TimelineZoom,
 } from "./timelineMath";
 import { isDoneStatus, isEpicLevel, statusCategory } from "../../data/workflow";
@@ -132,7 +148,15 @@ export function TimelineView({
   const scrollRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const [dependencies, setDependencies] = useState<Dependency[]>([]);
-  const [showDependencies, setShowDependencies] = useState(true);
+  const { value: view, update: updateView } = useStoredPrefs(
+    `amr.timeline.${mode}.${projectKey}`,
+    parseTimelinePrefs,
+  );
+  const showDependencies = view.showDependencies;
+  const { versions } = useProjectVersions(projectId, mode === "project");
+  const releases = versions.filter(
+    (version) => version.status !== "ARCHIVED" && version.releaseDate,
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -176,14 +200,25 @@ export function TimelineView({
       (assigneeFilter === "ALL" ||
         (assigneeFilter === "UNASSIGNED"
           ? !issue.assignee
-          : issue.assignee?.id === assigneeFilter));
+          : issue.assignee?.id === assigneeFilter)) &&
+      (!view.hideDone || !isDoneStatus(issue.status));
+    const statusColor = (issue: Issue) => STATUS_BAR_COLORS[statusCategory(issue.status)];
+    const sortable = (issue: Issue) => ({
+      rank: issue.rank,
+      statusCategory: statusCategory(issue.status),
+      assigneeName: issue.assignee?.name ?? null,
+      startDate: issue.startDate,
+      dueDate: issue.dueDate,
+    });
+    const byChosenSort = (left: Issue, right: Issue) =>
+      compareTimelineItems(view.sortBy, sortable(left), sortable(right));
     const order = projectKey.split(",");
     const epics = projectIssues
       .filter((issue) => isEpicLevel(issue.kind))
       .sort(
         (left, right) =>
           order.indexOf(left.projectId) - order.indexOf(right.projectId) ||
-          left.rank - right.rank ||
+          byChosenSort(left, right) ||
           left.createdAt.localeCompare(right.createdAt),
       );
     const palette = [
@@ -199,7 +234,7 @@ export function TimelineView({
     epics.forEach((epic, index) => {
       const children = projectIssues
         .filter((issue) => issue.parentId === epic.id)
-        .sort((left, right) => left.rank - right.rank);
+        .sort(byChosenSort);
       const visibleChildren = children.filter(matches);
       if (!matches(epic) && visibleChildren.length === 0) return;
       const color =
@@ -222,7 +257,7 @@ export function TimelineView({
       result.push({
         issue: epic,
         depth: 0,
-        color,
+        color: view.barColor === "status" ? statusColor(epic) : color,
         progress: children.length ? done / children.length : null,
         childCount: children.length,
       });
@@ -231,7 +266,7 @@ export function TimelineView({
           result.push({
             issue: child,
             depth: 1,
-            color,
+            color: view.barColor === "status" ? statusColor(child) : color,
             progress: isDoneStatus(child.status) ? 1 : null,
             childCount: 0,
           });
@@ -249,6 +284,9 @@ export function TimelineView({
     projectKey,
     projects,
     mode,
+    view.hideDone,
+    view.barColor,
+    view.sortBy,
   ]);
   const { rows, headers: projectHeaders } = rowModel;
 
@@ -386,9 +424,28 @@ export function TimelineView({
 
   if (isLoading) return <WorkspaceLoading label="timeline" />;
 
+  const labelWidth = 280 + (view.showStatus ? 96 : 0) + (view.showAssignee ? 34 : 0);
   const gridStyle = {
     "--timeline-track-width": `${trackWidth}px`,
+    "--timeline-label-width": `${labelWidth}px`,
   } as CSSProperties;
+
+  const exportCsv = () => {
+    const csv = toCsv(
+      ["Key", "Summary", "Work type", "Status", "Assignee", "Start date", "Due date", "Parent"],
+      rows.map(({ issue }) => [
+        issue.id,
+        issue.title,
+        issue.kind,
+        issue.status,
+        issue.assignee?.name ?? "",
+        issue.startDate?.slice(0, 10) ?? "",
+        issue.dueDate?.slice(0, 10) ?? "",
+        issue.parentId ?? "",
+      ]),
+    );
+    downloadCsv(`${project?.key ?? "timeline"}-timeline.csv`, csv);
+  };
 
   return (
     <div className="page timeline-page">
@@ -434,16 +491,27 @@ export function TimelineView({
           </select>
         </label>
         <div className="jira-toolbar-spacer" />
-        <button
-          type="button"
-          className={showDependencies ? "secondary-button active" : "secondary-button"}
-          aria-pressed={showDependencies}
-          onClick={() => setShowDependencies((current) => !current)}
-          title="Show arrows between work items that block each other"
-        >
-          <GitBranch size={14} aria-hidden="true" />
-          Dependencies
-        </button>
+        <TimelineLegend />
+        <TimelineSettings view={view} onUpdate={updateView} showReleaseOption={mode === "project"} />
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
+            <button type="button" className="icon-button" aria-label="More timeline actions">
+              <MoreHorizontal size={16} aria-hidden="true" />
+            </button>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content className="planning-menu" align="end" sideOffset={4}>
+              <DropdownMenu.Item className="planning-menu-item" onSelect={exportCsv}>
+                <Download size={14} aria-hidden="true" />
+                Export CSV
+              </DropdownMenu.Item>
+              <DropdownMenu.Item className="planning-menu-item" onSelect={() => window.print()}>
+                <Printer size={14} aria-hidden="true" />
+                Print
+              </DropdownMenu.Item>
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
         <div
           className="filter-tabs timeline-zoom"
           role="tablist"
@@ -470,6 +538,7 @@ export function TimelineView({
             {showDependencies && (
               <DependencyLayer
                 gridRef={gridRef}
+                showWarnings={view.showWarnings}
                 dependencies={dependencies}
                 spans={barSpans}
                 version={`${zoom}|${rows.length}|${[...expanded].join(",")}|${preview ? `${preview.id}:${preview.span.start}:${preview.span.end}` : ""}`}
@@ -477,7 +546,29 @@ export function TimelineView({
             )}
             <div className="timeline-head">
               <div className="timeline-row timeline-head-row">
-                <div className="timeline-label timeline-corner">Work</div>
+                <div className="timeline-label timeline-corner timeline-corner-work">
+                  <span>Work</span>
+                  <label className="timeline-sort">
+                    <span className="sr-only">Sort work by</span>
+                    <select
+                      value={view.sortBy}
+                      onChange={(event) =>
+                        updateView((current) => ({
+                          ...current,
+                          sortBy: event.target.value as TimelineSort,
+                        }))
+                      }
+                    >
+                      {TIMELINE_SORTS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          Sort: {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {view.showStatus && <span className="timeline-col-head status">Status</span>}
+                  {view.showAssignee && <span className="timeline-col-head assignee" aria-label="Assignee" />}
+                </div>
                 <div className="timeline-track timeline-scale">
                   {header.top.map((segment) => (
                     <span
@@ -533,6 +624,31 @@ export function TimelineView({
                   })}
                 </div>
               </div>
+              )}
+              {mode === "project" && view.showReleases && releases.length > 0 && (
+                <div className="timeline-row timeline-release-row">
+                  <div className="timeline-label timeline-corner">Releases</div>
+                  <div className="timeline-track">
+                    {releases.map((version) => (
+                      <ReleaseMarker
+                        key={version.id}
+                        version={version}
+                        left={
+                          barGeometry(
+                            {
+                              start: toDayKey(version.releaseDate!),
+                              end: toDayKey(version.releaseDate!),
+                            },
+                            range.start,
+                            dayWidth,
+                          ).left + dayWidth / 2
+                        }
+                        today={today}
+                        href={`/projects/${projectId}/releases/${version.id}`}
+                      />
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
 
@@ -630,9 +746,14 @@ export function TimelineView({
                           {issue.title}
                         </span>
                       </Link>
-                      {row.depth === 1 && (
-                        <span className="timeline-status">
+                      {view.showStatus && (
+                        <span className="timeline-col status">
                           <StatusBadge status={issue.status} projectId={issue.projectId} />
+                        </span>
+                      )}
+                      {view.showAssignee && (
+                        <span className="timeline-col assignee">
+                          <MemberAvatar member={issue.assignee} />
                         </span>
                       )}
                     </div>
@@ -801,5 +922,165 @@ function TimelineBar({
         </>
       )}
     </div>
+  );
+}
+
+const STATUS_BAR_COLORS: Record<StatusCategory, string> = {
+  TODO: "var(--gray-400)",
+  IN_PROGRESS: "var(--console-cyan)",
+  DONE: "var(--green-500)",
+};
+
+function TimelineSettings({
+  view,
+  onUpdate,
+  showReleaseOption,
+}: {
+  view: TimelinePrefs;
+  onUpdate: (change: (current: TimelinePrefs) => TimelinePrefs) => void;
+  showReleaseOption: boolean;
+}) {
+  const toggle = (
+    key:
+      | "hideDone"
+      | "showDependencies"
+      | "showWarnings"
+      | "showStatus"
+      | "showAssignee"
+      | "showReleases",
+    label: string,
+  ) => (
+    <label className="timeline-settings-check">
+      <input
+        type="checkbox"
+        checked={view[key]}
+        onChange={() => onUpdate((current) => ({ ...current, [key]: !current[key] }))}
+      />
+      <span>{label}</span>
+    </label>
+  );
+  return (
+    <Popover.Root>
+      <Popover.Trigger asChild>
+        <button type="button" className="icon-button" aria-label="View settings" title="View settings">
+          <SlidersHorizontal size={16} aria-hidden="true" />
+        </button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content className="timeline-popover" align="end" sideOffset={6}>
+          <h3>View settings</h3>
+          {toggle("hideDone", "Hide done work items")}
+          {toggle("showDependencies", "Show dependencies")}
+          {toggle("showWarnings", "Highlight date conflicts")}
+          {toggle("showStatus", "Status column")}
+          {toggle("showAssignee", "Assignee column")}
+          {showReleaseOption && toggle("showReleases", "Releases")}
+          <fieldset>
+            <legend>Bar colour</legend>
+            <label className="timeline-settings-check">
+              <input
+                type="radio"
+                name="timeline-bar-color"
+                checked={view.barColor === "custom"}
+                onChange={() => onUpdate((current) => ({ ...current, barColor: "custom" }))}
+              />
+              <span>One colour per epic</span>
+            </label>
+            <label className="timeline-settings-check">
+              <input
+                type="radio"
+                name="timeline-bar-color"
+                checked={view.barColor === "status"}
+                onChange={() => onUpdate((current) => ({ ...current, barColor: "status" }))}
+              />
+              <span>Match work item status</span>
+            </label>
+          </fieldset>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
+function TimelineLegend() {
+  return (
+    <Popover.Root>
+      <Popover.Trigger asChild>
+        <button type="button" className="icon-button" aria-label="Legend" title="Legend">
+          <CircleHelp size={16} aria-hidden="true" />
+        </button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content className="timeline-popover timeline-legend" align="end" sideOffset={6}>
+          <h3>Legend</h3>
+          <ul>
+            <li>
+              <span className="legend-swatch arrow" aria-hidden="true" />
+              Dependency: the first item blocks the second
+            </li>
+            <li>
+              <span className="legend-swatch arrow conflict" aria-hidden="true" />
+              Date conflict: the blocker ends after the blocked item starts
+            </li>
+            <li>
+              <span className="legend-swatch today" aria-hidden="true" />
+              Today
+            </li>
+            <li>
+              <span className="legend-swatch progress" aria-hidden="true" />
+              Filled part of an epic bar: share of its child items done
+            </li>
+            <li>
+              <span className="timeline-release-diamond released" aria-hidden="true" />
+              Released version
+            </li>
+            <li>
+              <span className="timeline-release-diamond unreleased" aria-hidden="true" />
+              Unreleased version
+            </li>
+            <li>
+              <span className="timeline-release-diamond overdue" aria-hidden="true" />
+              Overdue version (release date passed)
+            </li>
+            <li>
+              <MoveHorizontal size={13} aria-hidden="true" />
+              Drag a bar to move it; drag its ends to change start and due dates
+            </li>
+          </ul>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
+function ReleaseMarker({
+  version,
+  left,
+  today,
+  href,
+}: {
+  version: VersionSummary;
+  left: number;
+  today: string;
+  href: string;
+}) {
+  const state =
+    version.status === "RELEASED"
+      ? "released"
+      : version.releaseDate && toDayKey(version.releaseDate) < today
+        ? "overdue"
+        : "unreleased";
+  const label =
+    state === "released" ? "Released" : state === "overdue" ? "Overdue" : "Unreleased";
+  return (
+    <Link
+      href={href}
+      className={`timeline-release ${state}`}
+      style={{ left }}
+      title={`${version.name} · ${label} · ${version.doneCount}/${version.issueCount} done`}
+    >
+      <span className={`timeline-release-diamond ${state}`} aria-hidden="true" />
+      <span className="timeline-release-name">{version.name}</span>
+    </Link>
   );
 }

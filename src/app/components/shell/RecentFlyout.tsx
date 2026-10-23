@@ -9,8 +9,15 @@ import type { IssueKind } from "../../data/issues";
 import type { Project } from "../../data/projects";
 import { KindIcon } from "../IssueVisuals";
 import { ProjectAvatar } from "./ProjectAvatar";
+import { groupRecent } from "./recentGroups";
 
-type RecentIssue = { id: string; title: string; kind: IssueKind; projectId: string };
+type RecentIssue = {
+  id: string;
+  title: string;
+  kind: IssueKind;
+  projectId: string;
+  viewedAt: string;
+};
 
 export function RecentFlyout({
   recentProjects,
@@ -25,7 +32,7 @@ export function RecentFlyout({
   const handleOpenChange = (open: boolean) => {
     setIsOpen(open);
     if (!open) return;
-    apiRequest<{ recent: RecentIssue[] }>("/api/your-work?only=recent&limit=10")
+    apiRequest<{ recent: RecentIssue[] }>("/api/your-work?only=recent&limit=20")
       .then((response) => setIssues(response.recent ?? []))
       .catch(() => setIssues((current) => current ?? []));
   };
@@ -63,23 +70,28 @@ export function RecentFlyout({
             ) : issues.length === 0 ? (
               <p className="shell-flyout-empty">Work items you view will show up here.</p>
             ) : (
-              <ul className="shell-flyout-list">
-                {issues.map((issue) => (
-                  <li key={issue.id}>
-                    <Link
-                      href={`/issues/${issue.id}`}
-                      className="shell-flyout-item"
-                      onClick={close}
-                    >
-                      <KindIcon kind={issue.kind} />
-                      <span className="shell-flyout-item-text">
-                        <span>{issue.title}</span>
-                        <small>{issue.id}</small>
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
+              groupRecent(issues, new Date()).map((group) => (
+                <div key={group.label} className="shell-flyout-group">
+                  <h4 className="shell-flyout-subheading">{group.label}</h4>
+                  <ul className="shell-flyout-list">
+                    {group.items.map((issue) => (
+                      <li key={issue.id}>
+                        <Link
+                          href={`/issues/${issue.id}`}
+                          className="shell-flyout-item"
+                          onClick={close}
+                        >
+                          <KindIcon kind={issue.kind} />
+                          <span className="shell-flyout-item-text">
+                            <span>{issue.title}</span>
+                            <small>{issue.id}</small>
+                          </span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))
             )}
           </section>
           {recentProjects.length > 0 && (

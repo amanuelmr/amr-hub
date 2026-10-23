@@ -15,8 +15,9 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { addMonths, format, isSameMonth, subMonths } from "date-fns";
-import { CalendarX2, ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { addMonths, addWeeks, format, isSameMonth, subMonths, subWeeks } from "date-fns";
+import * as Popover from "@radix-ui/react-popover";
+import { CalendarX2, ChevronLeft, ChevronRight, Search, SlidersHorizontal } from "lucide-react";
 import { useIssues } from "../../../IssueProvider";
 import { useProjects } from "../../../ProjectProvider";
 import { authClient } from "../../../../lib/auth-client";
@@ -32,7 +33,11 @@ import {
 } from "../../../data/issues";
 import {
   buildMonthWeeks,
+  buildWeek,
   dateOfKey,
+  parseCalendarPrefs,
+  weekdayNames,
+  type CalendarPrefs,
   dayKeyOf,
   issueRange,
   layoutWeek,
@@ -40,13 +45,17 @@ import {
   sprintForDay,
 } from "./calendarMath";
 import { isDoneStatus, statusCategory } from "../../../data/workflow";
+import { PRIORITY_COLORS } from "../../../components/board/boardRules";
+import { useStoredPrefs } from "../../../components/useStoredPrefs";
+import { useWorkflow } from "../../../WorkflowProvider";
 
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+/** How chips look: colour source and whether the key shows. */
+type ChipDisplay = { color: string | null; showKey: boolean };
 const LANE_HEIGHT = 24;
 const DAY_HEADER_HEIGHT = 26;
 const UNSCHEDULED_ID = "unscheduled";
 
-/** Issue links open the Jira issue modal on top of the calendar. */
+/** Issue links open the work item on top of the calendar. */
 function useIssueHref() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -73,6 +82,31 @@ export default function CalendarPage() {
   const issueHref = useIssueHref();
 
   const [month, setMonth] = useState(() => new Date());
+  const { value: view, update: updateView } = useStoredPrefs(
+    `amr.calendar.${projectId}`,
+    parseCalendarPrefs,
+  );
+  const workflow = useWorkflow(projectId);
+  const chipDisplay = (issue: Issue): ChipDisplay => ({
+    showKey: view.showKey,
+    color:
+      view.colorBy === "priority"
+        ? PRIORITY_COLORS[issue.priority]
+        : view.colorBy === "type"
+          ? (workflow.types.find((type) => type.key === issue.kind)?.color ?? null)
+          : null,
+  });
+  const isWeek = view.mode === "week";
+  const step = (direction: -1 | 1) =>
+    setMonth((current) =>
+      isWeek
+        ? direction < 0
+          ? subWeeks(current, 1)
+          : addWeeks(current, 1)
+        : direction < 0
+          ? subMonths(current, 1)
+          : addMonths(current, 1),
+    );
   const [assigneeFilter, setAssigneeFilter] = useState("ALL");
   const [kindFilter, setKindFilter] = useState<"ALL" | IssueKind>("ALL");
   const [query, setQuery] = useState("");
@@ -84,7 +118,13 @@ export default function CalendarPage() {
   );
 
   const todayKey = dayKeyOf(new Date());
-  const weeks = useMemo(() => buildMonthWeeks(month), [month]);
+  const weeks = useMemo(
+    () => (isWeek ? buildWeek(month, view.weekStartsOn) : buildMonthWeeks(month, view.weekStartsOn)),
+    [isWeek, month, view.weekStartsOn],
+  );
+  const title = isWeek
+    ? `${format(dateOfKey(weeks[0][0]), "MMM d")} – ${format(dateOfKey(weeks[0][6]), "MMM d, yyyy")}`
+    : format(month, "MMMM yyyy");
 
   const projectIssues = useMemo(
     () =>
@@ -221,20 +261,35 @@ export default function CalendarPage() {
           <button
             type="button"
             className="icon-button"
-            onClick={() => setMonth((current) => subMonths(current, 1))}
-            aria-label="Previous month"
+            onClick={() => step(-1)}
+            aria-label={isWeek ? "Previous week" : "Previous month"}
           >
             <ChevronLeft size={16} aria-hidden="true" />
           </button>
           <button
             type="button"
             className="icon-button"
-            onClick={() => setMonth((current) => addMonths(current, 1))}
-            aria-label="Next month"
+            onClick={() => step(1)}
+            aria-label={isWeek ? "Next week" : "Next month"}
           >
             <ChevronRight size={16} aria-hidden="true" />
           </button>
-          <h2 className="calendar-title">{format(month, "MMMM yyyy")}</h2>
+          <h2 className="calendar-title">{title}</h2>
+          <div className="calendar-mode" role="radiogroup" aria-label="Calendar type">
+            {(["month", "week"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                role="radio"
+                aria-checked={view.mode === mode}
+                className={view.mode === mode ? "active" : undefined}
+                onClick={() => updateView((current) => ({ ...current, mode }))}
+              >
+                {mode === "month" ? "Month" : "Week"}
+              </button>
+            ))}
+          </div>
+          <CalendarSettings view={view} onUpdate={updateView} />
         </div>
       </div>
 
@@ -245,9 +300,12 @@ export default function CalendarPage() {
         onDragCancel={() => setActiveIssueId(null)}
       >
         <div className="calendar-layout">
-          <section className="panel calendar-panel" aria-label="Month calendar">
+          <section
+            className={isWeek ? "panel calendar-panel week-mode" : "panel calendar-panel"}
+            aria-label={isWeek ? "Week calendar" : "Month calendar"}
+          >
             <div className="calendar-weekdays" aria-hidden="true">
-              {WEEKDAYS.map((day) => (
+              {weekdayNames(view.weekStartsOn).map((day) => (
                 <span key={day}>{day}</span>
               ))}
             </div>
@@ -262,7 +320,10 @@ export default function CalendarPage() {
                   className="calendar-week"
                   key={week[0]}
                   style={{
-                    minHeight: DAY_HEADER_HEIGHT + Math.max(lanes, 2) * LANE_HEIGHT + 10,
+                    minHeight: Math.max(
+                      isWeek ? 420 : 0,
+                      DAY_HEADER_HEIGHT + Math.max(lanes, 2) * LANE_HEIGHT + 10,
+                    ),
                   }}
                 >
                   <div className="calendar-days">
@@ -272,7 +333,7 @@ export default function CalendarPage() {
                         day={day}
                         sprint={sprintForDay(day, sprints)}
                         isToday={day === todayKey}
-                        inMonth={isSameMonth(dateOfKey(day), month)}
+                        inMonth={isWeek || isSameMonth(dateOfKey(day), month)}
                         isFirstOfWeek={day === week[0]}
                       />
                     ))}
@@ -282,6 +343,7 @@ export default function CalendarPage() {
                       key={`${placement.item.id}@${weekIndex}`}
                       dragId={`${placement.item.id}@${weekIndex}`}
                       issue={placement.item}
+                      display={chipDisplay(placement.item)}
                       disabled={isViewer}
                       className={[
                         "calendar-span",
@@ -300,7 +362,7 @@ export default function CalendarPage() {
             })}
           </section>
 
-          <UnscheduledPanel issues={unscheduled} disabled={isViewer} />
+          <UnscheduledPanel issues={unscheduled} disabled={isViewer} display={chipDisplay} />
         </div>
 
         <DragOverlay>
@@ -386,12 +448,14 @@ function CalendarDay({
 function CalendarChip({
   dragId,
   issue,
+  display,
   disabled,
   className,
   style,
 }: {
   dragId: string;
   issue: Issue;
+  display: ChipDisplay;
   disabled: boolean;
   className?: string;
   style?: CSSProperties;
@@ -406,15 +470,16 @@ function CalendarChip({
   return (
     <div
       ref={setNodeRef}
-      className={`calendar-chip ${categoryClass(issue)} ${className ?? ""} ${
-        isDragging ? "dragging" : ""
-      }`}
-      style={style}
+      className={`calendar-chip ${display.color ? "colored" : categoryClass(issue)} ${
+        className ?? ""
+      } ${isDragging ? "dragging" : ""}`}
+      style={{ ...style, ...(display.color ? { "--chip-color": display.color } : {}) } as CSSProperties}
       {...listeners}
       {...attributes}
       aria-label={`${issue.id} ${issue.title}`}
     >
       <KindIcon kind={issue.kind} projectId={issue.projectId} />
+      {display.showKey && <span className="calendar-chip-key">{issue.id}</span>}
       <Link
         href={issueHref(issue.id)}
         scroll={false}
@@ -431,9 +496,11 @@ function CalendarChip({
 function UnscheduledPanel({
   issues,
   disabled,
+  display,
 }: {
   issues: Issue[];
   disabled: boolean;
+  display: (issue: Issue) => ChipDisplay;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: UNSCHEDULED_ID });
 
@@ -465,6 +532,7 @@ function UnscheduledPanel({
               key={issue.id}
               dragId={`${issue.id}@unscheduled`}
               issue={issue}
+              display={display(issue)}
               disabled={disabled}
               className="calendar-unscheduled-item"
             />
@@ -472,5 +540,67 @@ function UnscheduledPanel({
         </div>
       )}
     </aside>
+  );
+}
+
+function CalendarSettings({
+  view,
+  onUpdate,
+}: {
+  view: CalendarPrefs;
+  onUpdate: (change: (current: CalendarPrefs) => CalendarPrefs) => void;
+}) {
+  return (
+    <Popover.Root>
+      <Popover.Trigger asChild>
+        <button type="button" className="icon-button" aria-label="View settings" title="View settings">
+          <SlidersHorizontal size={16} aria-hidden="true" />
+        </button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content className="calendar-settings" align="end" sideOffset={6}>
+          <h3>View settings</h3>
+          <label>
+            <span>Color by</span>
+            <select
+              value={view.colorBy}
+              onChange={(event) =>
+                onUpdate((current) => ({
+                  ...current,
+                  colorBy: event.target.value as CalendarPrefs["colorBy"],
+                }))
+              }
+            >
+              <option value="status">Status</option>
+              <option value="priority">Priority</option>
+              <option value="type">Work type</option>
+            </select>
+          </label>
+          <label className="calendar-settings-check">
+            <input
+              type="checkbox"
+              checked={view.showKey}
+              onChange={() => onUpdate((current) => ({ ...current, showKey: !current.showKey }))}
+            />
+            <span>Show work item key</span>
+          </label>
+          <label>
+            <span>Week starts on</span>
+            <select
+              value={view.weekStartsOn}
+              onChange={(event) =>
+                onUpdate((current) => ({
+                  ...current,
+                  weekStartsOn: event.target.value === "1" ? 1 : 0,
+                }))
+              }
+            >
+              <option value={0}>Sunday</option>
+              <option value={1}>Monday</option>
+            </select>
+          </label>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }

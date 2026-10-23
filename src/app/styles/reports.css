@@ -710,7 +710,7 @@
   font-weight: 650;
 }
 
-.timeline-status .status-badge {
+.timeline-col.status .status-badge {
   font-size: 11px;
 }
 
@@ -847,15 +847,18 @@
 }
 
 @media (max-width: 720px) {
+  /* Phones keep a narrow work column; the extra columns hide. */
   .timeline-grid {
-    --timeline-label-width: 168px;
+    --timeline-label-width: 168px !important;
   }
 
   .timeline-zoom {
     margin-left: 0;
   }
 
-  .timeline-status {
+  .timeline-col,
+  .timeline-col-head,
+  .timeline-sort {
     display: none;
   }
 }
@@ -1743,4 +1746,277 @@ a.calendar-chip-title:hover {
 .dashboards-meta {
   color: var(--gray-500);
   font-size: 12px;
+}
+
+/* Calendar: month/week switch, view settings and chip colouring. */
+.calendar-mode {
+  display: inline-flex;
+  margin-left: 8px;
+  overflow: hidden;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius);
+}
+
+.calendar-mode button {
+  padding: 4px 10px;
+  border: 0;
+  color: var(--ink-secondary);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.calendar-mode button.active {
+  color: var(--console-ink);
+  background: var(--console-lime);
+  font-weight: 700;
+}
+
+.calendar-settings {
+  z-index: 120;
+  display: flex;
+  width: 240px;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 2px solid var(--console-line);
+  border-radius: var(--radius);
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: var(--console-shadow-small);
+  font-size: 13px;
+}
+
+.calendar-settings h3 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.calendar-settings label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.calendar-settings select {
+  height: 30px;
+  padding: 0 6px;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius);
+  color: var(--ink);
+  background: var(--surface);
+  font: inherit;
+}
+
+.calendar-settings .calendar-settings-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.calendar-chip.colored {
+  border-left-color: var(--chip-color);
+}
+
+.calendar-panel.week-mode .calendar-day {
+  min-height: 420px;
+}
+
+/* Timeline view settings and legend. */
+.timeline-popover {
+  z-index: 120;
+  display: flex;
+  width: 280px;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 2px solid var(--console-line);
+  border-radius: var(--radius);
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: var(--console-shadow-small);
+  font-size: 13px;
+}
+
+.timeline-popover h3 {
+  margin: 0 0 2px;
+  font-size: 13px;
+}
+
+.timeline-popover fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 0;
+  padding: 8px 0 0;
+  border: 0;
+  border-top: 1px solid var(--gray-200);
+}
+
+.timeline-popover legend {
+  padding: 0;
+  color: var(--gray-500);
+  font-size: 12px;
+}
+
+.timeline-settings-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.timeline-legend ul {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.timeline-legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1.4;
+}
+
+.legend-swatch {
+  flex: none;
+  width: 22px;
+  height: 10px;
+}
+
+.legend-swatch.arrow {
+  height: 0;
+  border-top: 2px solid var(--gray-500);
+}
+
+.legend-swatch.arrow.conflict {
+  border-top: 2px dashed var(--red-500);
+}
+
+.legend-swatch.today {
+  width: 2px;
+  height: 16px;
+  margin: 0 10px;
+  background: var(--red-500);
+}
+
+.legend-swatch.progress {
+  border: 1px solid var(--console-line);
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--console-cyan) 60%, var(--gray-100) 60%);
+}
+
+/* Timeline: status and assignee columns, sort, releases row. */
+.timeline-col,
+.timeline-col-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.timeline-col.status,
+.timeline-col-head.status {
+  width: 88px;
+  overflow: hidden;
+}
+
+.timeline-col.assignee,
+.timeline-col-head.assignee {
+  width: 26px;
+  justify-content: center;
+}
+
+.timeline-corner-work {
+  gap: 6px;
+}
+
+.timeline-corner-work > span:first-child {
+  flex: 1;
+}
+
+.timeline-sort select {
+  height: 22px;
+  padding: 0 4px;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius);
+  color: var(--ink-secondary);
+  background: var(--surface);
+  font: inherit;
+  font-size: 10px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.timeline-release-row {
+  min-height: 30px;
+  background: var(--gray-25);
+}
+
+.timeline-release-row .timeline-label {
+  background: var(--gray-25);
+}
+
+.timeline-release {
+  position: absolute;
+  top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 180px;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  transform: translateX(-6px);
+}
+
+.timeline-release:hover .timeline-release-name {
+  text-decoration: underline;
+}
+
+.timeline-release-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.timeline-release-diamond {
+  display: inline-block;
+  flex: none;
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid var(--console-line);
+  transform: rotate(45deg);
+}
+
+.timeline-release-diamond.released {
+  background: var(--green-500);
+}
+
+.timeline-release-diamond.unreleased {
+  background: var(--console-cyan);
+}
+
+.timeline-release-diamond.overdue {
+  background: var(--red-500);
+}
+
+@media print {
+  .shell-topbar,
+  .shell-sidebar,
+  .project-shell-header,
+  .timeline-toolbar {
+    display: none !important;
+  }
+
+  .shell-frame .app-content {
+    height: auto;
+    margin: 0;
+    overflow: visible;
+  }
 }

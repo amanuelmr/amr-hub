@@ -64,6 +64,8 @@ Out of scope by decision: Rovo / AI, paid plans, Confluence, Marketplace apps, J
 | Status drop zones when a column holds several statuses | ✅ | |
 | View settings panel: card fields per viewer, days in column, compact cards, expand or collapse swimlanes and columns, full screen | ✅ 🌐 | Days in column uses the new statusChangedAt field |
 | Title row with sprint goal, Edit sprint, Configure board, add people button, columns filling the window | ✅ 🌐 | |
+| Toolbar like Jira: Search board, avatars, Filter panel (assignee, work type, parent, label, priority, status, component, fix version), Custom filters, Clear filters, Group, undo last move | ✅ 🌐 | |
+| Page stays still, each column scrolls on its own | ✅ 🌐 | With swimlanes only the board area scrolls |
 | Inline create with work type picker, Jira title row and toolbar layout | ✅ 🌐 | |
 
 ## 6. Backlog and sprints
@@ -165,3 +167,5 @@ Work in this order; each step is finished, checked in the browser and committed 
 3. ✅ **Browser pass done.** Fixed the burndown commitment. Not opened yet: form builder, automation rule builder, reactions (need a comment). Was: access, trash, archive, automation builder, board settings, forms, reactions, notifications, calendar, reports, dashboards. Fix what's broken or unlike Jira.
 4. **Mobile pass at phone width** for the main screens.
 5. **Remaining gaps, if wanted:** issue-level security, user groups, changing a project key.
+6. **Sidebar like Jira (future).** For you, Recent and Starred open flyouts, Apps, Spaces with + and "…", recent projects plus "More spaces", Filters, Dashboards, Teams, Goals, and a "Customize sidebar" option to show, hide and reorder items.
+7. **Landing page redesign (future).** See docs/LANDING_PLAN.md.

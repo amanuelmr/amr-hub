@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_TIMELINE_PREFS,
+  compareTimelineItems,
+  parseTimelinePrefs,
   addDays,
   applyDrag,
   barGeometry,
@@ -133,5 +136,50 @@ describe("headerSegments", () => {
     const { top, bottom } = headerSegments("2026-01-01", "2026-12-31", "QUARTERS");
     expect(top).toHaveLength(1);
     expect(bottom.map((segment) => segment.label)).toEqual(["Q1", "Q2", "Q3", "Q4"]);
+  });
+});
+
+describe("parseTimelinePrefs", () => {
+  it("defaults and reads stored values", () => {
+    expect(parseTimelinePrefs(null)).toEqual(DEFAULT_TIMELINE_PREFS);
+    expect(
+      parseTimelinePrefs('{"hideDone":true,"showDependencies":false,"barColor":"status","showAssignee":false,"sortBy":"due"}'),
+    ).toEqual({
+      hideDone: true,
+      showDependencies: false,
+      showWarnings: true,
+      barColor: "status",
+      showStatus: true,
+      showAssignee: false,
+      showReleases: true,
+      sortBy: "due",
+    });
+    expect(parseTimelinePrefs('{"sortBy":"nonsense"}').sortBy).toBe("rank");
+  });
+});
+
+describe("compareTimelineItems", () => {
+  const item = (rank: number, extra: Partial<Parameters<typeof compareTimelineItems>[1]> = {}) => ({
+    rank,
+    statusCategory: "TODO" as const,
+    assigneeName: null,
+    startDate: null,
+    dueDate: null,
+    ...extra,
+  });
+
+  it("sorts by the chosen field, then rank, with empty values last", () => {
+    const rows = [
+      item(1, { dueDate: null }),
+      item(2, { dueDate: "2026-11-01" }),
+      item(3, { dueDate: "2026-10-01" }),
+    ];
+    expect([...rows].sort((a, b) => compareTimelineItems("due", a, b)).map((row) => row.rank)).toEqual([3, 2, 1]);
+    expect(
+      [item(2, { statusCategory: "DONE" }), item(1, { statusCategory: "IN_PROGRESS" })]
+        .sort((a, b) => compareTimelineItems("status", a, b))
+        .map((row) => row.rank),
+    ).toEqual([1, 2]);
+    expect([item(2), item(1)].sort((a, b) => compareTimelineItems("rank", a, b)).map((row) => row.rank)).toEqual([1, 2]);
   });
 });
