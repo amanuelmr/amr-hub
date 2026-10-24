@@ -1091,9 +1091,16 @@ a.calendar-chip-title:hover {
   gap: 6px;
   max-height: 60vh;
   overflow-y: auto;
+  scrollbar-width: none;
 }
 
+.calendar-unscheduled-list::-webkit-scrollbar {
+  display: none;
+}
+
+/* Items keep their height and the list scrolls, instead of squeezing. */
 .calendar-unscheduled-item {
+  flex: none;
   height: 28px;
 }
 
