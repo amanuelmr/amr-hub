@@ -204,6 +204,11 @@
   max-height: 320px;
   gap: 12px;
   overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.pa-activity::-webkit-scrollbar {
+  display: none;
 }
 
 .pa-activity-day h3 {

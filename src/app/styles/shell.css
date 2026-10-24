@@ -625,6 +625,11 @@
 
 /* ---------- Content column ---------- */
 .shell-frame .app-content {
+  /* Contains absolutely positioned content (e.g. screen reader labels) so it
+     scrolls here instead of stretching the window with a second scrollbar. */
+  position: relative;
+  /* Scrolls without a visible scrollbar. */
+  scrollbar-width: none;
   height: calc(100vh - var(--shell-topbar-h));
   height: calc(100dvh - var(--shell-topbar-h));
   min-height: 0;
@@ -1108,4 +1113,8 @@
 
 .help-panel-link kbd {
   margin-left: auto;
+}
+
+.shell-frame .app-content::-webkit-scrollbar {
+  display: none;
 }
