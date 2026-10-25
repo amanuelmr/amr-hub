@@ -866,6 +866,8 @@
 /* ===== Calendar ===== */
 .calendar-page {
   min-width: 0;
+  /* Ends with the calendar instead of the usual page bottom space. */
+  padding-bottom: 16px;
 }
 
 .calendar-toolbar {
