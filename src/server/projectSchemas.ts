@@ -9,6 +9,7 @@ import {
   type ProjectBackground,
 } from "../app/data/projects";
 import { z } from "zod";
+import { PROJECT_TEMPLATES } from "../app/data/projectTemplates";
 
 const CARD_FIELDS = [
   "epic",
@@ -185,6 +186,9 @@ export const createProjectSchema = z
     targetDate: targetDateSchema.nullable().default(null),
     boardType: boardTypeSchema.optional(),
     accessLevel: z.enum(["OPEN", "LIMITED", "PRIVATE"]).optional(),
+    template: z
+      .enum(PROJECT_TEMPLATES.map((template) => template.key) as [string, ...string[]])
+      .optional(),
   })
   .strict();
 

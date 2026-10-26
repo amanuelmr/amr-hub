@@ -26,6 +26,11 @@ import {
   type WorkflowStatusConfig,
   type WorkflowTransitionConfig,
 } from "../app/data/workflow";
+import {
+  templateStatuses,
+  templateTypes,
+  type ProjectTemplate,
+} from "../app/data/projectTemplates";
 
 type Db = Prisma.TransactionClient | typeof prisma;
 
@@ -160,9 +165,14 @@ export const deleteTypeSchema = z
 /* Loading + seeding                                                   */
 /* ------------------------------------------------------------------ */
 
-export async function seedProjectWorkflow(db: Db, projectId: string) {
+/** Seeds the default workflow, renamed and narrowed by a template if given. */
+export async function seedProjectWorkflow(
+  db: Db,
+  projectId: string,
+  template: ProjectTemplate | null = null,
+) {
   await db.workflowStatus.createMany({
-    data: DEFAULT_STATUSES.map((status) => ({
+    data: templateStatuses(template).map((status) => ({
       key: status.key,
       name: status.name,
       category: status.category,
@@ -173,7 +183,7 @@ export async function seedProjectWorkflow(db: Db, projectId: string) {
     skipDuplicates: true,
   });
   await db.issueTypeConfig.createMany({
-    data: DEFAULT_TYPES.map((type) => ({
+    data: templateTypes(template).map((type) => ({
       key: type.key,
       name: type.name,
       level: type.level,

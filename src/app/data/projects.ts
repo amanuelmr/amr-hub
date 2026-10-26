@@ -278,6 +278,8 @@ export type NewProjectInput = {
   targetDate: string | null;
   boardType?: BoardType;
   accessLevel?: ProjectAccessLevel;
+  /** Starting template (see projectTemplates); sets the board and workflow names. */
+  template?: string;
 };
 
 export type ProjectUpdates = Partial<

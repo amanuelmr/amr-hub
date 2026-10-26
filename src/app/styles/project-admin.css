@@ -1559,3 +1559,53 @@ td.pa-actions-cell {
   background: var(--gray-100);
 }
 
+/* ---------- Template gallery ---------- */
+.pa-template-group + .pa-template-group {
+  margin-top: 16px;
+}
+
+.pa-template-group h3 {
+  margin: 0 0 8px;
+  color: var(--gray-500);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.pa-template-card strong {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pa-template-card strong small {
+  padding: 1px 6px;
+  border: 1px solid var(--gray-300);
+  border-radius: 3px;
+  color: var(--gray-500);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.pa-template-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pa-template-flow li {
+  padding: 2px 6px;
+  border-radius: 3px;
+  color: var(--ink);
+  background: var(--gray-100);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}

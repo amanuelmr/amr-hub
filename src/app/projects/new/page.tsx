@@ -5,41 +5,38 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
+  Bug,
   Check,
   CircleAlert,
   Columns3,
+  FolderKanban,
+  LifeBuoy,
+  ListChecks,
   Rows3,
   Sparkles,
 } from "lucide-react";
+import {
+  PROJECT_TEMPLATES,
+  TEMPLATE_CATEGORIES,
+  findProjectTemplate,
+  templateStatuses,
+} from "../../data/projectTemplates";
 
-const BOARD_TEMPLATES: {
-  value: BoardType;
-  name: string;
-  description: string;
-  icon: typeof Rows3;
-}[] = [
-  {
-    value: "SCRUM",
-    name: "Scrum",
-    description:
-      "Plan work in sprints from a prioritized backlog. Best for teams shipping on a regular cadence.",
-    icon: Rows3,
-  },
-  {
-    value: "KANBAN",
-    name: "Kanban",
-    description:
-      "Visualize a continuous flow of work on a board with WIP limits. Best for support and ops teams.",
-    icon: Columns3,
-  },
-];
+/** Icons for the template gallery cards. */
+const TEMPLATE_ICONS: Record<string, typeof Rows3> = {
+  scrum: Rows3,
+  kanban: Columns3,
+  "bug-tracking": Bug,
+  "project-management": FolderKanban,
+  "task-tracking": ListChecks,
+  "it-service": LifeBuoy,
+};
 import { useProjects } from "../../ProjectProvider";
 import { authClient } from "../../../lib/auth-client";
 import {
   PROJECT_ACCESS_LABELS,
   PROJECT_ACCESS_LEVELS,
   PROJECT_COLORS,
-  type BoardType,
   type ProjectAccessLevel,
 } from "../../data/projects";
 
@@ -72,7 +69,8 @@ export default function NewProjectPage() {
   const [description, setDescription] = useState("");
   const [color, setColor] = useState<string>(PROJECT_COLORS[0]);
   const [targetDate, setTargetDate] = useState("");
-  const [boardType, setBoardType] = useState<BoardType>("SCRUM");
+  const [templateKey, setTemplateKey] = useState("scrum");
+  const template = findProjectTemplate(templateKey) ?? PROJECT_TEMPLATES[0];
   const [accessLevel, setAccessLevel] = useState<ProjectAccessLevel>("OPEN");
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -107,7 +105,8 @@ export default function NewProjectPage() {
         description: description.trim() || null,
         color,
         targetDate: targetDate || null,
-        boardType,
+        boardType: template.boardType,
+        template: template.key,
         accessLevel,
       });
       router.push(`/projects/${project.id}`);
@@ -145,36 +144,54 @@ export default function NewProjectPage() {
                 <p>Choose how the team will plan and track work.</p>
               </div>
             </div>
-            <div
-              className="pa-template-cards"
-              role="radiogroup"
-              aria-label="Project template"
-            >
-              {BOARD_TEMPLATES.map((template) => {
-                const Icon = template.icon;
-                return (
-                  <label
-                    key={template.value}
-                    className={
-                      boardType === template.value
-                        ? "pa-template-card selected"
-                        : "pa-template-card"
-                    }
-                  >
-                    <input
-                      type="radio"
-                      name="board-type"
-                      value={template.value}
-                      checked={boardType === template.value}
-                      onChange={() => setBoardType(template.value)}
-                    />
-                    <Icon size={20} aria-hidden="true" />
-                    <strong>{template.name}</strong>
-                    <span>{template.description}</span>
-                  </label>
-                );
-              })}
-            </div>
+            {TEMPLATE_CATEGORIES.map((category) => (
+              <div key={category} className="pa-template-group">
+                <h3>{category}</h3>
+                <div
+                  className="pa-template-cards"
+                  role="radiogroup"
+                  aria-label={`${category} templates`}
+                >
+                  {PROJECT_TEMPLATES.filter((option) => option.category === category).map(
+                    (option) => {
+                      const Icon = TEMPLATE_ICONS[option.key] ?? Rows3;
+                      const statusNames = templateStatuses(option);
+                      return (
+                        <label
+                          key={option.key}
+                          className={
+                            templateKey === option.key
+                              ? "pa-template-card selected"
+                              : "pa-template-card"
+                          }
+                        >
+                          <input
+                            type="radio"
+                            name="project-template"
+                            value={option.key}
+                            checked={templateKey === option.key}
+                            onChange={() => setTemplateKey(option.key)}
+                          />
+                          <Icon size={20} aria-hidden="true" />
+                          <strong>
+                            {option.name}
+                            <small>{option.boardType === "SCRUM" ? "Scrum" : "Kanban"}</small>
+                          </strong>
+                          <span>{option.description}</span>
+                          <ol className="pa-template-flow" aria-label="Board columns">
+                            {option.columns.map((key) => (
+                              <li key={key}>
+                                {statusNames.find((status) => status.key === key)?.name}
+                              </li>
+                            ))}
+                          </ol>
+                        </label>
+                      );
+                    },
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
 
           <div className="form-section">
