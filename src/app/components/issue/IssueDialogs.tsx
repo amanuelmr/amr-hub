@@ -28,7 +28,14 @@ import { issueUrl, type IssueDetailController } from "./useIssueDetail";
 import { isEpicLevel, isSubtaskLevel, statusName, typeName } from "../../data/workflow";
 import { useWorkflow } from "../../WorkflowProvider";
 import { sanitizeHtmlInBrowser } from "../browserSanitize";
-import { issueToHtml, issueToXml, type IssueExportContext } from "./issueExport";
+import {
+  issueCsvRows,
+  issueToHtml,
+  issueToXml,
+  type IssueExportContext,
+} from "./issueExport";
+import { downloadCsv, toCsv } from "../search/csv";
+import { stripHtml } from "../../data/richText";
 import { downloadFile, printHtml } from "../fileOutput";
 
 export function IssueDialog({
@@ -240,6 +247,15 @@ export function IssueMoreMenu({
                     }
                   >
                     Export XML
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    className="issue-menu-item"
+                    onSelect={() => {
+                      const { header, row } = issueCsvRows(issue, exportContext(), stripHtml);
+                      downloadCsv(`${issue.id}.csv`, toCsv(header, [row]));
+                    }}
+                  >
+                    Export Excel (CSV)
                   </DropdownMenu.Item>
                 </DropdownMenu.SubContent>
               </DropdownMenu.Portal>

@@ -133,6 +133,21 @@ ${body}
   );
 }
 
+/** One work item as a header row and a value row, for Excel and other sheets. */
+export function issueCsvRows(issue: Issue, ctx: IssueExportContext, plainText: (html: string) => string) {
+  const fields = issueFieldRows(issue, ctx);
+  return {
+    header: ["Key", "Summary", ...fields.map(([label]) => label), "Description", "Link"],
+    row: [
+      issue.id,
+      issue.title,
+      ...fields.map(([, value]) => value),
+      plainText(issue.description ?? ""),
+      ctx.url,
+    ],
+  };
+}
+
 /** An RSS-style XML item, the usual shape for one exported work item. */
 export function issueXmlItem(issue: Issue, ctx: IssueExportContext) {
   const tag = (name: string, value: string | null | undefined, attrs = "") =>

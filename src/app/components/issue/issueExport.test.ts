@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Issue } from "../../data/issues";
 import {
+  issueCsvRows,
   issueFieldRows,
   issueToHtml,
   issueToXml,
@@ -96,5 +97,17 @@ describe("issuesToXml", () => {
     expect(xml.match(/<item>/g)).toHaveLength(2);
     expect(xml.startsWith('<?xml version="1.0" encoding="UTF-8"?>')).toBe(true);
     expect(xml.trim().endsWith("</rss>")).toBe(true);
+  });
+});
+
+describe("issueCsvRows", () => {
+  it("pairs each header with a value and flattens the description", () => {
+    const { header, row } = issueCsvRows(issue, ctx, (html) => html.replace(/<[^>]+>/g, ""));
+    expect(header.length).toBe(row.length);
+    expect(header.slice(0, 2)).toEqual(["Key", "Summary"]);
+    expect(row[0]).toBe("OPS-7");
+    expect(row[header.indexOf("Status")]).toBe("In progress");
+    expect(row[header.indexOf("Description")]).toBe("Stepsalert(1)");
+    expect(row.at(-1)).toBe("https://hub.test/issues/OPS-7");
   });
 });
