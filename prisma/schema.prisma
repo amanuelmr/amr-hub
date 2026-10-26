@@ -43,6 +43,7 @@ model Issue {
   components               IssueComponent[]
   outgoingLinks            IssueLink[]      @relation("IssueLinkSource")
   incomingLinks            IssueLink[]      @relation("IssueLinkTarget")
+  webLinks                 IssueWebLink[]
   watchers                 IssueWatcher[]
   votes                    IssueVote[]
   worklogs                 Worklog[]
@@ -562,6 +563,18 @@ model IssueComponent {
 
   @@id([issueId, componentId])
   @@index([componentId])
+}
+
+/// A link from a work item to a page outside the workspace.
+model IssueWebLink {
+  id        String   @id @default(cuid())
+  issueId   String
+  url       String
+  title     String
+  createdAt DateTime @default(now())
+  issue     Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@index([issueId])
 }
 
 model IssueLink {

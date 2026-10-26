@@ -178,6 +178,7 @@ export const issueDetailInclude = {
     include: { source: { select: issueRefSelect } },
   },
   votes: { select: { userId: true } },
+  webLinks: { orderBy: { createdAt: "asc" } },
 } satisfies Prisma.IssueInclude;
 
 type StoredIssueDetail = Prisma.IssueGetPayload<{
@@ -223,6 +224,12 @@ export function serializeIssueDetail(issue: StoredIssueDetail): Issue {
       })),
     ],
     voterIds: issue.votes.map((vote) => vote.userId),
+    webLinks: issue.webLinks.map((link) => ({
+      id: link.id,
+      url: link.url,
+      title: link.title,
+      createdAt: link.createdAt.toISOString(),
+    })),
   };
 }
 

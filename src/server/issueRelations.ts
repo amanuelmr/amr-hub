@@ -25,6 +25,18 @@ export const createLinkSchema = z
   })
   .strict();
 
+export const createWebLinkSchema = z
+  .object({
+    url: z
+      .string()
+      .trim()
+      .max(2000)
+      .url("Enter a valid URL")
+      .refine((value) => /^https?:\/\//i.test(value), "Use an http or https URL"),
+    title: z.string().trim().max(255).optional(),
+  })
+  .strict();
+
 export const watcherTargetSchema = z
   .object({
     userId: z.string().trim().min(1).max(120).optional(),
@@ -161,6 +173,61 @@ export async function removeIssueLink(
         actor: actor.name,
         actorId: actor.id,
       })),
+    }),
+  ]);
+
+  return getIssue(issueId, actor.organizationId, actorAccessUser(actor));
+}
+
+export async function addWebLink(
+  issueId: string,
+  input: z.infer<typeof createWebLinkSchema>,
+  actor: WorkspaceActor,
+) {
+  const issue = await prisma.issue.findFirst({
+    where: { id: issueId, organizationId: actor.organizationId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!issue) return null;
+  // Without a title the link shows its host and path.
+  const title = input.title || input.url.replace(/^https?:\/\//i, "");
+
+  await prisma.$transaction([
+    prisma.issueWebLink.create({ data: { issueId, url: input.url, title } }),
+    prisma.activity.create({
+      data: {
+        issueId,
+        type: "LINK_ADDED",
+        description: `added a web link: ${title}`,
+        actor: actor.name,
+        actorId: actor.id,
+      },
+    }),
+  ]);
+
+  return getIssue(issueId, actor.organizationId, actorAccessUser(actor));
+}
+
+export async function removeWebLink(
+  issueId: string,
+  linkId: string,
+  actor: WorkspaceActor,
+) {
+  const link = await prisma.issueWebLink.findFirst({
+    where: { id: linkId, issueId, issue: { organizationId: actor.organizationId } },
+  });
+  if (!link) return null;
+
+  await prisma.$transaction([
+    prisma.issueWebLink.delete({ where: { id: link.id } }),
+    prisma.activity.create({
+      data: {
+        issueId,
+        type: "LINK_REMOVED",
+        description: `removed a web link: ${link.title}`,
+        actor: actor.name,
+        actorId: actor.id,
+      },
     }),
   ]);
 

@@ -3,12 +3,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   ArrowLeft,
   Check,
+  ChevronDown,
   CircleAlert,
   Flag,
   GitBranchPlus,
+  Globe,
   Link2,
   LoaderCircle,
   Maximize2,
@@ -42,6 +45,7 @@ import { IssueDetailsPanel, IssueMetaFooter } from "./IssueDetailsPanel";
 import {
   ChildIssuesSection,
   LinkedIssuesSection,
+  WebLinksSection,
 } from "./IssueRelationsSections";
 import {
   INLINE_TYPES,
@@ -343,6 +347,7 @@ export function IssueDetailView({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [childComposerOpen, setChildComposerOpen] = useState(false);
   const [linkComposerOpen, setLinkComposerOpen] = useState(false);
+  const [webLinkComposerOpen, setWebLinkComposerOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [worklogDialog, setWorklogDialog] = useState<{
     worklog: Worklog | null;
@@ -440,6 +445,11 @@ export function IssueDetailView({
   const openLinkComposer = () => {
     setLinkComposerOpen(true);
     scrollToSection("issue-links");
+  };
+
+  const openWebLinkComposer = () => {
+    setWebLinkComposerOpen(true);
+    scrollToSection("issue-web-links");
   };
 
   const navigateTo = (issueId: string) => {
@@ -664,15 +674,31 @@ export function IssueDetailView({
           <span>{isEpicLevel(issue.kind) ? "Add child issue" : "Add subtask"}</span>
         </button>
       )}
-      <button
-        className="secondary-button issue-toolbar-button"
-        type="button"
-        title="Link issue"
-        onClick={openLinkComposer}
-      >
-        <Link2 size={15} aria-hidden="true" />
-        <span>Link issue</span>
-      </button>
+      <DropdownMenu.Root>
+        <DropdownMenu.Trigger asChild>
+          <button
+            className="secondary-button issue-toolbar-button"
+            type="button"
+            title="Link"
+          >
+            <Link2 size={15} aria-hidden="true" />
+            <span>Link</span>
+            <ChevronDown size={13} aria-hidden="true" />
+          </button>
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content className="issue-menu" align="start" sideOffset={6}>
+            <DropdownMenu.Item className="issue-menu-item" onSelect={openLinkComposer}>
+              <Link2 size={14} aria-hidden="true" />
+              Link work item
+            </DropdownMenu.Item>
+            <DropdownMenu.Item className="issue-menu-item" onSelect={openWebLinkComposer}>
+              <Globe size={14} aria-hidden="true" />
+              Add web link
+            </DropdownMenu.Item>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
       {isUploading && (
         <span className="field-meta issue-uploading" role="status">
           <LoaderCircle size={13} aria-hidden="true" />
@@ -752,6 +778,13 @@ export function IssueDetailView({
         readOnly={readOnly}
         composerOpen={linkComposerOpen}
         setComposerOpen={setLinkComposerOpen}
+        controller={controller}
+      />
+      <WebLinksSection
+        issue={issue}
+        readOnly={readOnly}
+        composerOpen={webLinkComposerOpen}
+        setComposerOpen={setWebLinkComposerOpen}
         controller={controller}
       />
     </>
