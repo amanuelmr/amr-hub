@@ -11,6 +11,7 @@ import {
   EyeOff,
   ThumbsUp,
   UserPlus,
+  Workflow,
   X,
 } from "lucide-react";
 import { apiRequest } from "../../IssueProvider";
@@ -32,6 +33,7 @@ import { useWorkflow } from "../../WorkflowProvider";
 import { initials } from "./issueDetailLogic";
 import { issueUrl, type IssueDetailController } from "./useIssueDetail";
 import type { WatcherSummary } from "./types";
+import { WorkflowViewDialog } from "./WorkflowViewDialog";
 
 const RESOLUTIONS = Object.keys(RESOLUTION_LABELS) as IssueResolution[];
 
@@ -48,11 +50,12 @@ export function StatusTransitionButton({
   const category = statusCategory(issue.status).toLowerCase();
   const options = allowedTransitions(workflow, issue.status);
   const currentDone = isDoneStatus(issue.status);
+  const [isWorkflowOpen, setIsWorkflowOpen] = useState(false);
 
   return (
     <div className="issue-status-control">
       <DropdownMenu.Root>
-        <DropdownMenu.Trigger asChild disabled={disabled}>
+        <DropdownMenu.Trigger asChild>
           <button
             className={`issue-status-button status-category-${category}`}
             type="button"
@@ -68,15 +71,18 @@ export function StatusTransitionButton({
             sideOffset={6}
             collisionPadding={12}
           >
-            <DropdownMenu.Label className="issue-menu-label">
-              Transition to
-            </DropdownMenu.Label>
-            {options.length === 0 && (
+            {/* Read-only viewers still open the menu to see the workflow. */}
+            {!disabled && (
+              <DropdownMenu.Label className="issue-menu-label">
+                Transition to
+              </DropdownMenu.Label>
+            )}
+            {options.length === 0 && !disabled && (
               <DropdownMenu.Item className="issue-menu-item" disabled>
                 No transitions available
               </DropdownMenu.Item>
             )}
-            {options.map((option) => {
+            {!disabled && options.map((option) => {
               const swatch = (
                 <span
                   className={`issue-status-swatch status-category-${statusCategory(
@@ -132,9 +138,24 @@ export function StatusTransitionButton({
                 </DropdownMenu.Item>
               );
             })}
+            {!disabled && <DropdownMenu.Separator className="issue-menu-separator" />}
+            <DropdownMenu.Item
+              className="issue-menu-item"
+              onSelect={() => setIsWorkflowOpen(true)}
+            >
+              <Workflow size={14} aria-hidden="true" />
+              View workflow
+            </DropdownMenu.Item>
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
+      {isWorkflowOpen && (
+        <WorkflowViewDialog
+          workflow={workflow}
+          currentStatus={issue.status}
+          onClose={() => setIsWorkflowOpen(false)}
+        />
+      )}
       {currentDone && issue.resolution && (
         <span className="issue-resolution">
           <Check size={13} aria-hidden="true" />
