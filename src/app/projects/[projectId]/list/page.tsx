@@ -9,8 +9,8 @@ import {
   ArrowUp,
   ChevronDown,
   ChevronRight,
-  MoreHorizontal,
   Plus,
+  RefreshCw,
   Search,
 } from "lucide-react";
 import { useIssues } from "../../../IssueProvider";
@@ -26,7 +26,14 @@ import {
   type IssueStatus,
   type StatusCategory,
 } from "../../../data/issues";
-import { sortIssuesByJql, textContains, type JqlField, type JqlOrderBy } from "../../../data/jql";
+import {
+  evaluateJql,
+  parseJql,
+  sortIssuesByJql,
+  textContains,
+  type JqlField,
+  type JqlOrderBy,
+} from "../../../data/jql";
 import { KindIcon } from "../../../components/IssueVisuals";
 import { WorkspaceLoading } from "../../../components/WorkspaceLoading";
 import {
@@ -34,8 +41,12 @@ import {
   customFieldColumn,
   initials,
   issueLink,
+  type ColumnId,
   type CustomColumnId,
 } from "../../../components/search/columns";
+import { BulkBar } from "../../../components/search/BulkBar";
+import { downloadCsv, toCsv } from "../../../components/search/csv";
+import { useStoredPrefs } from "../../../components/useStoredPrefs";
 import { useCustomFields } from "../../../components/fields/customFieldStore";
 import { projectFields } from "../../../data/customFields";
 import { useColumnLookups, useJqlContext } from "../../../components/search/useJqlContext";
@@ -46,6 +57,8 @@ import {
   statusName,
 } from "../../../data/workflow";
 import { useWorkflow } from "../../../WorkflowProvider";
+import { ColumnPicker, FormatRulesDialog, ListChart, ListMenu } from "./ListControls";
+import { countBy, parseListPrefs, ruleColor } from "./listView";
 
 type Grouping = "none" | "status" | "assignee" | "epic" | "sprint";
 
@@ -151,7 +164,7 @@ export default function ProjectListPage() {
 
 function ProjectList() {
   const { projectId } = useParams<{ projectId: string }>();
-  const { issues, members, isLoading, updateIssue, createIssue } = useIssues();
+  const { issues, members, isLoading, updateIssue, createIssue, refreshIssues } = useIssues();
   const { allProjects: projects } = useProjects();
   const { data: activeMember } = authClient.useActiveMember();
   // Read-only for workspace viewers and for people without edit access to
@@ -160,7 +173,12 @@ function ProjectList() {
     activeMember?.role === "viewer" ||
     projects.find((candidate) => candidate.id === projectId)?.permissions
       ?.canEdit === false;
+  const isOwner = activeMember?.role === "owner";
   const project = projects.find((candidate) => candidate.id === projectId);
+  const { value: prefs, update: updatePrefs } = useStoredPrefs(`amr.list.${projectId}`, parseListPrefs);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isRulesOpen, setIsRulesOpen] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const workflow = useWorkflow(projectId);
   const workflowStatuses = workflow.statuses;
   // Inline create offers every non-subtask type of the project's scheme.
@@ -232,10 +250,11 @@ function ProjectList() {
 
   const isFiltered =
     search.trim() !== "" || assigneeFilter.size > 0 || kindFilter !== "" || categoryFilter !== "";
+  const hideDone = prefs.hideDone;
 
   const matching = useMemo(() => {
     const term = search.trim();
-    if (!term && assigneeFilter.size === 0 && !kindFilter && !categoryFilter) {
+    if (!term && assigneeFilter.size === 0 && !kindFilter && !categoryFilter && !hideDone) {
       return projectIssues;
     }
     const hits = new Set(
@@ -245,7 +264,8 @@ function ProjectList() {
             (!term || textContains(`${issue.id} ${issue.title}`, term)) &&
             (assigneeFilter.size === 0 || assigneeFilter.has(issue.assignee?.id ?? "none")) &&
             (!kindFilter || issue.kind === kindFilter) &&
-            (!categoryFilter || statusCategory(issue.status) === categoryFilter),
+            (!categoryFilter || statusCategory(issue.status) === categoryFilter) &&
+            (!hideDone || statusCategory(issue.status) !== "DONE"),
         )
         .map((issue) => issue.id),
     );
@@ -258,7 +278,38 @@ function ProjectList() {
       }
     }
     return projectIssues.filter((issue) => hits.has(issue.id));
-  }, [projectIssues, search, byId, assigneeFilter, kindFilter, categoryFilter]);
+  }, [projectIssues, search, byId, assigneeFilter, kindFilter, categoryFilter, hideDone]);
+
+  // Format rules compiled once; rules that no longer parse are skipped.
+  const formatRules = useMemo(
+    () =>
+      prefs.rules.flatMap((rule) => {
+        const parsed = parseJql(rule.jql, now);
+        if (!parsed.ok) return [];
+        const where = parsed.query.where;
+        return [{ color: rule.color, matches: (issue: Issue) => evaluateJql(where, issue, ctx) }];
+      }),
+    [prefs.rules, now, ctx],
+  );
+
+  const chartBuckets = useMemo(() => {
+    if (!prefs.showChart) return [];
+    return countBy(matching, (issue) => {
+      switch (prefs.chartBy) {
+        case "assignee":
+          return issue.assignee ? [issue.assignee.id, issue.assignee.name] : ["none", "Unassigned"];
+        case "priority":
+          return [issue.priority, PRIORITY_LABELS[issue.priority]];
+        case "type":
+          return [
+            issue.kind,
+            workflow.types.find((type) => type.key === issue.kind)?.name ?? issue.kind,
+          ];
+        default:
+          return [issue.status, statusName(issue.status, workflowStatuses)];
+      }
+    });
+  }, [prefs.showChart, prefs.chartBy, matching, workflow.types, workflowStatuses]);
 
   const groups = useMemo<Group[]>(() => {
     const epicOf = (issue: Issue): string | null => {
@@ -317,7 +368,48 @@ function ProjectList() {
   if (isLoading) return <WorkspaceLoading label="list" />;
 
   const columns = allColumns.filter((column) => visibleColumns.includes(column.id));
-  const grid = columns.map((column) => column.width).join(" ");
+  const selectable = !isViewer;
+  const grid = [selectable ? "28px" : null, ...columns.map((column) => column.width)]
+    .filter(Boolean)
+    .join(" ");
+  const selectedIssues = matching.filter((issue) => selectedIds.has(issue.id));
+  const allSelected = matching.length > 0 && selectedIssues.length === matching.length;
+  const parentIds = projectIssues.filter((issue) => issue.childCount > 0).map((issue) => issue.id);
+  const allCollapsed = parentIds.length > 0 && parentIds.every((id) => collapsed.has(id));
+
+  const toggleSelected = (id: string) =>
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const searchColumnId = (id: ColumnKey): ColumnId => (id === "points" ? "storyPoints" : id);
+  const columnText = (id: ColumnKey, issue: Issue) =>
+    id.startsWith("cf:")
+      ? (customColumns.find((column) => column.id === id)?.text(issue, lookups) ?? "")
+      : (COLUMNS_BY_ID.get(searchColumnId(id))?.text(issue, lookups) ?? "");
+  const exportCsv = (exported: ListColumn[]) => {
+    const rows = matching.map((issue) => exported.map((column) => columnText(column.id, issue)));
+    const slug = (project?.key ?? "list").toLowerCase();
+    downloadCsv(
+      `${slug}-list-${new Date().toISOString().slice(0, 10)}.csv`,
+      toCsv(
+        exported.map((column) => column.label),
+        rows,
+      ),
+    );
+  };
+
+  const refresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await refreshIssues();
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   const setColumns = (ids: ColumnKey[]) => {
     setVisibleColumns(ids);
@@ -416,7 +508,7 @@ function ProjectList() {
     const childrenOf = new Map<string, Issue[]>();
     const roots: Issue[] = [];
     for (const issue of group.issues) {
-      if (issue.parentId && inGroup.has(issue.parentId)) {
+      if (prefs.showHierarchy && issue.parentId && inGroup.has(issue.parentId)) {
         childrenOf.set(issue.parentId, [...(childrenOf.get(issue.parentId) ?? []), issue]);
       } else {
         roots.push(issue);
@@ -435,6 +527,8 @@ function ProjectList() {
       const hasChildren = childrenOf.has(issue.id);
       const isSaving = savingIds.has(issue.id);
       const href = issueLink(lookups, issue.id);
+      const format = ruleColor(issue, formatRules);
+      const isSelected = selectedIds.has(issue.id);
       const cell = (id: ColumnKey): ReactNode => {
         if (id.startsWith("cf:")) {
           return customColumns.find((column) => column.id === id)?.render(issue, lookups) ?? null;
@@ -559,11 +653,28 @@ function ProjectList() {
       };
       return (
         <div
-          className={isSaving ? "search-table-row list-row saving" : "search-table-row list-row"}
+          className={[
+            "search-table-row list-row",
+            isSaving ? "saving" : "",
+            isSelected ? "selected" : "",
+            format ? `formatted format-${format}` : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
           role="row"
           key={issue.id}
           style={{ gridTemplateColumns: grid }}
         >
+          {selectable && (
+            <span role="cell" className="search-check-cell">
+              <input
+                type="checkbox"
+                aria-label={`Select ${issue.id}`}
+                checked={isSelected}
+                onChange={() => toggleSelected(issue.id)}
+              />
+            </span>
+          )}
           {columns.map((column) => (
             <span role="cell" key={column.id} className={`list-cell-${column.id}`}>
               {cell(column.id)}
@@ -675,9 +786,6 @@ function ProjectList() {
           </button>
         )}
         <span className="jira-toolbar-spacer" />
-        <span className="search-result-count">
-          {matching.length} of {projectIssues.length}
-        </span>
         <label className="select-button list-filter">
           <span className="list-control-label">Group</span>
           <select value={grouping} onChange={(event) => setGrouping(event.target.value as Grouping)}>
@@ -688,53 +796,80 @@ function ProjectList() {
             <option value="sprint">Sprint</option>
           </select>
         </label>
-        <Popover.Root>
-          <Popover.Trigger asChild>
-            <button type="button" className="icon-button list-more" aria-label="List options">
-              <MoreHorizontal size={16} aria-hidden="true" />
-            </button>
-          </Popover.Trigger>
-          <Popover.Portal>
-            <Popover.Content className="search-popover" align="end" sideOffset={6}>
-              <p className="search-popover-title">Columns</p>
-              <div className="search-column-list">
-                {allColumns.map((column) => (
-                  <label key={column.id}>
-                    <input
-                      type="checkbox"
-                      checked={visibleColumns.includes(column.id)}
-                      disabled={column.id === "summary"}
-                      onChange={() => toggleColumn(column.id)}
-                    />
-                    {column.label}
-                  </label>
-                ))}
-              </div>
-              <button className="text-button" type="button" onClick={() => setColumns(DEFAULT_LIST_COLUMNS)}>
-                Restore defaults
-              </button>
-              <button
-                className="text-button"
-                type="button"
-                onClick={() =>
-                  setCollapsed((current) =>
-                    current.size
-                      ? new Set()
-                      : new Set(projectIssues.filter((issue) => issue.childCount > 0).map((issue) => issue.id)),
-                  )
-                }
-              >
-                {collapsed.size ? "Expand all" : "Collapse all"}
-              </button>
-            </Popover.Content>
-          </Popover.Portal>
-        </Popover.Root>
+        <ColumnPicker
+          columns={allColumns}
+          visible={visibleColumns}
+          onToggle={(id) => toggleColumn(id as ColumnKey)}
+          onReset={() => setColumns(DEFAULT_LIST_COLUMNS)}
+        />
+        <ListMenu
+          prefs={prefs}
+          onUpdate={updatePrefs}
+          onOpenRules={() => setIsRulesOpen(true)}
+          onExportVisible={() => exportCsv(columns)}
+          onExportAll={() => exportCsv(allColumns)}
+          onPrint={() => window.print()}
+          hasParents={parentIds.length > 0}
+          allCollapsed={allCollapsed}
+          onToggleCollapsed={() => setCollapsed(allCollapsed ? new Set() : new Set(parentIds))}
+        />
       </div>
+
+      {isRulesOpen && (
+        <FormatRulesDialog
+          rules={prefs.rules}
+          onSave={(rules) => updatePrefs((current) => ({ ...current, rules }))}
+          onClose={() => setIsRulesOpen(false)}
+        />
+      )}
+
+      {prefs.showChart && (
+        <ListChart
+          buckets={chartBuckets}
+          chartBy={prefs.chartBy}
+          total={matching.length}
+          onChartBy={(chartBy) => updatePrefs((current) => ({ ...current, chartBy }))}
+          onClose={() => updatePrefs((current) => ({ ...current, showChart: false }))}
+        />
+      )}
+
+      {selectable && (
+        <BulkBar
+          selected={selectedIssues}
+          isOwner={isOwner}
+          currentMemberId={activeMember?.id ?? null}
+          onClear={() => setSelectedIds(new Set())}
+          onDeleted={(ids) =>
+            setSelectedIds((current) => {
+              const next = new Set(current);
+              ids.forEach((id) => next.delete(id));
+              return next;
+            })
+          }
+        />
+      )}
 
       <section className="issues-table-panel" aria-label={`${project?.name ?? "Project"} issue list`}>
         <div className="search-table-scroll">
           <div className="search-table list-table" role="table">
             <div className="search-table-row search-table-head" role="row" style={{ gridTemplateColumns: grid }}>
+              {selectable && (
+                <span role="columnheader" className="search-check-cell">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all work items"
+                    checked={allSelected}
+                    ref={(element) => {
+                      if (element) element.indeterminate = !allSelected && selectedIssues.length > 0;
+                    }}
+                    onChange={(event) =>
+                      setSelectedIds(
+                        event.target.checked ? new Set(matching.map((issue) => issue.id)) : new Set(),
+                      )
+                    }
+                  />
+                </span>
+              )}
               {columns.map((header) => {
                 const isSorted = primary?.field === header.sortField;
                 return (
@@ -839,6 +974,21 @@ function ProjectList() {
             )}
           </div>
         </div>
+        <footer className="list-footer">
+          <span className="search-result-count">
+            {matching.length} of {projectIssues.length}
+          </span>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="Refresh"
+            title="Refresh"
+            disabled={isRefreshing}
+            onClick={() => void refresh()}
+          >
+            <RefreshCw size={14} aria-hidden="true" className={isRefreshing ? "spinning-icon" : undefined} />
+          </button>
+        </footer>
       </section>
     </div>
   );
