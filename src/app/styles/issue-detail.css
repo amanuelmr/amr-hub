@@ -1593,10 +1593,15 @@
 }
 
 /* ---------- Workflow view ---------- */
+/* The workflow needs room for three lanes side by side. */
+.issue-dialog.save-view-dialog:has(.workflow-view) {
+  width: min(760px, calc(100vw - 32px));
+}
+
 .workflow-view {
   display: grid;
+  min-width: 0;
   gap: 10px;
-  min-width: min(560px, calc(100vw - 64px));
 }
 
 .workflow-view-lanes {
@@ -1662,6 +1667,11 @@
   padding: 0;
   overflow-y: auto;
   list-style: none;
+  scrollbar-width: none;
+}
+
+.workflow-view-transitions::-webkit-scrollbar {
+  display: none;
 }
 
 .workflow-view-transitions li {

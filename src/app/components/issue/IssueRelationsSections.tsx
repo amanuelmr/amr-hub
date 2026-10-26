@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Globe, Plus, Unlink, X } from "lucide-react";
 import { apiRequest } from "../../IssueProvider";
@@ -444,7 +444,16 @@ export function WebLinksSection({
 }) {
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
+  const urlRef = useRef<HTMLInputElement>(null);
   const links = issue.webLinks ?? [];
+
+  // The Link menu hands focus back to its button as it closes, so focus the
+  // URL field once that has happened instead of relying on autoFocus.
+  useEffect(() => {
+    if (!composerOpen) return;
+    const timer = window.setTimeout(() => urlRef.current?.focus(), 50);
+    return () => window.clearTimeout(timer);
+  }, [composerOpen]);
 
   if (links.length === 0 && !composerOpen) return null;
 
@@ -507,10 +516,10 @@ export function WebLinksSection({
           <label className="form-field">
             <span>URL</span>
             <input
+              ref={urlRef}
               type="url"
               value={url}
               required
-              autoFocus
               placeholder="https://example.com"
               onChange={(event) => setUrl(event.target.value)}
             />
