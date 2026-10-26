@@ -1499,3 +1499,43 @@ td.pa-actions-cell {
   gap: 6px;
   white-space: nowrap;
 }
+
+/* ---------- Project attachments ---------- */
+.attachments-file {
+  display: inline-flex;
+  max-width: 340px;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.attachments-file span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachments-file:hover span {
+  text-decoration: underline;
+}
+
+.attachments-thumb {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius, 4px);
+  background: var(--gray-50);
+  object-fit: cover;
+}
+
+.attachments-thumb-icon {
+  display: grid;
+  place-items: center;
+  color: var(--gray-500);
+}
+
+.attachments-issue-title {
+  color: var(--gray-600);
+}

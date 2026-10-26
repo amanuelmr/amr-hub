@@ -44,7 +44,14 @@ export function TrashSettings({ projectId }: { projectId: string }) {
 }
 
 /** Archived work items: hidden from boards and search, restorable by admins. */
-export function ArchivedIssuesSettings({ projectId }: { projectId: string }) {
+export function ArchivedIssuesSettings({
+  projectId,
+  canRestore = true,
+}: {
+  projectId: string;
+  /** Only project admins can unarchive; others just see the list. */
+  canRestore?: boolean;
+}) {
   const { refreshIssues } = useIssues();
   const { data, error, notice, busyId, reload } = useTrash<{ issues: Issue[] }>(
     `/api/issues?projectId=${encodeURIComponent(projectId)}&archived=true&sort=NEWEST&limit=500`,
@@ -91,9 +98,11 @@ export function ArchivedIssuesSettings({ projectId }: { projectId: string }) {
               <tr>
                 <th>Work item</th>
                 <th>Archived</th>
-                <th>
-                  <span className="sr-only">Actions</span>
-                </th>
+                {canRestore && (
+                  <th>
+                    <span className="sr-only">Actions</span>
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -114,19 +123,21 @@ export function ArchivedIssuesSettings({ projectId }: { projectId: string }) {
                         }).format(new Date(issue.archivedAt))
                       : "—"}
                   </td>
-                  <td>
-                    <div className="pa-actions-cell">
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        disabled={pending === issue.id || busyId === issue.id}
-                        onClick={() => void unarchive(issue)}
-                      >
-                        <ArchiveRestore size={14} aria-hidden="true" />
-                        Unarchive
-                      </button>
-                    </div>
-                  </td>
+                  {canRestore && (
+                    <td>
+                      <div className="pa-actions-cell">
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          disabled={pending === issue.id || busyId === issue.id}
+                          onClick={() => void unarchive(issue)}
+                        >
+                          <ArchiveRestore size={14} aria-hidden="true" />
+                          Unarchive
+                        </button>
+                      </div>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
