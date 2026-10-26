@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { dispatchWebhook } from "./webhooks";
 import prisma from "../../prisma/client";
 import { notifyRecipients } from "./notifications";
+import { getNotificationSettings } from "./notificationPreferences";
 import { runAutomations } from "./automation";
 import { summarizeReactions } from "../app/data/reactions";
 import {
@@ -535,6 +536,7 @@ async function createIssueUnhooked(
   await validateComponentIds(input.componentIds, project.id);
   await validateTeamId(input.teamId, actor.organizationId);
   await validateGoalId(input.goalId, actor.organizationId);
+  const { autoWatch: creatorWatches } = await getNotificationSettings(actor.id);
   // Custom fields: required ones are enforced when the caller sends values.
   let customFieldsJson = "{}";
   if (input.customFields !== undefined) {
@@ -573,7 +575,8 @@ async function createIssueUnhooked(
       customFields: _customFields,
       ...fields
     } = input;
-    const watcherIds = new Set([actor.id]);
+    // The creator watches their new item unless they turned auto-watch off.
+    const watcherIds = new Set(creatorWatches ? [actor.id] : []);
     if (input.assigneeId) {
       const assignee = await transaction.member.findUnique({
         where: { id: input.assigneeId },
@@ -1540,10 +1543,23 @@ async function addCommentUnhooked(
   });
   if (!exists) return null;
   await assertActorCan(actor, exists.projectId, "comment");
+  const { autoWatch } = await getNotificationSettings(actor.id);
 
   const issue = await prisma.issue.update({
     where: { id },
     data: {
+      // Commenting starts watching, unless the person turned auto-watch off.
+      ...(autoWatch
+        ? {
+            watchers: {
+              upsert: {
+                where: { issueId_userId: { issueId: id, userId: actor.id } },
+                create: { user: { connect: { id: actor.id } } },
+                update: {},
+              },
+            },
+          }
+        : {}),
       comments: {
         create: {
           body,

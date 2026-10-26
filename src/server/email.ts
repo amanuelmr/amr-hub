@@ -13,17 +13,26 @@ function getClient() {
 export type EmailMessage = {
   to: string;
   subject: string;
-  html: string;
+  /** Left out for people who chose plain text emails. */
+  html?: string;
   text: string;
 };
+
+/** Drops the HTML part for people who prefer plain text emails. */
+export function withEmailFormat(message: EmailMessage, format: "HTML" | "TEXT"): EmailMessage {
+  if (format === "HTML") return message;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { html: _html, ...plain } = message;
+  return plain;
+}
 
 export async function sendEmail(input: EmailMessage) {
   const { error } = await getClient().emails.send({
     from: loadServerEnvironment().EMAIL_FROM,
     to: input.to,
     subject: input.subject,
-    html: input.html,
     text: input.text,
+    ...(input.html ? { html: input.html } : {}),
   });
 
   if (error) {

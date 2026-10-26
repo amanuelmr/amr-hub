@@ -98,7 +98,7 @@ export function ProfileMenu() {
             onSelect={() => router.push("/account/notifications")}
           >
             <BellRing size={15} aria-hidden="true" />
-            Notifications
+            Personal settings
           </DropdownMenu.Item>
           <DropdownMenu.Item
             className="shell-menu-item"

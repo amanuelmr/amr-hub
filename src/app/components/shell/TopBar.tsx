@@ -55,10 +55,11 @@ export function TopBar({
         >
           <Menu size={18} aria-hidden="true" />
         </button>
-        <Link href="/your-work" className="shell-brand" aria-label="AMR Hub home">
+        {/* A plain link: /home redirects to each person's chosen homepage. */}
+        <a href="/home" className="shell-brand" aria-label="AMR Hub home">
           <span className="brand-mark">A</span>
           <strong>AMR Hub</strong>
-        </Link>
+        </a>
       </div>
 
       <div className="shell-topbar-center">

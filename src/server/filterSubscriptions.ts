@@ -6,7 +6,8 @@ import type {
 } from "../app/data/notifications";
 import { basicFiltersToJql } from "../app/data/jql";
 import { statusName, type ProjectWorkflow } from "../app/data/workflow";
-import { deliverNotificationEmail } from "./email";
+import { deliverNotificationEmail, withEmailFormat } from "./email";
+import { getNotificationSettings } from "./notificationPreferences";
 import {
   renderFilterSubscriptionEmail,
   type FilterEmailIssue,
@@ -268,16 +269,22 @@ export async function sendDueFilterSubscriptions(now = new Date()) {
       const params = new URLSearchParams({ filter: view.id });
       if (view.jql !== null) params.set("jql", view.jql);
 
-      const delivered = await deliverNotificationEmail({
-        to: row.user.email,
-        ...renderFilterSubscriptionEmail({
-          filterName: view.name,
-          filterUrl: `${appOrigin()}/issues?${params}`,
-          issues,
-          total: result.total,
-          preferencesUrl: preferencesUrl(),
-        }),
-      });
+      const { emailFormat } = await getNotificationSettings(row.user.id);
+      const delivered = await deliverNotificationEmail(
+        withEmailFormat(
+          {
+            to: row.user.email,
+            ...renderFilterSubscriptionEmail({
+              filterName: view.name,
+              filterUrl: `${appOrigin()}/issues?${params}`,
+              issues,
+              total: result.total,
+              preferencesUrl: preferencesUrl(),
+            }),
+          },
+          emailFormat,
+        ),
+      );
       if (delivered) {
         await prisma.filterSubscription.update({
           where: { id: row.id },

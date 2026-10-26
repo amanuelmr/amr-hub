@@ -6,7 +6,7 @@ import {
   type NotificationSettings,
   type NotificationType,
 } from "../app/data/notifications";
-import { deliverNotificationEmail, type EmailMessage } from "./email";
+import { deliverNotificationEmail, withEmailFormat, type EmailMessage } from "./email";
 import {
   renderIssueNotificationEmail,
   renderNotificationDigestEmail,
@@ -199,7 +199,9 @@ export async function notifyRecipients(
     if (emailUserIds.length > 0 && input.issueId) {
       const issueId = input.issueId;
       runInBackground(() =>
-        sendImmediateEmails(emailUserIds, issueId, input),
+        sendImmediateEmails(emailUserIds, issueId, input, (userId) =>
+          settings.get(userId)?.emailFormat ?? "HTML",
+        ),
       );
     }
   } catch (error) {
@@ -211,6 +213,7 @@ async function sendImmediateEmails(
   userIds: string[],
   issueId: string,
   input: NotifyInput,
+  formatFor: (userId: string) => "HTML" | "TEXT",
 ) {
   const [users, issue] = await Promise.all([
     prisma.user.findMany({
@@ -235,7 +238,9 @@ async function sendImmediateEmails(
     users
       .filter((user) => user.email)
       .map((user) =>
-        deliverNotificationEmail({ to: user.email, subject, html, text }),
+        deliverNotificationEmail(
+          withEmailFormat({ to: user.email, subject, html, text }, formatFor(user.id)),
+        ),
       ),
   );
 }
@@ -407,7 +412,9 @@ export async function sendDailyDigests(now = new Date()) {
             preferencesUrl: preferencesUrl(),
           }),
         };
-        if (await deliverNotificationEmail(message)) sent += 1;
+        if (await deliverNotificationEmail(withEmailFormat(message, subscriber.settings.emailFormat))) {
+          sent += 1;
+        }
       }
       await markDigestSent(subscriber.userId, now);
     } catch (error) {

@@ -93,6 +93,24 @@ export function notificationGroup(type: NotificationType): NotificationGroup {
 
 export type EmailDigest = "IMMEDIATE" | "DAILY";
 
+export type EmailFormat = "HTML" | "TEXT";
+
+/** Where "home" (sign-in, the logo) takes each person. */
+export const HOMEPAGES = [
+  { key: "your-work", label: "Your work", path: "/your-work" },
+  { key: "overview", label: "Overview", path: "/dashboard" },
+  { key: "projects", label: "Projects", path: "/projects" },
+  { key: "dashboards", label: "Dashboards", path: "/dashboards" },
+  { key: "issues", label: "Search work items", path: "/issues" },
+  { key: "filters", label: "Filters", path: "/filters" },
+] as const;
+
+export type Homepage = (typeof HOMEPAGES)[number]["key"];
+
+export function homepagePath(homepage: Homepage) {
+  return HOMEPAGES.find((option) => option.key === homepage)?.path ?? "/your-work";
+}
+
 export type ChannelSettings = { inApp: boolean; email: boolean };
 
 export type NotificationSettings = {
@@ -100,6 +118,15 @@ export type NotificationSettings = {
   /** Jira's "Notify me about my own changes" — off by default. */
   notifyOwnChanges: boolean;
   emailDigest: EmailDigest;
+  /** Plain text emails for people who prefer them. */
+  emailFormat: EmailFormat;
+  /** Watch work items you create or comment on. */
+  autoWatch: boolean;
+  /** A daily email of your work that is due soon or overdue. */
+  dueReminders: boolean;
+  /** A Monday email of what you finished and what is next. */
+  weeklySummary: boolean;
+  homepage: Homepage;
 };
 
 const EMAIL_ON_BY_DEFAULT = new Set<NotificationType>([
@@ -118,6 +145,11 @@ export function defaultNotificationSettings(): NotificationSettings {
     ) as Record<NotificationType, ChannelSettings>,
     notifyOwnChanges: false,
     emailDigest: "IMMEDIATE",
+    emailFormat: "HTML",
+    autoWatch: true,
+    dueReminders: false,
+    weeklySummary: false,
+    homepage: "your-work",
   };
 }
 
@@ -146,6 +178,15 @@ export function normalizeNotificationSettings(raw: unknown): NotificationSetting
   }
   if (raw.emailDigest === "IMMEDIATE" || raw.emailDigest === "DAILY") {
     settings.emailDigest = raw.emailDigest;
+  }
+  if (raw.emailFormat === "HTML" || raw.emailFormat === "TEXT") {
+    settings.emailFormat = raw.emailFormat;
+  }
+  for (const key of ["autoWatch", "dueReminders", "weeklySummary"] as const) {
+    if (typeof raw[key] === "boolean") settings[key] = raw[key];
+  }
+  if (HOMEPAGES.some((option) => option.key === raw.homepage)) {
+    settings.homepage = raw.homepage as Homepage;
   }
   return settings;
 }

@@ -1,7 +1,9 @@
 import { z } from "zod";
 import prisma from "../../prisma/client";
 import {
+  HOMEPAGES,
   NOTIFICATION_TYPES,
+  type Homepage,
   normalizeNotificationSettings,
   type NotificationSettings,
   type NotificationType,
@@ -26,6 +28,13 @@ export const notificationSettingsUpdateSchema = z
       .optional(),
     notifyOwnChanges: z.boolean().optional(),
     emailDigest: z.enum(["IMMEDIATE", "DAILY"]).optional(),
+    emailFormat: z.enum(["HTML", "TEXT"]).optional(),
+    autoWatch: z.boolean().optional(),
+    dueReminders: z.boolean().optional(),
+    weeklySummary: z.boolean().optional(),
+    homepage: z
+      .enum(HOMEPAGES.map((option) => option.key) as [Homepage, ...Homepage[]])
+      .optional(),
   })
   .strict();
 
@@ -34,7 +43,14 @@ export type NotificationSettingsUpdate = z.infer<
 >;
 
 /** Internal bookkeeping kept next to the user's settings in the same JSON. */
-type StoredSettings = NotificationSettings & { lastDigestAt?: string };
+type StoredSettings = NotificationSettings & {
+  lastDigestAt?: string;
+  lastDueReminderAt?: string;
+  lastWeeklySummaryAt?: string;
+};
+
+const BOOKKEEPING_KEYS = ["lastDigestAt", "lastDueReminderAt", "lastWeeklySummaryAt"] as const;
+export type DigestBookkeeping = (typeof BOOKKEEPING_KEYS)[number];
 
 function parseStored(raw: string | null | undefined): Record<string, unknown> {
   if (!raw) return {};
@@ -66,6 +82,11 @@ export function applySettingsUpdate(
     next.notifyOwnChanges = update.notifyOwnChanges;
   }
   if (update.emailDigest !== undefined) next.emailDigest = update.emailDigest;
+  if (update.emailFormat !== undefined) next.emailFormat = update.emailFormat;
+  if (update.autoWatch !== undefined) next.autoWatch = update.autoWatch;
+  if (update.dueReminders !== undefined) next.dueReminders = update.dueReminders;
+  if (update.weeklySummary !== undefined) next.weeklySummary = update.weeklySummary;
+  if (update.homepage !== undefined) next.homepage = update.homepage;
   return next;
 }
 
@@ -104,8 +125,9 @@ export async function updateNotificationSettings(
   const raw = parseStored(row?.settings);
   const next = applySettingsUpdate(normalizeNotificationSettings(raw), update);
   const stored: StoredSettings = { ...next };
-  const lastDigestAt = lastDigestAtOf(raw);
-  if (lastDigestAt) stored.lastDigestAt = lastDigestAt;
+  for (const key of BOOKKEEPING_KEYS) {
+    if (typeof raw[key] === "string") stored[key] = raw[key] as string;
+  }
   // Switching to the daily digest starts the window now, so the first digest
   // doesn't replay older events that were already emailed immediately.
   if (update.emailDigest === "DAILY" && raw.emailDigest !== "DAILY") {
@@ -136,7 +158,11 @@ export async function listDigestSubscribers() {
   });
 }
 
-export async function markDigestSent(userId: string, sentAt: Date) {
+export async function markDigestSent(
+  userId: string,
+  sentAt: Date,
+  key: DigestBookkeeping = "lastDigestAt",
+) {
   const row = await prisma.notificationPreference.findUnique({
     where: { userId },
   });
@@ -145,7 +171,25 @@ export async function markDigestSent(userId: string, sentAt: Date) {
   await prisma.notificationPreference.update({
     where: { userId },
     data: {
-      settings: JSON.stringify({ ...raw, lastDigestAt: sentAt.toISOString() }),
+      settings: JSON.stringify({ ...raw, [key]: sentAt.toISOString() }),
     },
+  });
+}
+
+/** People who turned on a personal digest, with when it last went out. */
+export async function listPersonalDigestSubscribers(
+  setting: "dueReminders" | "weeklySummary",
+  key: DigestBookkeeping,
+) {
+  const rows = await prisma.notificationPreference.findMany({
+    where: { settings: { contains: `"${setting}":true` } },
+  });
+  return rows.map((row) => {
+    const raw = parseStored(row.settings);
+    return {
+      userId: row.userId,
+      settings: normalizeNotificationSettings(raw),
+      lastSentAt: typeof raw[key] === "string" ? new Date(raw[key] as string) : null,
+    };
   });
 }

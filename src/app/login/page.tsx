@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { fetchHomepagePath } from "../components/homepage";
 import { Fingerprint } from "lucide-react";
 import { authClient } from "../../lib/auth-client";
 import {
@@ -35,7 +36,7 @@ export default function LoginPage() {
   const passwordRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (session) router.replace("/dashboard");
+    if (session) void fetchHomepagePath().then((path) => router.replace(path));
   }, [router, session]);
 
   useEffect(() => {
@@ -58,7 +59,7 @@ export default function LoginPage() {
       });
     }
 
-    router.replace("/dashboard");
+    router.replace(await fetchHomepagePath());
     router.refresh();
   };
 
