@@ -190,9 +190,11 @@
   cursor: pointer;
 }
 
-.search-menu-item[data-highlighted] {
+.search-menu-item[data-highlighted],
+.search-menu-item[data-state="open"] {
   color: var(--ink);
-  background: var(--green-50);
+  /* A tint keeps the text readable in dark mode, where a light green hid it. */
+  background: color-mix(in srgb, var(--console-lime-strong) 18%, transparent);
 }
 
 .search-menu-separator {
