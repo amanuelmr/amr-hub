@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
   ChevronDown,
@@ -29,7 +29,8 @@ import {
   fetchOptionalList,
   type IssueDetailController,
 } from "./useIssueDetail";
-import { TimeTrackingBar } from "./IssueTimeTracking";
+import { RollupTimeBar, TimeTrackingBar } from "./IssueTimeTracking";
+import { buildRollups } from "../../data/rollup";
 import { IssueCustomFields } from "../fields/IssueCustomFields";
 import {
   ISSUE_ESTIMATES,
@@ -219,6 +220,15 @@ export function IssueDetailsPanel({
       (cycle.state !== "CLOSED" || cycle.id === issue.cycleId),
   );
   const parentCandidates = eligibleParents(issue, allIssues);
+  // Totals for this item and everything beneath it, using its latest values.
+  const rollup = useMemo(
+    () =>
+      buildRollups(
+        allIssues.map((candidate) => (candidate.id === issue.id ? issue : candidate)),
+      ).get(issue.id),
+    [allIssues, issue],
+  );
+  const hasRollup = Boolean(rollup && rollup.descendants > 0);
   const kinds = kindConversions(
     issue,
     workflow.types.map((type) => type.key),
@@ -504,6 +514,16 @@ export function IssueDetailsPanel({
                 ))}
               </select>
             </label>
+            {hasRollup && rollup && (
+              <p
+                className="issue-rollup-points"
+                title="Story points on this item and every item beneath it"
+              >
+                Σ {rollup.points} pts · {rollup.donePoints} done ·{" "}
+                {rollup.descendants} {rollup.descendants === 1 ? "item" : "items"} below
+                {rollup.unestimated > 0 && ` · ${rollup.unestimated} unestimated`}
+              </p>
+            )}
           </DetailField>
 
           <DetailField label="Priority">
@@ -587,6 +607,11 @@ export function IssueDetailsPanel({
               <Clock3 size={14} aria-hidden="true" />
               <TimeTrackingBar issue={issue} />
             </button>
+            {hasRollup &&
+              rollup &&
+              rollup.spentMinutes + rollup.remainingMinutes + rollup.originalMinutes > 0 && (
+                <RollupTimeBar totals={rollup} />
+              )}
           </DetailField>
 
           {issue.kind === "BUG" && (

@@ -1701,3 +1701,22 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ---------- Rollup totals ---------- */
+.issue-rollup-points {
+  margin: 4px 0 0;
+  color: var(--gray-500);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.issue-rollup-time {
+  margin-top: 8px;
+  padding: 6px 0 0 22px;
+  border-top: 1px dashed var(--gray-200);
+}
+
+.issue-rollup-time .issue-time-labels {
+  color: var(--gray-500);
+  font-size: 11px;
+}

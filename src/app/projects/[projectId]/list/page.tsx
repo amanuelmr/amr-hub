@@ -19,6 +19,7 @@ import { authClient } from "../../../../lib/auth-client";
 import {
   ISSUE_ESTIMATES,
   PRIORITY_LABELS,
+  formatDuration,
   type Issue,
   type IssueEstimate,
   type IssueKind,
@@ -59,6 +60,7 @@ import {
 import { useWorkflow } from "../../../WorkflowProvider";
 import { ColumnPicker, FormatRulesDialog, ListChart, ListMenu } from "./ListControls";
 import { countBy, parseListPrefs, ruleColor } from "./listView";
+import { buildRollups } from "../../../data/rollup";
 
 type Grouping = "none" | "status" | "assignee" | "epic" | "sprint";
 
@@ -77,7 +79,10 @@ type ListColumnId =
   | "points"
   | "sprint"
   | "fixVersion"
-  | "parent";
+  | "parent"
+  | "rollupPoints"
+  | "rollupSpent"
+  | "rollupRemaining";
 
 /** Built-in columns plus the project's custom fields (`cf:<field id>`). */
 type ColumnKey = ListColumnId | CustomColumnId;
@@ -85,7 +90,8 @@ type ColumnKey = ListColumnId | CustomColumnId;
 type ListColumn = {
   id: ColumnKey;
   label: string;
-  sortField: JqlField;
+  /** Totals computed in the browser have no query field to sort by. */
+  sortField?: JqlField;
   width: string;
 };
 
@@ -106,7 +112,12 @@ const LIST_COLUMNS: ListColumn[] = [
   { id: "sprint", label: "Sprint", sortField: "sprint", width: "120px" },
   { id: "fixVersion", label: "Fix versions", sortField: "fixversion", width: "110px" },
   { id: "parent", label: "Parent", sortField: "parent", width: "minmax(110px, 0.7fr)" },
+  { id: "rollupPoints", label: "Σ Story points", width: "104px" },
+  { id: "rollupSpent", label: "Σ Time spent", width: "104px" },
+  { id: "rollupRemaining", label: "Σ Remaining", width: "104px" },
 ];
+
+const ROLLUP_COLUMNS = new Set<ColumnKey>(["rollupPoints", "rollupSpent", "rollupRemaining"]);
 
 const DEFAULT_LIST_COLUMNS: ListColumnId[] = [
   "type",
@@ -232,6 +243,8 @@ function ProjectList() {
     () => new Map(projectIssues.map((issue) => [issue.id, issue])),
     [projectIssues],
   );
+  // Each item's estimates and time plus everything beneath it.
+  const rollups = useMemo(() => buildRollups(issues), [issues]);
 
   const assignees = useMemo(() => {
     const seen = new Map<string, string>();
@@ -385,11 +398,20 @@ function ProjectList() {
       return next;
     });
 
-  const searchColumnId = (id: ColumnKey): ColumnId => (id === "points" ? "storyPoints" : id);
+  const searchColumnId = (id: ColumnKey) =>
+    (id === "points" ? "storyPoints" : id) as ColumnId;
+  const rollupText = (id: ColumnKey, issue: Issue) => {
+    const totals = rollups.get(issue.id);
+    if (!totals) return "";
+    if (id === "rollupPoints") return String(totals.points);
+    return formatDuration(id === "rollupSpent" ? totals.spentMinutes : totals.remainingMinutes);
+  };
   const columnText = (id: ColumnKey, issue: Issue) =>
-    id.startsWith("cf:")
-      ? (customColumns.find((column) => column.id === id)?.text(issue, lookups) ?? "")
-      : (COLUMNS_BY_ID.get(searchColumnId(id))?.text(issue, lookups) ?? "");
+    ROLLUP_COLUMNS.has(id)
+      ? rollupText(id, issue)
+      : id.startsWith("cf:")
+        ? (customColumns.find((column) => column.id === id)?.text(issue, lookups) ?? "")
+        : (COLUMNS_BY_ID.get(searchColumnId(id))?.text(issue, lookups) ?? "");
   const exportCsv = (exported: ListColumn[]) => {
     const rows = matching.map((issue) => exported.map((column) => columnText(column.id, issue)));
     const slug = (project?.key ?? "list").toLowerCase();
@@ -647,8 +669,27 @@ function ProjectList() {
                 ))}
               </select>
             );
+          case "rollupPoints":
+          case "rollupSpent":
+          case "rollupRemaining": {
+            const totals = rollups.get(issue.id);
+            const text = rollupText(id, issue);
+            // Items with nothing beneath them show their own value, muted.
+            return (
+              <span
+                className={totals && totals.descendants > 0 ? "list-rollup" : "list-rollup own"}
+                title={
+                  totals && totals.descendants > 0
+                    ? `Including ${totals.descendants} ${totals.descendants === 1 ? "item" : "items"} below`
+                    : undefined
+                }
+              >
+                {text === "0" || text === formatDuration(0) ? "—" : text}
+              </span>
+            );
+          }
           default:
-            return COLUMNS_BY_ID.get(id)?.render(issue, lookups);
+            return COLUMNS_BY_ID.get(searchColumnId(id))?.render(issue, lookups);
         }
       };
       return (
@@ -871,13 +912,21 @@ function ProjectList() {
                 </span>
               )}
               {columns.map((header) => {
-                const isSorted = primary?.field === header.sortField;
+                const sortField = header.sortField;
+                const isSorted = Boolean(sortField) && primary?.field === sortField;
+                if (!sortField) {
+                  return (
+                    <span role="columnheader" key={header.id}>
+                      {header.label}
+                    </span>
+                  );
+                }
                 return (
                   <span role="columnheader" key={header.id}>
                     <button
                       type="button"
                       className={isSorted ? "search-sort active" : "search-sort"}
-                      onClick={() => toggleSort(header.sortField)}
+                      onClick={() => toggleSort(sortField)}
                       aria-label={header.id === "type" ? "Sort by type" : undefined}
                     >
                       {header.id === "type" ? "T" : header.label}
