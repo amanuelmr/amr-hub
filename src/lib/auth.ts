@@ -191,6 +191,12 @@ export const auth = betterAuth({
     window: 60,
     max: 100,
     customRules: {
+      // Every page load reads the session, workspace and membership, so the
+      // general limit is too tight for normal navigation; a 429 here makes the
+      // app look signed out of its workspace.
+      "/get-session": { window: 60, max: 600 },
+      "/organization/get-full-organization": { window: 60, max: 600 },
+      "/organization/get-active-member": { window: 60, max: 600 },
       "/sign-in/email": {
         window: 60,
         max: 5,
