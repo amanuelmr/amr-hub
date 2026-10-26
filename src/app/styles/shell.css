@@ -1118,3 +1118,13 @@
 .shell-frame .app-content::-webkit-scrollbar {
   display: none;
 }
+
+.shell-menu-sub > svg:last-child,
+.shell-menu-check {
+  margin-left: auto;
+}
+
+.shell-menu-check {
+  display: inline-flex;
+  color: var(--console-lime-strong);
+}
