@@ -7,8 +7,6 @@ import {
   type BoardConfig,
 } from "../app/data/projects";
 import {
-  DEFAULT_STATUSES,
-  DEFAULT_TYPES,
   STATUS_CATEGORIES,
   WORK_TYPE_ICONS,
   allowedTransitions,
