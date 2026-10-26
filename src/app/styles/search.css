@@ -463,7 +463,8 @@
 }
 
 .search-table-row.selected {
-  background: var(--green-50);
+  /* A tint instead of a fixed light green keeps text readable in dark mode. */
+  background: color-mix(in srgb, var(--console-lime-strong) 16%, transparent);
 }
 
 .search-table-row.active {
