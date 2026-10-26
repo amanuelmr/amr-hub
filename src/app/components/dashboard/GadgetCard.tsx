@@ -3,7 +3,14 @@
 import { useState } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Settings2, Trash2 } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  GripVertical,
+  Maximize2,
+  Settings2,
+  Trash2,
+} from "lucide-react";
 import { GadgetBody } from "./Gadgets";
 import { GadgetConfigForm } from "./GadgetConfigForm";
 import {
@@ -16,13 +23,20 @@ import {
 export function GadgetCard({
   gadget,
   editing,
+  minimized = false,
   onConfigure,
   onRemove,
+  onToggleMinimized,
+  onMaximize,
 }: {
   gadget: Gadget;
   editing: boolean;
+  /** Collapsed to its title for this viewer. */
+  minimized?: boolean;
   onConfigure: (config: GadgetConfig) => void;
   onRemove: () => void;
+  onToggleMinimized?: () => void;
+  onMaximize?: () => void;
 }) {
   const [isConfiguring, setIsConfiguring] = useState(false);
   const {
@@ -42,7 +56,7 @@ export function GadgetCard({
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={`panel gadget-card${isDragging ? " dragging" : ""}${
         editing ? " editing" : ""
-      }`}
+      }${minimized && !editing ? " minimized" : ""}`}
       aria-label={title}
     >
       <div className="panel-header gadget-header">
@@ -64,6 +78,37 @@ export function GadgetCard({
             <p>{GADGET_META[gadget.type].label}</p>
           )}
         </div>
+        {!editing && (onToggleMinimized || onMaximize) && (
+          <div className="gadget-tools">
+            {onToggleMinimized && (
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={minimized ? `Expand ${title}` : `Minimize ${title}`}
+                aria-expanded={!minimized}
+                title={minimized ? "Expand" : "Minimize"}
+                onClick={onToggleMinimized}
+              >
+                {minimized ? (
+                  <ChevronDown size={16} aria-hidden="true" />
+                ) : (
+                  <ChevronUp size={16} aria-hidden="true" />
+                )}
+              </button>
+            )}
+            {onMaximize && (
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={`Maximize ${title}`}
+                title="Maximize"
+                onClick={onMaximize}
+              >
+                <Maximize2 size={15} aria-hidden="true" />
+              </button>
+            )}
+          </div>
+        )}
         {editing && (
           <div className="gadget-tools">
             <button
@@ -95,7 +140,7 @@ export function GadgetCard({
             setIsConfiguring(false);
           }}
         />
-      ) : (
+      ) : minimized && !editing ? null : (
         <div className="gadget-body">
           <GadgetBody gadget={gadget} />
         </div>

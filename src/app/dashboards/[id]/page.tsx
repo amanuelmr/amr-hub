@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
@@ -19,13 +19,26 @@ import {
   sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { ArrowLeft, Copy, MoreHorizontal, Pencil, Plus, Share2, Star, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Copy,
+  MonitorPlay,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Share2,
+  Star,
+  Trash2,
+} from "lucide-react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { FilterDetailsDialog } from "../../components/search/FilterDetailsDialog";
 import { summarizeShares, useShareDirectory } from "../../components/search/ShareEditor";
 import { apiRequest, useIssues } from "../../IssueProvider";
 import { WorkspaceLoading } from "../../components/WorkspaceLoading";
 import { GadgetCard } from "../../components/dashboard/GadgetCard";
+import { MaximizedGadget, Wallboard } from "../../components/dashboard/Wallboard";
+import { parseDashboardView, toggleMinimized } from "../../components/dashboard/dashboardView";
+import { useStoredPrefs } from "../../components/useStoredPrefs";
 import {
   GADGET_META,
   GADGET_ORDER,
@@ -52,6 +65,14 @@ export default function DashboardPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+  const [maximizedId, setMaximizedId] = useState<string | null>(null);
+  const [isWallboard, setIsWallboard] = useState(false);
+  const exitWallboard = useCallback(() => setIsWallboard(false), []);
+  // Minimized gadgets are this viewer's choice, kept in the browser.
+  const { value: view, update: updateView } = useStoredPrefs(
+    `amr.dashboard.${params.id}`,
+    parseDashboardView,
+  );
   const shareDirectory = useShareDirectory();
 
   const sensors = useSensors(
@@ -291,6 +312,13 @@ export default function DashboardPage() {
                         Add gadget
                       </DropdownMenu.Item>
                     )}
+                    <DropdownMenu.Item
+                      className="planning-menu-item"
+                      onSelect={() => setIsWallboard(true)}
+                    >
+                      <MonitorPlay size={14} aria-hidden="true" />
+                      View as wallboard
+                    </DropdownMenu.Item>
                     <DropdownMenu.Item className="planning-menu-item" onSelect={() => void copy()}>
                       <Copy size={14} aria-hidden="true" />
                       Copy dashboard
@@ -382,6 +410,9 @@ export default function DashboardPage() {
                   key={gadget.id}
                   gadget={gadget}
                   editing={editing}
+                  minimized={view.minimized.includes(gadget.id)}
+                  onToggleMinimized={() => updateView((current) => toggleMinimized(current, gadget.id))}
+                  onMaximize={() => setMaximizedId(gadget.id)}
                   onRemove={() =>
                     setDraftGadgets((current) =>
                       current.filter((candidate) => candidate.id !== gadget.id),
@@ -399,6 +430,15 @@ export default function DashboardPage() {
             </div>
           </SortableContext>
         </DndContext>
+      )}
+      {maximizedId && gadgets.some((gadget) => gadget.id === maximizedId) && (
+        <MaximizedGadget
+          gadget={gadgets.find((gadget) => gadget.id === maximizedId)!}
+          onClose={() => setMaximizedId(null)}
+        />
+      )}
+      {isWallboard && (
+        <Wallboard name={dashboard.name} gadgets={dashboard.gadgets} onExit={exitWallboard} />
       )}
       {isSharing && (
         <FilterDetailsDialog
