@@ -38,6 +38,7 @@ import {
 } from "../data/customFields";
 import { CustomFieldInput } from "./fields/CustomFieldInput";
 import { useCustomFields } from "./fields/customFieldStore";
+import type { CreateDraft, CreateField } from "./createFields";
 
 type FormErrors = {
   title?: string;
@@ -58,18 +59,27 @@ export function CreateIssueForm({
   defaultProjectId,
   defaults,
   allowCreateAnother = false,
+  initialDraft,
+  onDraftChange,
+  hiddenFields = [],
   onCreated,
   onCancel,
 }: {
   defaultProjectId?: string | null;
   defaults?: CreateIssueDefaults;
   allowCreateAnother?: boolean;
+  /** Restores what was typed before the dialog was minimized. */
+  initialDraft?: CreateDraft | null;
+  onDraftChange?: (draft: CreateDraft) => void;
+  /** Optional fields this person chose to hide. */
+  hiddenFields?: CreateField[];
   onCreated: (issue: Issue, options: { createAnother: boolean }) => void;
   onCancel: () => void;
 }) {
+  const show = (field: CreateField) => !hiddenFields.includes(field);
   const { data: session } = authClient.useSession();
   const { data: activeMember } = authClient.useActiveMember();
-  const [statusChoice, setStatus] = useState<IssueStatus>("OPEN");
+  const [statusChoice, setStatus] = useState<IssueStatus>(initialDraft?.status ?? "OPEN");
   const { createIssue, issues, labels, cycles, members } = useIssues();
   const { projects: allVisible, activeProjectId: storedActiveId } = useProjects();
   // Only projects the user can create work in (Jira's "Create issues" permission).
@@ -84,10 +94,11 @@ export function CreateIssueForm({
     ? issues.find((issue) => issue.id === defaults.parentId)
     : null;
 
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [priority, setPriority] = useState<IssuePriority>("MEDIUM");
+  const [title, setTitle] = useState(initialDraft?.title ?? "");
+  const [description, setDescription] = useState(initialDraft?.description ?? "");
+  const [priority, setPriority] = useState<IssuePriority>(initialDraft?.priority ?? "MEDIUM");
   const [kindChoice, setKind] = useState<IssueKind>(
+    initialDraft?.kind ??
     defaults?.kind ??
       (defaultParent
         ? isEpicLevel(defaultParent.kind)
@@ -96,28 +107,28 @@ export function CreateIssueForm({
         : "TASK"),
   );
   const [projectId, setProjectId] = useState<string | null>(
-    defaultParent?.projectId ?? defaultProjectId ?? null,
+    initialDraft ? initialDraft.projectId : (defaultParent?.projectId ?? defaultProjectId ?? null),
   );
-  const [parentId, setParentId] = useState(defaults?.parentId ?? "");
-  const [assigneeId, setAssigneeId] = useState("");
-  const [dueDate, setDueDate] = useState("");
-  const [startDate, setStartDate] = useState("");
+  const [parentId, setParentId] = useState(initialDraft?.parentId ?? defaults?.parentId ?? "");
+  const [assigneeId, setAssigneeId] = useState(initialDraft?.assigneeId ?? "");
+  const [dueDate, setDueDate] = useState(initialDraft?.dueDate ?? "");
+  const [startDate, setStartDate] = useState(initialDraft?.startDate ?? "");
   const [cycleId, setCycleId] = useState<string | null>(
-    defaults?.cycleId ?? null,
+    initialDraft ? initialDraft.cycleId : (defaults?.cycleId ?? null),
   );
-  const [estimate, setEstimate] = useState<IssueEstimate | null>(null);
-  const [originalEstimate, setOriginalEstimate] = useState("");
-  const [environment, setEnvironment] = useState("");
-  const [labelIds, setLabelIds] = useState<string[]>([]);
-  const [fixVersionId, setFixVersionId] = useState("");
-  const [componentIds, setComponentIds] = useState<string[]>([]);
+  const [estimate, setEstimate] = useState<IssueEstimate | null>(initialDraft?.estimate ?? null);
+  const [originalEstimate, setOriginalEstimate] = useState(initialDraft?.originalEstimate ?? "");
+  const [environment, setEnvironment] = useState(initialDraft?.environment ?? "");
+  const [labelIds, setLabelIds] = useState<string[]>(initialDraft?.labelIds ?? []);
+  const [fixVersionId, setFixVersionId] = useState(initialDraft?.fixVersionId ?? "");
+  const [componentIds, setComponentIds] = useState<string[]>(initialDraft?.componentIds ?? []);
   const [versions, setVersions] = useState<IssueVersionRef[] | null>(null);
   const [components, setComponents] = useState<IssueComponentRef[] | null>(
     null,
   );
   const [customValues, setCustomValues] = useState<
     Record<string, CustomFieldValue | null>
-  >({});
+  >(initialDraft?.customValues ?? {});
   const { fields: customFieldDefs } = useCustomFields();
   const [createAnother, setCreateAnother] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
@@ -148,6 +159,10 @@ export function CreateIssueForm({
   const selectedCycleId =
     cycleId ?? findPlanningCycle(projectCycles)?.id ?? "";
   const customFields = applicableFields(customFieldDefs, selectedProjectId, kind);
+  // Required custom fields show even when custom fields are hidden.
+  const shownCustomFields = customFields.filter(
+    (field) => field.required || show("custom"),
+  );
   const parentOptions =
     isEpicLevel(kind)
       ? []
@@ -155,6 +170,52 @@ export function CreateIssueForm({
           { id: "", kind, projectId: selectedProjectId },
           issues,
         );
+
+  // Report every change so a minimized dialog can be restored as it was.
+  useEffect(() => {
+    onDraftChange?.({
+      title,
+      description,
+      status: statusChoice,
+      priority,
+      kind: kindChoice,
+      // The resolved project, so a restored draft doesn't follow whichever
+      // project is open by then.
+      projectId: selectedProjectId || null,
+      parentId,
+      assigneeId,
+      dueDate,
+      startDate,
+      cycleId,
+      estimate,
+      originalEstimate,
+      environment,
+      labelIds,
+      fixVersionId,
+      componentIds,
+      customValues,
+    });
+  }, [
+    onDraftChange,
+    title,
+    description,
+    statusChoice,
+    priority,
+    kindChoice,
+    selectedProjectId,
+    parentId,
+    assigneeId,
+    dueDate,
+    startDate,
+    cycleId,
+    estimate,
+    originalEstimate,
+    environment,
+    labelIds,
+    fixVersionId,
+    componentIds,
+    customValues,
+  ]);
 
   useEffect(() => {
     if (!selectedProjectId) return;
@@ -319,22 +380,24 @@ export function CreateIssueForm({
 
         <hr className="create-issue-divider" />
 
-        <label className="form-field">
-          <span>Status</span>
-          <select
-            value={status}
-            onChange={(event) => setStatus(event.target.value as IssueStatus)}
-          >
-            {statusOptions.map((option) => (
-              <option value={option.key} key={option.key}>
-                {option.name}
-              </option>
-            ))}
-          </select>
-          <small className="field-meta">
-            This is the initial status upon creation
-          </small>
-        </label>
+        {show("status") && (
+          <label className="form-field">
+            <span>Status</span>
+            <select
+              value={status}
+              onChange={(event) => setStatus(event.target.value as IssueStatus)}
+            >
+              {statusOptions.map((option) => (
+                <option value={option.key} key={option.key}>
+                  {option.name}
+                </option>
+              ))}
+            </select>
+            <small className="field-meta">
+              This is the initial status upon creation
+            </small>
+          </label>
+        )}
 
         <label className="form-field">
           <span>Summary {required}</span>
@@ -354,57 +417,65 @@ export function CreateIssueForm({
           {error(errors.title, "title-error")}
         </label>
 
-        <div className="form-field">
-          <span>Description</span>
-          <RichTextEditor
-            value={description}
-            onChange={(html) => {
-              setDescription(html);
-              setErrors((current) => ({ ...current, description: undefined }));
-            }}
-            members={members}
-            placeholder="Type @ to mention someone."
-          />
-          {error(errors.description, "description-error")}
-        </div>
-
-        <label className="form-field">
-          <span>Assignee</span>
-          <select
-            value={assigneeId}
-            onChange={(event) => setAssigneeId(event.target.value)}
-          >
-            <option value="">Unassigned</option>
-            {members.map((member) => (
-              <option value={member.id} key={member.id}>
-                {member.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        {activeMember?.id && assigneeId !== activeMember.id && (
-          <button
-            className="text-button create-issue-assign-me"
-            type="button"
-            onClick={() => setAssigneeId(activeMember.id)}
-          >
-            Assign to me
-          </button>
+        {show("description") && (
+          <div className="form-field">
+            <span>Description</span>
+            <RichTextEditor
+              value={description}
+              onChange={(html) => {
+                setDescription(html);
+                setErrors((current) => ({ ...current, description: undefined }));
+              }}
+              members={members}
+              placeholder="Type @ to mention someone."
+            />
+            {error(errors.description, "description-error")}
+          </div>
         )}
 
-        <div className="form-field">
-          <span>Labels</span>
-          <ChipMultiSelect
-            label="Labels"
-            options={labels}
-            selectedIds={labelIds}
-            emptyText="Select labels"
-            renderChip={(label) => <IssueLabelChip label={label} compact />}
-            onChange={setLabelIds}
-          />
-        </div>
+        {show("assignee") && (
+          <>
+            <label className="form-field">
+              <span>Assignee</span>
+              <select
+                value={assigneeId}
+                onChange={(event) => setAssigneeId(event.target.value)}
+              >
+                <option value="">Unassigned</option>
+                {members.map((member) => (
+                  <option value={member.id} key={member.id}>
+                    {member.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {activeMember?.id && assigneeId !== activeMember.id && (
+              <button
+                className="text-button create-issue-assign-me"
+                type="button"
+                onClick={() => setAssigneeId(activeMember.id)}
+              >
+                Assign to me
+              </button>
+            )}
+          </>
+        )}
 
-        {!isEpicLevel(kind) && (
+        {show("labels") && (
+          <div className="form-field">
+            <span>Labels</span>
+            <ChipMultiSelect
+              label="Labels"
+              options={labels}
+              selectedIds={labelIds}
+              emptyText="Select labels"
+              renderChip={(label) => <IssueLabelChip label={label} compact />}
+              onChange={setLabelIds}
+            />
+          </div>
+        )}
+
+        {!isEpicLevel(kind) && (show("parent") || isSubtaskLevel(kind)) && (
           <label className="form-field">
             <span>Parent {isSubtaskLevel(kind) && required}</span>
             <select
@@ -428,44 +499,48 @@ export function CreateIssueForm({
           </label>
         )}
 
-        <label className="form-field">
-          <span>Sprint</span>
-          <select
-            value={selectedCycleId}
-            onChange={(event) => setCycleId(event.target.value)}
-            disabled={!selectedProjectId}
-          >
-            <option value="">None</option>
-            {projectCycles.map((cycle) => (
-              <option value={cycle.id} key={cycle.id}>
-                {cycle.name} - {formatCycleDateRange(cycle)}
-              </option>
-            ))}
-          </select>
-        </label>
+        {show("sprint") && (
+          <label className="form-field">
+            <span>Sprint</span>
+            <select
+              value={selectedCycleId}
+              onChange={(event) => setCycleId(event.target.value)}
+              disabled={!selectedProjectId}
+            >
+              <option value="">None</option>
+              {projectCycles.map((cycle) => (
+                <option value={cycle.id} key={cycle.id}>
+                  {cycle.name} - {formatCycleDateRange(cycle)}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
 
-        <label className="form-field">
-          <span>Story point estimate</span>
-          <select
-            value={estimate ?? ""}
-            onChange={(event) =>
-              setEstimate(
-                event.target.value === ""
-                  ? null
-                  : (Number(event.target.value) as IssueEstimate),
-              )
-            }
-          >
-            <option value="">None</option>
-            {ISSUE_ESTIMATES.map((value) => (
-              <option value={value} key={value}>
-                {value}
-              </option>
-            ))}
-          </select>
-        </label>
+        {show("estimate") && (
+          <label className="form-field">
+            <span>Story point estimate</span>
+            <select
+              value={estimate ?? ""}
+              onChange={(event) =>
+                setEstimate(
+                  event.target.value === ""
+                    ? null
+                    : (Number(event.target.value) as IssueEstimate),
+                )
+              }
+            >
+              <option value="">None</option>
+              {ISSUE_ESTIMATES.map((value) => (
+                <option value={value} key={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
 
-        {customFields.map((field) => {
+        {shownCustomFields.map((field) => {
           const fieldError = errors.customFields?.[field.id];
           return (
             <div className="form-field cf-form-field" key={field.id}>
@@ -497,21 +572,23 @@ export function CreateIssueForm({
           );
         })}
 
-        <label className="form-field">
-          <span>Priority</span>
-          <select
-            value={priority}
-            onChange={(event) => setPriority(event.target.value as IssuePriority)}
-          >
-            {Object.entries(PRIORITY_LABELS).map(([value, label]) => (
-              <option value={value} key={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
+        {show("priority") && (
+          <label className="form-field">
+            <span>Priority</span>
+            <select
+              value={priority}
+              onChange={(event) => setPriority(event.target.value as IssuePriority)}
+            >
+              {Object.entries(PRIORITY_LABELS).map(([value, label]) => (
+                <option value={value} key={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
 
-        {versions && (
+        {versions && show("fixVersion") && (
           <label className="form-field">
             <span>Fix versions</span>
             <select
@@ -530,7 +607,7 @@ export function CreateIssueForm({
           </label>
         )}
 
-        {components && (
+        {components && show("components") && (
           <div className="form-field">
             <span>Components</span>
             <ChipMultiSelect
@@ -543,53 +620,59 @@ export function CreateIssueForm({
           </div>
         )}
 
-        <div className="create-issue-row">
+        {show("dates") && (
+          <div className="create-issue-row">
+            <label className="form-field">
+              <span>Start date</span>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(event) => setStartDate(event.target.value)}
+              />
+            </label>
+            <label className="form-field">
+              <span>Due date</span>
+              <input
+                type="date"
+                value={dueDate}
+                onChange={(event) => setDueDate(event.target.value)}
+              />
+            </label>
+          </div>
+        )}
+
+        {show("originalEstimate") && (
           <label className="form-field">
-            <span>Start date</span>
+            <span>Original estimate</span>
             <input
-              type="date"
-              value={startDate}
-              onChange={(event) => setStartDate(event.target.value)}
+              value={originalEstimate}
+              onChange={(event) => {
+                setOriginalEstimate(event.target.value);
+                setErrors((current) => ({
+                  ...current,
+                  originalEstimate: undefined,
+                }));
+              }}
+              placeholder="e.g. 2w 4d 6h 45m"
+              aria-invalid={Boolean(errors.originalEstimate)}
             />
+            {error(errors.originalEstimate)}
           </label>
-          <label className="form-field">
-            <span>Due date</span>
-            <input
-              type="date"
-              value={dueDate}
-              onChange={(event) => setDueDate(event.target.value)}
-            />
-          </label>
-        </div>
+        )}
 
-        <label className="form-field">
-          <span>Original estimate</span>
-          <input
-            value={originalEstimate}
-            onChange={(event) => {
-              setOriginalEstimate(event.target.value);
-              setErrors((current) => ({
-                ...current,
-                originalEstimate: undefined,
-              }));
-            }}
-            placeholder="e.g. 2w 4d 6h 45m"
-            aria-invalid={Boolean(errors.originalEstimate)}
-          />
-          {error(errors.originalEstimate)}
-        </label>
+        {show("reporter") && (
+          <div className="form-field">
+            <span>Reporter</span>
+            <p className="create-issue-reporter">
+              <span className="avatar avatar-small">
+                {initialsOf(session?.user.name ?? "?")}
+              </span>
+              {session?.user.name ?? "You"}
+            </p>
+          </div>
+        )}
 
-        <div className="form-field">
-          <span>Reporter</span>
-          <p className="create-issue-reporter">
-            <span className="avatar avatar-small">
-              {initialsOf(session?.user.name ?? "?")}
-            </span>
-            {session?.user.name ?? "You"}
-          </p>
-        </div>
-
-        {kind === "BUG" && (
+        {kind === "BUG" && show("environment") && (
           <label className="form-field">
             <span>Environment</span>
             <textarea
