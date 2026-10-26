@@ -2284,3 +2284,13 @@
 .jira-url-cell a:hover {
   text-decoration: underline;
 }
+
+.search-menu-sub > svg:last-child {
+  margin-left: auto;
+}
+
+.search-menu-hint {
+  margin-left: auto;
+  color: var(--gray-500);
+  font-size: 10px;
+}

@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { Issue } from "../../data/issues";
-import { issueFieldRows, issueToHtml, issueToXml, type IssueExportContext } from "./issueExport";
+import {
+  issueFieldRows,
+  issueToHtml,
+  issueToXml,
+  issueXmlItem,
+  issuesReportHtml,
+  issuesToXml,
+  type IssueExportContext,
+} from "./issueExport";
 
 const issue = {
   id: "OPS-7",
@@ -63,5 +71,30 @@ describe("issueToXml", () => {
     expect(xml).toContain("<status>In progress</status>");
     expect(xml).toContain("<![CDATA[<p>Done ]]]]><![CDATA[> soon</p>]]>");
     expect(xml).toContain('<weblink url="https://example.com/spec?a=1&amp;b=2">Spec</weblink>');
+  });
+});
+
+describe("issuesReportHtml", () => {
+  it("builds an escaped table with linked keys", () => {
+    const html = issuesReportHtml(
+      "Bugs <open>",
+      ["Key", "Summary"],
+      [["OPS-7", "Fix <login> & retry"]],
+      ["https://hub.test/issues/OPS-7"],
+    );
+    expect(html).toContain("<title>Bugs &lt;open&gt;</title>");
+    expect(html).toContain('<td><a href="https://hub.test/issues/OPS-7">OPS-7</a></td>');
+    expect(html).toContain("<td>Fix &lt;login&gt; &amp; retry</td>");
+    expect(html).toContain("1 work item ·");
+  });
+});
+
+describe("issuesToXml", () => {
+  it("puts several items in one channel", () => {
+    const item = issueXmlItem(issue, ctx);
+    const xml = issuesToXml([item, item]);
+    expect(xml.match(/<item>/g)).toHaveLength(2);
+    expect(xml.startsWith('<?xml version="1.0" encoding="UTF-8"?>')).toBe(true);
+    expect(xml.trim().endsWith("</rss>")).toBe(true);
   });
 });

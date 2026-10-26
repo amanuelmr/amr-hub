@@ -44,8 +44,31 @@ export function issueFieldRows(issue: Issue, ctx: IssueExportContext): [string, 
   return rows.filter((row): row is [string, string] => Boolean(row[1]));
 }
 
-/** A self-contained HTML document; Word opens it as a .doc file and it prints cleanly. */
-export function issueToHtml(issue: Issue, ctx: IssueExportContext) {
+const DOCUMENT_STYLE = `
+body{font-family:Arial,Helvetica,sans-serif;font-size:12pt;color:#111;margin:24px}
+h1{font-size:18pt;margin:0 0 4px}
+.key{color:#555;font-size:10pt;margin:0 0 16px}
+table{border-collapse:collapse;margin-bottom:16px}
+th{text-align:left;padding:3px 16px 3px 0;color:#555;font-weight:normal;vertical-align:top}
+td{padding:3px 0}
+h2{font-size:13pt;border-bottom:1px solid #ccc;padding-bottom:2px;margin:18px 0 8px}
+.comment{margin-bottom:10px}.meta{color:#555;font-size:10pt;margin:0}
+.report th,.report td{border:1px solid #ccc;padding:4px 8px;font-size:10pt;vertical-align:top}
+.report th{background:#f2f2f2;color:#111;font-weight:bold}
+.issue + .issue{page-break-before:always;border-top:1px solid #ccc;padding-top:16px;margin-top:24px}
+`;
+
+/** Wraps a body in a standalone HTML document (Word opens it as .doc). */
+export function htmlDocument(title: string, body: string) {
+  return `<!doctype html>
+<html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
+<style>${DOCUMENT_STYLE}</style></head><body>
+${body}
+</body></html>`;
+}
+
+/** One work item's fields, description, links and comments. */
+export function issueSection(issue: Issue, ctx: IssueExportContext) {
   const fields = issueFieldRows(issue, ctx)
     .map(([label, value]) => `<tr><th>${escapeHtml(label)}</th><td>${escapeHtml(value)}</td></tr>`)
     .join("");
@@ -63,19 +86,7 @@ export function issueToHtml(issue: Issue, ctx: IssueExportContext) {
         `<div class="comment"><p class="meta">${escapeHtml(comment.author)} · ${day(comment.createdAt)}</p>${ctx.sanitize(comment.body)}</div>`,
     )
     .join("");
-  const title = `[${issue.id}] ${issue.title}`;
-  return `<!doctype html>
-<html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
-<style>
-body{font-family:Arial,Helvetica,sans-serif;font-size:12pt;color:#111;margin:24px}
-h1{font-size:18pt;margin:0 0 4px}
-.key{color:#555;font-size:10pt;margin:0 0 16px}
-table{border-collapse:collapse;margin-bottom:16px}
-th{text-align:left;padding:3px 16px 3px 0;color:#555;font-weight:normal;vertical-align:top}
-td{padding:3px 0}
-h2{font-size:13pt;border-bottom:1px solid #ccc;padding-bottom:2px;margin:18px 0 8px}
-.comment{margin-bottom:10px}.meta{color:#555;font-size:10pt;margin:0}
-</style></head><body>
+  return `<section class="issue">
 <p class="key"><a href="${escapeHtml(ctx.url)}">${escapeHtml(issue.id)}</a></p>
 <h1>${escapeHtml(issue.title)}</h1>
 <table>${fields}</table>
@@ -83,11 +94,47 @@ h2{font-size:13pt;border-bottom:1px solid #ccc;padding-bottom:2px;margin:18px 0 
 ${issue.description ? ctx.sanitize(issue.description) : "<p>None</p>"}
 ${links ? `<h2>Links</h2><ul>${links}</ul>` : ""}
 ${comments ? `<h2>Comments</h2>${comments}` : ""}
-</body></html>`;
+</section>`;
+}
+
+/** A self-contained HTML document; Word opens it as a .doc file and it prints cleanly. */
+export function issueToHtml(issue: Issue, ctx: IssueExportContext) {
+  return htmlDocument(`[${issue.id}] ${issue.title}`, issueSection(issue, ctx));
+}
+
+/** A table of work items with the given columns, as an HTML report. */
+export function issuesReportHtml(
+  title: string,
+  header: string[],
+  rows: string[][],
+  links: string[],
+) {
+  const head = header.map((label) => `<th>${escapeHtml(label)}</th>`).join("");
+  const body = rows
+    .map(
+      (row, index) =>
+        `<tr>${row
+          .map((cell, column) =>
+            // The first column is the key; it links back to the work item.
+            column === 0 && links[index]
+              ? `<td><a href="${escapeHtml(links[index])}">${escapeHtml(cell)}</a></td>`
+              : `<td>${escapeHtml(cell)}</td>`,
+          )
+          .join("")}</tr>`,
+    )
+    .join("\n");
+  return htmlDocument(
+    title,
+    `<h1>${escapeHtml(title)}</h1>
+<p class="meta">${rows.length} work ${rows.length === 1 ? "item" : "items"} · exported ${new Date().toISOString().slice(0, 10)}</p>
+<table class="report"><thead><tr>${head}</tr></thead><tbody>
+${body}
+</tbody></table>`,
+  );
 }
 
 /** An RSS-style XML item, the usual shape for one exported work item. */
-export function issueToXml(issue: Issue, ctx: IssueExportContext) {
+export function issueXmlItem(issue: Issue, ctx: IssueExportContext) {
   const tag = (name: string, value: string | null | undefined, attrs = "") =>
     value ? `    <${name}${attrs}>${escapeXml(value)}</${name}>\n` : "";
   const labels = issue.labels.map((label) => `      <label>${escapeXml(label.name)}</label>\n`).join("");
@@ -103,10 +150,7 @@ export function issueToXml(issue: Issue, ctx: IssueExportContext) {
         `      <comment author="${escapeXml(comment.author)}" created="${escapeXml(comment.createdAt)}">${cdata(comment.body)}</comment>\n`,
     )
     .join("");
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<rss version="0.92">
-  <channel>
-  <item>
+  return `  <item>
 ${tag("title", `[${issue.id}] ${issue.title}`)}${tag("link", ctx.url)}${tag("key", issue.id)}${tag("summary", issue.title)}${tag("type", ctx.type)}${tag("status", ctx.status)}${tag("priority", PRIORITY_LABELS[issue.priority])}${tag("resolution", issue.resolution ? RESOLUTION_LABELS[issue.resolution] : "Unresolved")}${tag("assignee", issue.assignee?.name)}${tag("reporter", issue.creator?.name)}${tag("parent", issue.parent?.id)}${tag("fixVersion", issue.fixVersion?.name)}${tag("storyPoints", issue.estimate === null ? null : String(issue.estimate))}${tag("due", issue.dueDate)}${tag("created", issue.createdAt)}${tag("updated", issue.updatedAt)}    <description>${cdata(issue.description ?? "")}</description>
     <labels>
 ${labels}    </labels>
@@ -115,7 +159,19 @@ ${links}${webLinks}    </issuelinks>
     <comments>
 ${comments}    </comments>
   </item>
-  </channel>
+`;
+}
+
+/** Several work items in one RSS-style XML document. */
+export function issuesToXml(items: string[]) {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="0.92">
+  <channel>
+${items.join("")}  </channel>
 </rss>
 `;
+}
+
+export function issueToXml(issue: Issue, ctx: IssueExportContext) {
+  return issuesToXml([issueXmlItem(issue, ctx)]);
 }
