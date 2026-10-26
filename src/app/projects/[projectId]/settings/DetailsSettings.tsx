@@ -3,10 +3,12 @@
 import { FormEvent, useState } from "react";
 import { useProjects } from "../../../ProjectProvider";
 import {
+  PROJECT_BACKGROUNDS,
   PROJECT_COLORS,
   PROJECT_STATUS_LABELS,
   type BoardType,
   type Project,
+  type ProjectBackground,
   type ProjectStatus,
 } from "../../../data/projects";
 import { toDateInput, type ProjectPerson } from "./adminUi";
@@ -28,6 +30,10 @@ export function DetailsSettings({
   const [status, setStatus] = useState<ProjectStatus>(project.status);
   const [targetDate, setTargetDate] = useState(toDateInput(project.targetDate));
   const [boardType, setBoardType] = useState<BoardType>(project.boardType);
+  const [background, setBackground] = useState<ProjectBackground | null>(
+    project.background ?? null,
+  );
+  const [url, setUrl] = useState(project.url ?? "");
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(
     null,
   );
@@ -42,6 +48,11 @@ export function DetailsSettings({
       });
       return;
     }
+    const trimmedUrl = url.trim();
+    if (trimmedUrl && !/^https?:\/\/\S+\.\S+/i.test(trimmedUrl)) {
+      setMessage({ ok: false, text: "Use a full http or https URL." });
+      return;
+    }
     setIsSaving(true);
     setMessage(null);
     const saved = await updateProject(project.id, {
@@ -52,6 +63,8 @@ export function DetailsSettings({
       status,
       targetDate: targetDate || null,
       boardType,
+      background,
+      url: trimmedUrl || null,
     });
     setIsSaving(false);
     setMessage(
@@ -91,6 +104,19 @@ export function DetailsSettings({
             rows={3}
             maxLength={500}
           />
+        </label>
+        <label className="form-field">
+          <span>URL</span>
+          <input
+            type="url"
+            value={url}
+            onChange={(event) => setUrl(event.target.value)}
+            maxLength={2000}
+            placeholder="https://docs.example.com/project"
+          />
+          <span className="field-meta">
+            A page about the project, such as its docs or repository.
+          </span>
         </label>
         <div className="pa-form-row">
           <label className="form-field">
@@ -163,6 +189,39 @@ export function DetailsSettings({
               </label>
             ))}
           </div>
+        </fieldset>
+        <fieldset className="form-field label-field">
+          <legend>Background</legend>
+          <div className="label-options project-background-options">
+            <label title="None">
+              <input
+                type="radio"
+                name="project-background"
+                checked={background === null}
+                onChange={() => setBackground(null)}
+              />
+              <span className="project-background-swatch" data-background="none">
+                <span className="sr-only">None</span>
+              </span>
+            </label>
+            {PROJECT_BACKGROUNDS.map((option) => (
+              <label key={option.key} title={option.label}>
+                <input
+                  type="radio"
+                  name="project-background"
+                  checked={background === option.key}
+                  onChange={() => setBackground(option.key)}
+                />
+                <span
+                  className="project-background-swatch"
+                  data-background={option.key}
+                >
+                  <span className="sr-only">{option.label}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+          <span className="field-meta">Shown behind every page of this project.</span>
         </fieldset>
       </fieldset>
       {message && (

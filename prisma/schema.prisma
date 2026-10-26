@@ -225,6 +225,10 @@ model Project {
 
   accessLevel         String               @default("OPEN")
   category            String?
+  /// Preset key for the project pages' background, or null for none.
+  background          String?
+  /// An outside page for the project (docs, repo, site).
+  url                 String?
   archivedAt          DateTime?
   deletedAt           DateTime?
   workflowStatuses    WorkflowStatus[]
@@ -350,6 +354,7 @@ model Member {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   assignedIssues Issue[]      @relation("IssueAssignee")
+  drivenVersions Version[]    @relation("VersionDriver")
 
   @@unique([organizationId, userId])
   @@index([userId])
@@ -531,10 +536,13 @@ model Version {
   startDate   DateTime?
   releaseDate DateTime?
   releasedAt  DateTime?
+  /// The member responsible for getting the release out.
+  driverId    String?
   projectId   String
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  driver      Member?   @relation("VersionDriver", fields: [driverId], references: [id], onDelete: SetNull)
   issues      Issue[]
 
   @@unique([projectId, name])

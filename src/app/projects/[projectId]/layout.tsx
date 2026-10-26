@@ -117,7 +117,7 @@ export default function ProjectLayout({
   };
 
   return (
-    <div className="project-shell">
+    <div className="project-shell" data-background={project?.background ?? undefined}>
       {project && (
         <div
           className={

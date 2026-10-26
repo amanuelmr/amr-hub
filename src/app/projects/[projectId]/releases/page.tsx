@@ -12,6 +12,7 @@ import {
   Search,
 } from "lucide-react";
 import { apiRequest, useIssues } from "../../../IssueProvider";
+import type { WorkspaceMember } from "../../../data/issues";
 import { WorkspaceLoading } from "../../../components/WorkspaceLoading";
 import {
   AdminDialog,
@@ -40,18 +41,22 @@ type StatusFilter = "ALL" | VersionStatus;
 
 function VersionForm({
   version,
+  members,
   onSubmit,
   onCancel,
 }: {
   version?: ProjectVersion;
+  members: WorkspaceMember[];
   onSubmit: (values: {
     name: string;
     description: string | null;
     startDate: string | null;
     releaseDate: string | null;
+    driverId: string | null;
   }) => Promise<void>;
   onCancel: () => void;
 }) {
+  const [driverId, setDriverId] = useState(version?.driverId ?? "");
   const [name, setName] = useState(version?.name ?? "");
   const [description, setDescription] = useState(version?.description ?? "");
   const [startDate, setStartDate] = useState(toDateInput(version?.startDate));
@@ -79,6 +84,7 @@ function VersionForm({
         description: description.trim() || null,
         startDate: startDate || null,
         releaseDate: releaseDate || null,
+        driverId: driverId || null,
       });
     } catch (submitError) {
       setError(errorMessage(submitError, "Version could not be saved"));
@@ -116,6 +122,18 @@ function VersionForm({
           />
         </label>
       </div>
+      <label className="form-field">
+        <span>Driver</span>
+        <select value={driverId} onChange={(event) => setDriverId(event.target.value)}>
+          <option value="">No driver</option>
+          {members.map((member) => (
+            <option key={member.id} value={member.id}>
+              {member.name}
+            </option>
+          ))}
+        </select>
+        <span className="field-meta">Who is responsible for getting this release out.</span>
+      </label>
       <label className="form-field">
         <span>Description</span>
         <textarea
@@ -254,13 +272,22 @@ function MoveIssuesDialogBody({
   );
 }
 
+function initialsOf(name: string) {
+  return name
+    .split(/\s+/)
+    .map((part) => part[0] ?? "")
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
+
 export default function ProjectReleasesPage() {
   const params = useParams<{ projectId: string }>();
   const projectId = params.projectId;
   const { isViewer: isWorkspaceViewer } = useWorkspaceRole();
   const projectPermissions = useProjectPermissions(projectId);
   const isViewer = isWorkspaceViewer || !projectPermissions.canEdit;
-  const { refreshIssues } = useIssues();
+  const { refreshIssues, members } = useIssues();
   const {
     items: versions,
     setItems,
@@ -271,6 +298,7 @@ export default function ProjectReleasesPage() {
   const [dialog, setDialog] = useState<DialogState>(null);
   const [filter, setFilter] = useState<StatusFilter>("ALL");
   const [query, setQuery] = useState("");
+  const [driverFilter, setDriverFilter] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
 
   const base = `/api/projects/${encodeURIComponent(projectId)}/versions`;
@@ -282,9 +310,23 @@ export default function ProjectReleasesPage() {
           (filter === "ALL"
             ? version.status !== "ARCHIVED"
             : version.status === filter) &&
+          (!driverFilter ||
+            (driverFilter === "none" ? !version.driverId : version.driverId === driverFilter)) &&
           version.name.toLowerCase().includes(query.trim().toLowerCase()),
       ),
-    [versions, filter, query],
+    [versions, filter, query, driverFilter],
+  );
+  // Only people who drive a release in this project are offered as filters.
+  const drivers = useMemo(
+    () =>
+      [
+        ...new Map(
+          versions
+            .filter((version) => version.driverId)
+            .map((version) => [version.driverId!, version.driverName ?? "Unknown"]),
+        ),
+      ].sort((a, b) => a[1].localeCompare(b[1])),
+    [versions],
   );
 
   const upsert = (version: ProjectVersion) =>
@@ -343,6 +385,18 @@ export default function ProjectReleasesPage() {
             </button>
           ))}
         </div>
+        <label className="select-button">
+          <span className="sr-only">Driver</span>
+          <select value={driverFilter} onChange={(event) => setDriverFilter(event.target.value)}>
+            <option value="">Driver: All</option>
+            {drivers.map(([id, name]) => (
+              <option key={id} value={id}>
+                {name}
+              </option>
+            ))}
+            <option value="none">No driver</option>
+          </select>
+        </label>
         <div className="jira-toolbar-spacer" />
         {!isViewer && (
           <button
@@ -380,6 +434,7 @@ export default function ProjectReleasesPage() {
                 <th>Version</th>
                 <th>Status</th>
                 <th>Progress</th>
+                <th>Driver</th>
                 <th>Start date</th>
                 <th>Release date</th>
                 <th>Description</th>
@@ -407,6 +462,18 @@ export default function ProjectReleasesPage() {
                       <span className="pa-muted">
                         {version.doneCount}/{version.issueCount}
                       </span>
+                    </td>
+                    <td>
+                      {version.driverName ? (
+                        <span className="release-driver">
+                          <span className="avatar avatar-small" aria-hidden="true">
+                            {initialsOf(version.driverName)}
+                          </span>
+                          {version.driverName}
+                        </span>
+                      ) : (
+                        <span className="pa-muted">—</span>
+                      )}
                     </td>
                     <td>{formatDay(version.startDate)}</td>
                     <td>
@@ -518,6 +585,7 @@ export default function ProjectReleasesPage() {
           <VersionForm
             key={dialog.type === "edit" ? dialog.version.id : "new"}
             version={dialog.type === "edit" ? dialog.version : undefined}
+            members={members}
             onCancel={closeDialog}
             onSubmit={async (values) => {
               const saved = await apiRequest<ProjectVersion>(

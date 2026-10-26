@@ -13,6 +13,7 @@ import {
 } from "./projectAccess";
 
 import {
+  isProjectBackground,
   parseBoardConfig,
   type ProjectAccessLevel,
   type ProjectMemberEntry,
@@ -42,6 +43,8 @@ type StoredProject = {
   boardType: string;
   leadUserId: string | null;
   boardConfig: string | null;
+  background?: string | null;
+  url?: string | null;
   accessLevel: string;
   archivedAt: Date | null;
   deletedAt: Date | null;
@@ -102,6 +105,8 @@ async function serializeProject(
     boardType: project.boardType as BoardType,
     leadUserId: project.leadUserId,
     boardConfig: parseBoardConfig(project.boardConfig),
+    background: isProjectBackground(project.background) ? project.background : null,
+    url: project.url ?? null,
     leadName: lead?.name ?? null,
     starred: Boolean(star),
     accessLevel: project.accessLevel as ProjectAccessLevel,

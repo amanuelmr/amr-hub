@@ -4,6 +4,7 @@ import {
   createVersion,
   createVersionSchema,
   DuplicateVersionNameError,
+  InvalidDriverError,
   listVersions,
 } from "../../../../../server/versions";
 import {
@@ -60,7 +61,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return errorResponse(
       error,
       "Version could not be created",
-      [],
+      [InvalidDriverError],
       [DuplicateVersionNameError],
     );
   }

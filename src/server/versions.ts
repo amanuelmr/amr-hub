@@ -15,6 +15,8 @@ export type ProjectVersion = {
   startDate: string | null;
   releaseDate: string | null;
   releasedAt: string | null;
+  driverId: string | null;
+  driverName: string | null;
   issueCount: number;
   doneCount: number;
   inProgressCount: number;
@@ -37,6 +39,7 @@ export const createVersionSchema = z
     description: z.string().trim().max(500).nullable().default(null),
     startDate: dateSchema.nullable().default(null),
     releaseDate: dateSchema.nullable().default(null),
+    driverId: z.string().trim().min(1).max(120).nullable().default(null),
   })
   .strict()
   .refine(
@@ -57,6 +60,7 @@ export const updateVersionSchema = z
     startDate: dateSchema.nullable().optional(),
     releaseDate: dateSchema.nullable().optional(),
     status: z.enum(["UNRELEASED", "RELEASED", "ARCHIVED"]).optional(),
+    driverId: z.string().trim().min(1).max(120).nullable().optional(),
   })
   .strict()
   .refine((updates) => Object.keys(updates).length > 0, {
@@ -83,6 +87,13 @@ export class DuplicateVersionNameError extends Error {
   }
 }
 
+export class InvalidDriverError extends Error {
+  constructor() {
+    super("Choose a driver from this workspace");
+    this.name = "InvalidDriverError";
+  }
+}
+
 export class InvalidTargetVersionError extends Error {
   constructor() {
     super("Choose another unreleased version from this project");
@@ -99,13 +110,12 @@ function optionalDate(value: string | null | undefined) {
   return value ? toDate(value) : null;
 }
 
-type StoredVersion = Prisma.VersionGetPayload<{
-  include: { issues: { where: { deletedAt: null }; select: { status: true } } };
-}>;
-
 const versionInclude = {
   issues: { where: { deletedAt: null }, select: { status: true } },
+  driver: { select: { id: true, user: { select: { name: true } } } },
 } satisfies Prisma.VersionInclude;
+
+type StoredVersion = Prisma.VersionGetPayload<{ include: typeof versionInclude }>;
 
 function serializeVersion(version: StoredVersion): ProjectVersion {
   return {
@@ -116,6 +126,8 @@ function serializeVersion(version: StoredVersion): ProjectVersion {
     startDate: version.startDate?.toISOString() ?? null,
     releaseDate: version.releaseDate?.toISOString() ?? null,
     releasedAt: version.releasedAt?.toISOString() ?? null,
+    driverId: version.driver?.id ?? null,
+    driverName: version.driver?.user.name ?? null,
     issueCount: version.issues.length,
     doneCount: version.issues.filter((issue) => isDoneStatus(issue.status))
       .length,
@@ -137,6 +149,16 @@ async function findProject(projectId: string, organizationId: string) {
     where: { id: projectId, organizationId },
     select: { id: true },
   });
+}
+
+/** A driver must be a member of the project's workspace. */
+async function assertDriver(driverId: string | null | undefined, organizationId: string) {
+  if (!driverId) return;
+  const member = await prisma.member.findFirst({
+    where: { id: driverId, organizationId },
+    select: { id: true },
+  });
+  if (!member) throw new InvalidDriverError();
 }
 
 async function findVersion(
@@ -181,12 +203,14 @@ export async function createVersion(
   organizationId: string,
 ) {
   if (!(await findProject(projectId, organizationId))) return null;
+  await assertDriver(input.driverId, organizationId);
   try {
     const version = await prisma.version.create({
       data: {
         projectId,
         name: input.name,
         description: input.description,
+        driverId: input.driverId,
         startDate: optionalDate(input.startDate),
         releaseDate: optionalDate(input.releaseDate),
       },
@@ -207,9 +231,10 @@ export async function updateVersion(
 ) {
   const current = await findVersion(projectId, versionId, organizationId);
   if (!current) return null;
+  await assertDriver(updates.driverId, organizationId);
 
   const { startDate, releaseDate, status, ...fields } = updates;
-  const statusFields: Prisma.VersionUpdateInput = {};
+  const statusFields: Prisma.VersionUncheckedUpdateInput = {};
   if (status && status !== current.status) {
     statusFields.status = status;
     if (status === "RELEASED" && !current.releasedAt) {

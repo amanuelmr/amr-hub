@@ -2269,3 +2269,18 @@
     overflow: visible;
   }
 }
+
+.jira-url-cell a {
+  display: inline-block;
+  max-width: 200px;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.jira-url-cell a:hover {
+  text-decoration: underline;
+}
