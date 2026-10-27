@@ -2,12 +2,15 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { BellRing, Filter, Mail, Trash2 } from "lucide-react";
+import { BellRing, CalendarClock, Filter, Mail, Settings2, Trash2 } from "lucide-react";
 import { apiRequest } from "../../IssueProvider";
 import {
   describeSchedule,
+  HOMEPAGES,
   NOTIFICATION_EVENTS,
   type EmailDigest,
+  type EmailFormat,
+  type Homepage,
   type FilterSubscription,
   type NotificationChannel,
   type NotificationSettings,
@@ -24,19 +27,24 @@ type SettingsUpdate = {
   events?: Partial<Record<NotificationType, Partial<Record<NotificationChannel, boolean>>>>;
   notifyOwnChanges?: boolean;
   emailDigest?: EmailDigest;
+  emailFormat?: EmailFormat;
+  autoWatch?: boolean;
+  dueReminders?: boolean;
+  weeklySummary?: boolean;
+  homepage?: Homepage;
 };
 
 function applyLocal(settings: NotificationSettings, update: SettingsUpdate) {
+  const { events = {}, ...fields } = update;
   const next: NotificationSettings = {
     ...settings,
+    ...fields,
     events: { ...settings.events },
   };
-  for (const [type, channels] of Object.entries(update.events ?? {})) {
+  for (const [type, channels] of Object.entries(events)) {
     const key = type as NotificationType;
     next.events[key] = { ...next.events[key], ...channels };
   }
-  if (update.notifyOwnChanges !== undefined) next.notifyOwnChanges = update.notifyOwnChanges;
-  if (update.emailDigest !== undefined) next.emailDigest = update.emailDigest;
   return next;
 }
 
@@ -113,7 +121,7 @@ export default function NotificationSettingsPage() {
             <Link href="/account">Account settings</Link>
             <span aria-hidden="true">/</span>
           </nav>
-          <h1 className="jira-page-title">Notifications</h1>
+          <h1 className="jira-page-title">Personal settings</h1>
         </div>
         <p className="notification-settings-status" role="status" aria-live="polite">
           {status === "saving" ? "Saving…" : status === "saved" ? "All changes saved" : ""}
@@ -133,6 +141,47 @@ export default function NotificationSettingsPage() {
 
       {settings && (
         <>
+          <section className="notification-settings-card" aria-labelledby="personal-general-title">
+            <header>
+              <span aria-hidden="true">
+                <Settings2 size={16} />
+              </span>
+              <div>
+                <h2 id="personal-general-title">General</h2>
+                <p>How AMR Hub opens and follows your work.</p>
+              </div>
+            </header>
+            <label className="notification-setting-row">
+              <span>
+                <strong>Your homepage</strong>
+                <small>Where you land after signing in or clicking the AMR Hub logo.</small>
+              </span>
+              <select
+                value={settings.homepage}
+                onChange={(change) => void save({ homepage: change.target.value as Homepage })}
+              >
+                {HOMEPAGES.map((option) => (
+                  <option key={option.key} value={option.key}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="notification-own-changes">
+              <input
+                type="checkbox"
+                role="switch"
+                className="notification-switch"
+                checked={settings.autoWatch}
+                onChange={(change) => void save({ autoWatch: change.target.checked })}
+              />
+              <span>
+                <strong>Watch work items I create or comment on</strong>
+                <small>You&apos;ll hear about later updates to them. Turn off to watch only by choice.</small>
+              </span>
+            </label>
+          </section>
+
           <section className="notification-settings-card" aria-labelledby="notify-events-title">
             <header>
               <span aria-hidden="true">
@@ -223,6 +272,67 @@ export default function NotificationSettingsPage() {
                 </label>
               ))}
             </div>
+            <h3 className="notification-subheading">Email format</h3>
+            <div className="notification-digest-options" role="radiogroup" aria-label="Email format">
+              {(
+                [
+                  ["HTML", "Formatted", "Styled emails with buttons and links."],
+                  ["TEXT", "Plain text", "Simple text emails for any mail client."],
+                ] as const
+              ).map(([value, label, hint]) => (
+                <label key={value} className="notification-digest-option">
+                  <input
+                    type="radio"
+                    name="email-format"
+                    value={value}
+                    checked={settings.emailFormat === value}
+                    onChange={() => void save({ emailFormat: value })}
+                  />
+                  <span>
+                    <strong>{label}</strong>
+                    <small>{hint}</small>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </section>
+
+          <section className="notification-settings-card" aria-labelledby="notify-digests-title">
+            <header>
+              <span aria-hidden="true">
+                <CalendarClock size={16} />
+              </span>
+              <div>
+                <h2 id="notify-digests-title">Personal digests</h2>
+                <p>Scheduled emails about the work assigned to you.</p>
+              </div>
+            </header>
+            <label className="notification-own-changes">
+              <input
+                type="checkbox"
+                role="switch"
+                className="notification-switch"
+                checked={settings.dueReminders}
+                onChange={(change) => void save({ dueReminders: change.target.checked })}
+              />
+              <span>
+                <strong>Due and overdue reminders</strong>
+                <small>A morning email when your open work is overdue or due within two days.</small>
+              </span>
+            </label>
+            <label className="notification-own-changes">
+              <input
+                type="checkbox"
+                role="switch"
+                className="notification-switch"
+                checked={settings.weeklySummary}
+                onChange={(change) => void save({ weeklySummary: change.target.checked })}
+              />
+              <span>
+                <strong>Weekly summary</strong>
+                <small>Every Monday: what you finished last week and what is due this week.</small>
+              </span>
+            </label>
           </section>
 
           <section className="notification-settings-card" aria-labelledby="notify-subs-title">

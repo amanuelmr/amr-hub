@@ -250,12 +250,15 @@ export default function AccountPage() {
               <BellRing size={17} aria-hidden="true" />
             </span>
             <div>
-              <h2>Notifications</h2>
-              <p>Choose which updates reach you in app and by email, and manage filter subscriptions.</p>
+              <h2>Personal settings</h2>
+              <p>
+                Your homepage, auto-watch, which updates reach you in app and by email,
+                digests and filter subscriptions.
+              </p>
             </div>
           </header>
           <Link className="secondary-button" href="/account/notifications">
-            Manage notifications
+            Open personal settings
           </Link>
         </section>
 

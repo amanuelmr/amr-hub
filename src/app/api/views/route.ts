@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
 function jqlErrorMessage(error: ZodError): string | null {
   const issues = error.issues.flatMap((issue) =>
     issue.code === "invalid_union"
-      ? issue.unionErrors.flatMap((unionError) => unionError.issues)
+      ? issue.errors.flat()
       : [issue],
   );
   return (

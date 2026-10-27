@@ -115,6 +115,26 @@ export async function listAttachments(issueId: string, organizationId: string) {
   return attachments.map(serializeAttachment);
 }
 
+/** Every file on the project's live work items, newest first (no contents). */
+export async function listProjectAttachments(projectId: string, organizationId: string) {
+  const exists = await prisma.project.count({
+    where: { id: projectId, organizationId, deletedAt: null },
+  });
+  if (!exists) return null;
+
+  const attachments = await prisma.attachment.findMany({
+    where: { issue: { projectId, organizationId, deletedAt: null } },
+    select: { ...attachmentSummarySelect, issue: { select: { id: true, title: true } } },
+    orderBy: { createdAt: "desc" },
+    take: 1000,
+  });
+  return attachments.map((attachment) => ({
+    ...serializeAttachment(attachment),
+    issueId: attachment.issue.id,
+    issueTitle: attachment.issue.title,
+  }));
+}
+
 export async function createAttachments(
   issueId: string,
   files: File[],

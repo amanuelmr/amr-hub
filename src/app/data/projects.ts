@@ -193,6 +193,10 @@ export type Project = {
   boardType: BoardType;
   leadUserId: string | null;
   boardConfig: BoardConfig;
+  /** Background of the project's pages; null for the plain theme. */
+  background?: ProjectBackground | null;
+  /** An outside page for the project (docs, repo, site). */
+  url?: string | null;
   leadName?: string | null;
   /** Whether the current user starred the project. */
   starred?: boolean;
@@ -274,6 +278,8 @@ export type NewProjectInput = {
   targetDate: string | null;
   boardType?: BoardType;
   accessLevel?: ProjectAccessLevel;
+  /** Starting template (see projectTemplates); sets the board and workflow names. */
+  template?: string;
 };
 
 export type ProjectUpdates = Partial<
@@ -287,6 +293,8 @@ export type ProjectUpdates = Partial<
     | "boardType"
     | "leadUserId"
     | "boardConfig"
+    | "background"
+    | "url"
   >
 >;
 
@@ -296,6 +304,23 @@ export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
   COMPLETED: "Completed",
   CANCELED: "Canceled",
 };
+
+/** Backgrounds a project's pages can use; each key maps to a CSS tint. */
+export const PROJECT_BACKGROUNDS = [
+  { key: "lime", label: "Lime" },
+  { key: "cyan", label: "Cyan" },
+  { key: "violet", label: "Violet" },
+  { key: "amber", label: "Amber" },
+  { key: "rose", label: "Rose" },
+  { key: "sunrise", label: "Sunrise" },
+  { key: "ocean", label: "Ocean" },
+] as const;
+
+export type ProjectBackground = (typeof PROJECT_BACKGROUNDS)[number]["key"];
+
+export function isProjectBackground(value: unknown): value is ProjectBackground {
+  return PROJECT_BACKGROUNDS.some((option) => option.key === value);
+}
 
 export const PROJECT_COLORS = [
   "#2563eb",

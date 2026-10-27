@@ -6,12 +6,15 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   Archive,
   ArchiveRestore,
+  ChevronRight,
   CircleAlert,
   Copy,
+  Download,
   Flag,
   FolderInput,
   Link2,
   MoreHorizontal,
+  Printer,
   Trash2,
   X,
   Zap,
@@ -22,7 +25,18 @@ import { useProjects } from "../../ProjectProvider";
 import type { Issue } from "../../data/issues";
 import { cloneTitleFor } from "./issueDetailLogic";
 import { issueUrl, type IssueDetailController } from "./useIssueDetail";
-import { isEpicLevel, isSubtaskLevel } from "../../data/workflow";
+import { isEpicLevel, isSubtaskLevel, statusName, typeName } from "../../data/workflow";
+import { useWorkflow } from "../../WorkflowProvider";
+import { sanitizeHtmlInBrowser } from "../browserSanitize";
+import {
+  issueCsvRows,
+  issueToHtml,
+  issueToXml,
+  type IssueExportContext,
+} from "./issueExport";
+import { downloadCsv, toCsv } from "../search/csv";
+import { stripHtml } from "../../data/richText";
+import { downloadFile, printHtml } from "../fileOutput";
 
 export function IssueDialog({
   open,
@@ -108,6 +122,13 @@ export function IssueMoreMenu({
   onMenuOpenChange?: (open: boolean) => void;
 }) {
   const [dialog, setDialog] = useState<DialogKind>(null);
+  const workflow = useWorkflow(issue.projectId);
+  const exportContext = (): IssueExportContext => ({
+    url: `${window.location.origin}/issues/${encodeURIComponent(issue.id)}`,
+    status: statusName(issue.status, workflow.statuses),
+    type: typeName(issue.kind, workflow.types),
+    sanitize: sanitizeHtmlInBrowser,
+  });
 
   const toggleArchive = async () => {
     try {
@@ -188,6 +209,57 @@ export function IssueMoreMenu({
               <Link2 size={14} aria-hidden="true" />
               Copy link
             </DropdownMenu.Item>
+            <DropdownMenu.Item
+              className="issue-menu-item"
+              onSelect={() => printHtml(issueToHtml(issue, exportContext()))}
+            >
+              <Printer size={14} aria-hidden="true" />
+              Print
+            </DropdownMenu.Item>
+            <DropdownMenu.Sub>
+              <DropdownMenu.SubTrigger className="issue-menu-item">
+                <Download size={14} aria-hidden="true" />
+                Export
+                <ChevronRight className="issue-menu-end" size={14} aria-hidden="true" />
+              </DropdownMenu.SubTrigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.SubContent className="issue-menu" sideOffset={4} collisionPadding={12}>
+                  <DropdownMenu.Item
+                    className="issue-menu-item"
+                    onSelect={() =>
+                      downloadFile(
+                        `${issue.id}.doc`,
+                        issueToHtml(issue, exportContext()),
+                        "application/msword",
+                      )
+                    }
+                  >
+                    Export Word
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    className="issue-menu-item"
+                    onSelect={() =>
+                      downloadFile(
+                        `${issue.id}.xml`,
+                        issueToXml(issue, exportContext()),
+                        "application/xml",
+                      )
+                    }
+                  >
+                    Export XML
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    className="issue-menu-item"
+                    onSelect={() => {
+                      const { header, row } = issueCsvRows(issue, exportContext(), stripHtml);
+                      downloadCsv(`${issue.id}.csv`, toCsv(header, [row]));
+                    }}
+                  >
+                    Export Excel (CSV)
+                  </DropdownMenu.Item>
+                </DropdownMenu.SubContent>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Sub>
             {canArchive && (
               <DropdownMenu.Item
                 className="issue-menu-item"

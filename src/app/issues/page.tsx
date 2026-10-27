@@ -11,7 +11,9 @@ import {
   Info,
   Pencil,
   Star,
+  ChevronRight,
   Download,
+  Printer,
   Kanban,
   ListFilter,
   MoreHorizontal,
@@ -30,6 +32,7 @@ import { useWorkflows } from "../WorkflowProvider";
 import { authClient } from "../../lib/auth-client";
 import {
   PRIORITY_LABELS,
+  type Issue,
   type IssuePriority,
   type IssueStatus,
 } from "../data/issues";
@@ -63,15 +66,29 @@ import { setIssueNavigation } from "../components/issue/issueNav";
 import { KindIcon, StatusBadge } from "../components/IssueVisuals";
 import { BulkBar } from "../components/search/BulkBar";
 import {
+  COLUMNS,
   COLUMNS_BY_ID,
   DEFAULT_COLUMNS,
   issuesCsv,
   type ColumnId,
 } from "../components/search/columns";
+import { sanitizeHtmlInBrowser } from "../components/browserSanitize";
+import { downloadFile, printHtml } from "../components/fileOutput";
+import {
+  htmlDocument,
+  issueSection,
+  issueXmlItem,
+  issuesReportHtml,
+  issuesToXml,
+  type IssueExportContext,
+} from "../components/issue/issueExport";
 import { downloadCsv, toCsv } from "../components/search/csv";
 import { useColumnLookups, useJqlContext } from "../components/search/useJqlContext";
 
 type ViewMode = "list" | "detail" | "board";
+
+/** Print details renders full work items, so it stops at a sensible page count. */
+const PRINT_DETAILS_LIMIT = 200;
 type SearchMode = "basic" | "jql";
 type StatusFilter = "ALL" | "ACTIVE" | IssueStatus;
 
@@ -436,9 +453,30 @@ function IssueNavigator() {
       return next;
     });
 
-  const exportCsv = () => {
-    const { header, rows } = issuesCsv(results, columns, lookups);
-    downloadCsv(`issues-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(header, rows));
+  const exportStamp = () => new Date().toISOString().slice(0, 10);
+  const ALL_COLUMN_IDS = COLUMNS.map((column) => column.id);
+  const exportCsv = (ids: ColumnId[] = columns) => {
+    const { header, rows } = issuesCsv(results, ids, lookups);
+    downloadCsv(`issues-${exportStamp()}.csv`, toCsv(header, rows));
+  };
+  const issueUrlFor = (issue: Issue) =>
+    `${window.location.origin}/issues/${encodeURIComponent(issue.id)}`;
+  const exportContext = (issue: Issue): IssueExportContext => ({
+    url: issueUrlFor(issue),
+    status: COLUMNS_BY_ID.get("status")?.text(issue, lookups) ?? issue.status,
+    type: COLUMNS_BY_ID.get("type")?.text(issue, lookups) ?? issue.kind,
+    sanitize: sanitizeHtmlInBrowser,
+  });
+  /** The results as a table; the key always comes first so it can link back. */
+  const reportHtml = (ids: ColumnId[]) => {
+    const ordered: ColumnId[] = ["key", ...ids.filter((id) => id !== "key")];
+    const { header, rows } = issuesCsv(results, ordered, lookups);
+    return issuesReportHtml(
+      currentFilter?.name ?? "Search results",
+      header,
+      rows.map((row) => row.map((cell) => (cell === null ? "" : String(cell)))),
+      results.map(issueUrlFor),
+    );
   };
 
   const savedFilter =
@@ -731,14 +769,101 @@ function IssueNavigator() {
             </DropdownMenu.Trigger>
             <DropdownMenu.Portal>
               <DropdownMenu.Content className="search-menu" align="end" sideOffset={6}>
-                <DropdownMenu.Item
-                  className="search-menu-item"
-                  disabled={results.length === 0}
-                  onSelect={exportCsv}
-                >
-                  <Download size={14} aria-hidden="true" />
-                  Export CSV
-                </DropdownMenu.Item>
+                <DropdownMenu.Sub>
+                  <DropdownMenu.SubTrigger
+                    className="search-menu-item search-menu-sub"
+                    disabled={results.length === 0}
+                  >
+                    <Download size={14} aria-hidden="true" />
+                    Export
+                    <ChevronRight size={13} aria-hidden="true" />
+                  </DropdownMenu.SubTrigger>
+                  <DropdownMenu.Portal>
+                    <DropdownMenu.SubContent className="search-menu" sideOffset={4}>
+                      <DropdownMenu.Item className="search-menu-item" onSelect={() => exportCsv()}>
+                        CSV (visible fields)
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Item
+                        className="search-menu-item"
+                        onSelect={() => exportCsv(ALL_COLUMN_IDS)}
+                      >
+                        CSV (all fields)
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Item
+                        className="search-menu-item"
+                        onSelect={() =>
+                          downloadFile(`issues-${exportStamp()}.html`, reportHtml(columns), "text/html")
+                        }
+                      >
+                        HTML report (visible fields)
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Item
+                        className="search-menu-item"
+                        onSelect={() =>
+                          downloadFile(
+                            `issues-${exportStamp()}.html`,
+                            reportHtml(ALL_COLUMN_IDS),
+                            "text/html",
+                          )
+                        }
+                      >
+                        HTML report (all fields)
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Item
+                        className="search-menu-item"
+                        onSelect={() =>
+                          downloadFile(
+                            `issues-${exportStamp()}.xml`,
+                            issuesToXml(results.map((issue) => issueXmlItem(issue, exportContext(issue)))),
+                            "application/xml",
+                          )
+                        }
+                      >
+                        XML
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Item
+                        className="search-menu-item"
+                        onSelect={() =>
+                          downloadFile(
+                            `issues-${exportStamp()}.doc`,
+                            reportHtml(columns),
+                            "application/msword",
+                          )
+                        }
+                      >
+                        Word
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Separator className="search-menu-separator" />
+                      <DropdownMenu.Item
+                        className="search-menu-item"
+                        onSelect={() => printHtml(reportHtml(columns))}
+                      >
+                        <Printer size={14} aria-hidden="true" />
+                        Print list
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Item
+                        className="search-menu-item"
+                        onSelect={() =>
+                          printHtml(
+                            htmlDocument(
+                              currentFilter?.name ?? "Search results",
+                              results
+                                .slice(0, PRINT_DETAILS_LIMIT)
+                                .map((issue) => issueSection(issue, exportContext(issue)))
+                                .join("\n"),
+                            ),
+                          )
+                        }
+                      >
+                        <Printer size={14} aria-hidden="true" />
+                        Print details
+                        {results.length > PRINT_DETAILS_LIMIT && (
+                          <span className="search-menu-hint">first {PRINT_DETAILS_LIMIT}</span>
+                        )}
+                      </DropdownMenu.Item>
+                    </DropdownMenu.SubContent>
+                  </DropdownMenu.Portal>
+                </DropdownMenu.Sub>
                 {!isViewer && (
                   <DropdownMenu.Item
                     className="search-menu-item"

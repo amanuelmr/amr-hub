@@ -18,6 +18,7 @@ import {
   Lock,
   MoreHorizontal,
   Package,
+  Paperclip,
   Puzzle,
   Rows3,
   Settings,
@@ -49,6 +50,8 @@ const PROJECT_TABS: ProjectTab[] = [
   { label: "Releases", segment: "releases", icon: Package },
   { label: "Components", segment: "components", icon: Puzzle },
   { label: "Forms", segment: "forms", icon: ClipboardList },
+  { label: "Attachments", segment: "attachments", icon: Paperclip },
+  { label: "Archived", segment: "archived", icon: Archive },
 ];
 
 async function copyToClipboard(text: string) {
@@ -117,7 +120,7 @@ export default function ProjectLayout({
   };
 
   return (
-    <div className="project-shell">
+    <div className="project-shell" data-background={project?.background ?? undefined}>
       {project && (
         <div
           className={

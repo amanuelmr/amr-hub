@@ -13,6 +13,9 @@ export type ProjectVersion = {
   startDate: string | null;
   releaseDate: string | null;
   releasedAt: string | null;
+  /** The member responsible for getting the release out. */
+  driverId?: string | null;
+  driverName?: string | null;
   issueCount: number;
   doneCount: number;
   inProgressCount: number;

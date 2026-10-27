@@ -4,9 +4,12 @@ import {
   CARD_EXTRA_FIELDS,
   DEFAULT_BOARD_CONFIG,
   MAX_CARD_EXTRA_FIELDS,
+  PROJECT_BACKGROUNDS,
   type CardField,
+  type ProjectBackground,
 } from "../app/data/projects";
 import { z } from "zod";
+import { PROJECT_TEMPLATES } from "../app/data/projectTemplates";
 
 const CARD_FIELDS = [
   "epic",
@@ -183,6 +186,9 @@ export const createProjectSchema = z
     targetDate: targetDateSchema.nullable().default(null),
     boardType: boardTypeSchema.optional(),
     accessLevel: z.enum(["OPEN", "LIMITED", "PRIVATE"]).optional(),
+    template: z
+      .enum(PROJECT_TEMPLATES.map((template) => template.key) as [string, ...string[]])
+      .optional(),
   })
   .strict();
 
@@ -219,6 +225,18 @@ export const updateProjectSchema = z
     boardType: boardTypeSchema.optional(),
     leadUserId: z.string().trim().min(1).max(120).nullable().optional(),
     boardConfig: boardConfigSchema.optional(),
+    background: z
+      .enum(PROJECT_BACKGROUNDS.map((option) => option.key) as [ProjectBackground, ...ProjectBackground[]])
+      .nullable()
+      .optional(),
+    url: z
+      .string()
+      .trim()
+      .max(2000)
+      .url("Enter a valid URL")
+      .refine((value) => /^https?:\/\//i.test(value), "Use an http or https URL")
+      .nullable()
+      .optional(),
   })
   .strict()
   .refine((updates) => Object.keys(updates).length > 0, {

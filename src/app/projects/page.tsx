@@ -175,6 +175,7 @@ export default function ProjectsPage() {
                   <th>Key</th>
                   <th>Type</th>
                   <th>Lead</th>
+                  <th>URL</th>
                   <th>Progress</th>
                   <th>Status</th>
                   <th aria-label="Actions" />
@@ -253,6 +254,20 @@ export default function ProjectsPage() {
                       </td>
                       <td>
                         {project.leadName ?? (
+                          <span className="jira-table-meta">—</span>
+                        )}
+                      </td>
+                      <td className="jira-url-cell">
+                        {project.url ? (
+                          <a
+                            href={project.url}
+                            target="_blank"
+                            rel="noreferrer noopener"
+                            title={project.url}
+                          >
+                            {project.url.replace(/^https?:\/\//i, "")}
+                          </a>
+                        ) : (
                           <span className="jira-table-meta">—</span>
                         )}
                       </td>

@@ -185,3 +185,46 @@
     gap: 6px;
   }
 }
+
+/* ---------- Project background ---------- */
+[data-background="lime"] { --project-bg: linear-gradient(160deg, color-mix(in srgb, var(--console-lime) 22%, transparent), transparent 60%); }
+[data-background="cyan"] { --project-bg: linear-gradient(160deg, color-mix(in srgb, var(--console-cyan) 22%, transparent), transparent 60%); }
+[data-background="violet"] { --project-bg: linear-gradient(160deg, color-mix(in srgb, var(--console-violet) 24%, transparent), transparent 60%); }
+[data-background="amber"] { --project-bg: linear-gradient(160deg, color-mix(in srgb, var(--console-orange) 22%, transparent), transparent 60%); }
+[data-background="rose"] { --project-bg: linear-gradient(160deg, color-mix(in srgb, var(--console-pink) 22%, transparent), transparent 60%); }
+[data-background="sunrise"] {
+  --project-bg: linear-gradient(135deg, color-mix(in srgb, var(--console-orange) 22%, transparent), color-mix(in srgb, var(--console-pink) 16%, transparent) 45%, transparent 75%);
+}
+[data-background="ocean"] {
+  --project-bg: linear-gradient(135deg, color-mix(in srgb, var(--console-cyan) 22%, transparent), color-mix(in srgb, var(--console-violet) 16%, transparent) 45%, transparent 75%);
+}
+
+.project-shell[data-background] {
+  min-height: 100%;
+  background-image: var(--project-bg);
+  background-attachment: local;
+}
+
+.project-background-swatch {
+  display: block;
+  width: 44px;
+  height: 28px;
+  border: 2px solid var(--gray-200);
+  border-radius: var(--radius, 4px);
+  background-color: var(--surface);
+  background-image: var(--project-bg);
+}
+
+.project-background-swatch[data-background="none"] {
+  background-image: linear-gradient(135deg, transparent 46%, var(--gray-300) 47%, var(--gray-300) 53%, transparent 54%);
+}
+
+.project-background-options input:checked + .project-background-swatch {
+  border-color: var(--console-line);
+  box-shadow: 2px 2px 0 var(--console-line);
+}
+
+.project-background-options input:focus-visible + .project-background-swatch {
+  outline: 2px solid var(--console-cyan);
+  outline-offset: 2px;
+}

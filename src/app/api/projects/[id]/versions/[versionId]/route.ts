@@ -3,6 +3,7 @@ import { accessErrorResponse, projectGuard } from "../../../../../../server/proj
 import {
   deleteVersion,
   DuplicateVersionNameError,
+  InvalidDriverError,
   InvalidTargetVersionError,
   updateVersion,
   updateVersionSchema,
@@ -39,7 +40,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     return errorResponse(
       error,
       "Version could not be updated",
-      [],
+      [InvalidDriverError],
       [DuplicateVersionNameError],
     );
   }

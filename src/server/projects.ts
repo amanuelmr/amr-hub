@@ -12,7 +12,10 @@ import {
   type AccessUser,
 } from "./projectAccess";
 
+import { findProjectTemplate, templateColumns } from "../app/data/projectTemplates";
 import {
+  DEFAULT_BOARD_CONFIG,
+  isProjectBackground,
   parseBoardConfig,
   type ProjectAccessLevel,
   type ProjectMemberEntry,
@@ -42,6 +45,8 @@ type StoredProject = {
   boardType: string;
   leadUserId: string | null;
   boardConfig: string | null;
+  background?: string | null;
+  url?: string | null;
   accessLevel: string;
   archivedAt: Date | null;
   deletedAt: Date | null;
@@ -102,6 +107,8 @@ async function serializeProject(
     boardType: project.boardType as BoardType,
     leadUserId: project.leadUserId,
     boardConfig: parseBoardConfig(project.boardConfig),
+    background: isProjectBackground(project.background) ? project.background : null,
+    url: project.url ?? null,
     leadName: lead?.name ?? null,
     starred: Boolean(star),
     accessLevel: project.accessLevel as ProjectAccessLevel,
@@ -434,6 +441,7 @@ async function createProjectUnhooked(
   input: NewProjectInput,
   actor: WorkspaceActor,
 ) {
+  const template = findProjectTemplate(input.template);
   try {
     const project = await prisma.$transaction(async (transaction) => {
       const created = await transaction.project.create({
@@ -443,7 +451,16 @@ async function createProjectUnhooked(
           name: input.name,
           description: input.description,
           color: input.color,
-          boardType: input.boardType ?? "SCRUM",
+          boardType: template?.boardType ?? input.boardType ?? "SCRUM",
+          // A template names the board columns after its statuses.
+          ...(template
+            ? {
+                boardConfig: JSON.stringify({
+                  ...DEFAULT_BOARD_CONFIG,
+                  columns: templateColumns(template),
+                }),
+              }
+            : {}),
           accessLevel: input.accessLevel ?? "OPEN",
           leadUserId: actor.id,
           organizationId: actor.organizationId,
@@ -453,7 +470,7 @@ async function createProjectUnhooked(
         },
       });
       // Every new project starts with Jira's default workflow and work types.
-      await seedProjectWorkflow(transaction, created.id);
+      await seedProjectWorkflow(transaction, created.id, template);
       // Jira: whoever creates a project administers it.
       await transaction.projectMember.create({
         data: { projectId: created.id, userId: actor.id, role: "ADMIN" },

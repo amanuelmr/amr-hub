@@ -1,8 +1,8 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Plus, Unlink, X } from "lucide-react";
+import { Globe, Plus, Unlink, X } from "lucide-react";
 import { apiRequest } from "../../IssueProvider";
 import { KindIcon } from "../IssueVisuals";
 import { IssuePickerList, type PickerIssue } from "./IssuePicker";
@@ -426,4 +426,160 @@ export function LinkedIssuesSection({
       ))}
     </section>
   );
+}
+
+/** Links to outside pages (docs, designs, tickets elsewhere). */
+export function WebLinksSection({
+  issue,
+  readOnly,
+  composerOpen,
+  setComposerOpen,
+  controller,
+}: {
+  issue: Issue;
+  readOnly: boolean;
+  composerOpen: boolean;
+  setComposerOpen: (open: boolean) => void;
+  controller: IssueDetailController;
+}) {
+  const [url, setUrl] = useState("");
+  const [title, setTitle] = useState("");
+  const urlRef = useRef<HTMLInputElement>(null);
+  const links = issue.webLinks ?? [];
+
+  // The Link menu hands focus back to its button as it closes, so focus the
+  // URL field once that has happened instead of relying on autoFocus.
+  useEffect(() => {
+    if (!composerOpen) return;
+    const timer = window.setTimeout(() => urlRef.current?.focus(), 50);
+    return () => window.clearTimeout(timer);
+  }, [composerOpen]);
+
+  if (links.length === 0 && !composerOpen) return null;
+
+  const close = () => {
+    setUrl("");
+    setTitle("");
+    setComposerOpen(false);
+  };
+
+  const addLink = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const updated = await controller.run(() =>
+      apiRequest<Issue>(issueUrl(issue.id, "/weblinks"), {
+        method: "POST",
+        body: JSON.stringify({ url: url.trim(), title: title.trim() || undefined }),
+      }),
+    );
+    if (updated) {
+      controller.applyIssue(updated);
+      close();
+    }
+  };
+
+  const removeLink = async (linkId: string) => {
+    const updated = await controller.run(() =>
+      apiRequest<Issue>(
+        issueUrl(issue.id, `/weblinks?linkId=${encodeURIComponent(linkId)}`),
+        { method: "DELETE" },
+      ),
+    );
+    controller.applyIssue(updated);
+  };
+
+  return (
+    <section className="panel issue-section" id="issue-web-links">
+      <div className="panel-header">
+        <div>
+          <h2>Web links</h2>
+          <p>
+            {links.length} {links.length === 1 ? "link" : "links"}
+          </p>
+        </div>
+        {!readOnly && (
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Add web link"
+            onClick={() => (composerOpen ? close() : setComposerOpen(true))}
+          >
+            <Plus size={15} aria-hidden="true" />
+          </button>
+        )}
+      </div>
+      {composerOpen && !readOnly && (
+        <form
+          className="issue-link-composer issue-web-link-form"
+          onSubmit={(event) => void addLink(event)}
+          onKeyDown={(event) => event.key === "Escape" && close()}
+        >
+          <label className="form-field">
+            <span>URL</span>
+            <input
+              ref={urlRef}
+              type="url"
+              value={url}
+              required
+              placeholder="https://example.com"
+              onChange={(event) => setUrl(event.target.value)}
+            />
+          </label>
+          <label className="form-field">
+            <span>Link text</span>
+            <input
+              value={title}
+              maxLength={255}
+              placeholder="Shown instead of the URL"
+              onChange={(event) => setTitle(event.target.value)}
+            />
+          </label>
+          <div className="issue-web-link-actions">
+            <button className="secondary-button" type="button" onClick={close}>
+              Cancel
+            </button>
+            <button className="primary-button" type="submit" disabled={!url.trim()}>
+              Link
+            </button>
+          </div>
+        </form>
+      )}
+      {links.length > 0 && (
+        <ul className="issue-ref-list">
+          {links.map((link) => (
+            <li className="issue-ref-row" key={link.id}>
+              <Globe className="issue-web-link-icon" size={16} aria-hidden="true" />
+              <a
+                className="issue-web-link"
+                href={link.url}
+                target="_blank"
+                rel="noreferrer noopener"
+                title={link.url}
+              >
+                {link.title}
+              </a>
+              <span className="issue-web-link-host">{hostOf(link.url)}</span>
+              {!readOnly && (
+                <button
+                  className="icon-button"
+                  type="button"
+                  aria-label={`Remove web link ${link.title}`}
+                  onClick={() => void removeLink(link.id)}
+                >
+                  <X size={13} aria-hidden="true" />
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function hostOf(url: string) {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "";
+  }
 }

@@ -204,6 +204,11 @@
   max-height: 320px;
   gap: 12px;
   overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.pa-activity::-webkit-scrollbar {
+  display: none;
 }
 
 .pa-activity-day h3 {
@@ -1486,4 +1491,121 @@ td.pa-actions-cell {
   margin: 0;
   font-family: var(--font-mono);
   font-size: 13px;
+}
+
+.release-driver {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+/* ---------- Project attachments ---------- */
+.attachments-file {
+  display: inline-flex;
+  max-width: 340px;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.attachments-file span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachments-file:hover span {
+  text-decoration: underline;
+}
+
+.attachments-thumb {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius, 4px);
+  background: var(--gray-50);
+  object-fit: cover;
+}
+
+.attachments-thumb-icon {
+  display: grid;
+  place-items: center;
+  color: var(--gray-500);
+}
+
+.attachments-issue-title {
+  color: var(--gray-600);
+}
+
+.release-group-row th {
+  padding: 10px 12px 6px;
+  color: var(--gray-500);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.release-group-row th span {
+  margin-left: 8px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--gray-100);
+}
+
+/* ---------- Template gallery ---------- */
+.pa-template-group + .pa-template-group {
+  margin-top: 16px;
+}
+
+.pa-template-group h3 {
+  margin: 0 0 8px;
+  color: var(--gray-500);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.pa-template-card strong {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pa-template-card strong small {
+  padding: 1px 6px;
+  border: 1px solid var(--gray-300);
+  border-radius: 3px;
+  color: var(--gray-500);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.pa-template-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pa-template-flow li {
+  padding: 2px 6px;
+  border-radius: 3px;
+  color: var(--ink);
+  background: var(--gray-100);
+  font-family: var(--font-mono);
+  font-size: 10px;
 }

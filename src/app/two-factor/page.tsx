@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { fetchHomepagePath } from "../components/homepage";
 import { ShieldCheck } from "lucide-react";
 import { authClient } from "../../lib/auth-client";
 import {
@@ -58,7 +59,7 @@ export default function TwoFactorPage() {
       return;
     }
 
-    router.replace("/dashboard");
+    router.replace(await fetchHomepagePath());
     router.refresh();
   };
 

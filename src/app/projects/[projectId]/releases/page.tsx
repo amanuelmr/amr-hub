@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, Fragment, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
@@ -12,6 +12,7 @@ import {
   Search,
 } from "lucide-react";
 import { apiRequest, useIssues } from "../../../IssueProvider";
+import type { WorkspaceMember } from "../../../data/issues";
 import { WorkspaceLoading } from "../../../components/WorkspaceLoading";
 import {
   AdminDialog,
@@ -40,18 +41,22 @@ type StatusFilter = "ALL" | VersionStatus;
 
 function VersionForm({
   version,
+  members,
   onSubmit,
   onCancel,
 }: {
   version?: ProjectVersion;
+  members: WorkspaceMember[];
   onSubmit: (values: {
     name: string;
     description: string | null;
     startDate: string | null;
     releaseDate: string | null;
+    driverId: string | null;
   }) => Promise<void>;
   onCancel: () => void;
 }) {
+  const [driverId, setDriverId] = useState(version?.driverId ?? "");
   const [name, setName] = useState(version?.name ?? "");
   const [description, setDescription] = useState(version?.description ?? "");
   const [startDate, setStartDate] = useState(toDateInput(version?.startDate));
@@ -79,6 +84,7 @@ function VersionForm({
         description: description.trim() || null,
         startDate: startDate || null,
         releaseDate: releaseDate || null,
+        driverId: driverId || null,
       });
     } catch (submitError) {
       setError(errorMessage(submitError, "Version could not be saved"));
@@ -116,6 +122,18 @@ function VersionForm({
           />
         </label>
       </div>
+      <label className="form-field">
+        <span>Driver</span>
+        <select value={driverId} onChange={(event) => setDriverId(event.target.value)}>
+          <option value="">No driver</option>
+          {members.map((member) => (
+            <option key={member.id} value={member.id}>
+              {member.name}
+            </option>
+          ))}
+        </select>
+        <span className="field-meta">Who is responsible for getting this release out.</span>
+      </label>
       <label className="form-field">
         <span>Description</span>
         <textarea
@@ -254,13 +272,22 @@ function MoveIssuesDialogBody({
   );
 }
 
+function initialsOf(name: string) {
+  return name
+    .split(/\s+/)
+    .map((part) => part[0] ?? "")
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
+
 export default function ProjectReleasesPage() {
   const params = useParams<{ projectId: string }>();
   const projectId = params.projectId;
   const { isViewer: isWorkspaceViewer } = useWorkspaceRole();
   const projectPermissions = useProjectPermissions(projectId);
   const isViewer = isWorkspaceViewer || !projectPermissions.canEdit;
-  const { refreshIssues } = useIssues();
+  const { refreshIssues, members } = useIssues();
   const {
     items: versions,
     setItems,
@@ -271,6 +298,8 @@ export default function ProjectReleasesPage() {
   const [dialog, setDialog] = useState<DialogState>(null);
   const [filter, setFilter] = useState<StatusFilter>("ALL");
   const [query, setQuery] = useState("");
+  const [driverFilter, setDriverFilter] = useState("");
+  const [grouping, setGrouping] = useState<"none" | "status" | "driver">("none");
   const [actionError, setActionError] = useState<string | null>(null);
 
   const base = `/api/projects/${encodeURIComponent(projectId)}/versions`;
@@ -282,9 +311,49 @@ export default function ProjectReleasesPage() {
           (filter === "ALL"
             ? version.status !== "ARCHIVED"
             : version.status === filter) &&
+          (!driverFilter ||
+            (driverFilter === "none" ? !version.driverId : version.driverId === driverFilter)) &&
           version.name.toLowerCase().includes(query.trim().toLowerCase()),
       ),
-    [versions, filter, query],
+    [versions, filter, query, driverFilter],
+  );
+  const groups = useMemo(() => {
+    if (grouping === "none") return [{ key: "all", label: "", versions: visible }];
+    const keyOf = (version: ProjectVersion): [string, string] =>
+      grouping === "status"
+        ? [version.status, VERSION_STATUS_LABELS[version.status]]
+        : version.driverId
+          ? [version.driverId, version.driverName ?? "Unknown"]
+          : ["none", "No driver"];
+    const map = new Map<string, { key: string; label: string; versions: ProjectVersion[] }>();
+    for (const version of visible) {
+      const [key, label] = keyOf(version);
+      const group = map.get(key) ?? { key, label, versions: [] };
+      group.versions.push(version);
+      map.set(key, group);
+    }
+    const order = ["UNRELEASED", "RELEASED", "ARCHIVED"];
+    return [...map.values()].sort((a, b) =>
+      grouping === "status"
+        ? order.indexOf(a.key) - order.indexOf(b.key)
+        : a.key === "none"
+          ? 1
+          : b.key === "none"
+            ? -1
+            : a.label.localeCompare(b.label),
+    );
+  }, [grouping, visible]);
+  // Only people who drive a release in this project are offered as filters.
+  const drivers = useMemo(
+    () =>
+      [
+        ...new Map(
+          versions
+            .filter((version) => version.driverId)
+            .map((version) => [version.driverId!, version.driverName ?? "Unknown"]),
+        ),
+      ].sort((a, b) => a[1].localeCompare(b[1])),
+    [versions],
   );
 
   const upsert = (version: ProjectVersion) =>
@@ -343,6 +412,29 @@ export default function ProjectReleasesPage() {
             </button>
           ))}
         </div>
+        <label className="select-button">
+          <span className="sr-only">Driver</span>
+          <select value={driverFilter} onChange={(event) => setDriverFilter(event.target.value)}>
+            <option value="">Driver: All</option>
+            {drivers.map(([id, name]) => (
+              <option key={id} value={id}>
+                {name}
+              </option>
+            ))}
+            <option value="none">No driver</option>
+          </select>
+        </label>
+        <label className="select-button">
+          <span className="sr-only">Group by</span>
+          <select
+            value={grouping}
+            onChange={(event) => setGrouping(event.target.value as typeof grouping)}
+          >
+            <option value="none">Group: None</option>
+            <option value="status">Group: Status</option>
+            <option value="driver">Group: Driver</option>
+          </select>
+        </label>
         <div className="jira-toolbar-spacer" />
         {!isViewer && (
           <button
@@ -380,6 +472,7 @@ export default function ProjectReleasesPage() {
                 <th>Version</th>
                 <th>Status</th>
                 <th>Progress</th>
+                <th>Driver</th>
                 <th>Start date</th>
                 <th>Release date</th>
                 <th>Description</th>
@@ -387,123 +480,147 @@ export default function ProjectReleasesPage() {
               </tr>
             </thead>
             <tbody>
-              {visible.map((version) => {
-                const overdue = isVersionOverdue(version);
-                return (
-                  <tr key={version.id}>
-                    <td>
-                      <Link
-                        className="pa-link"
-                        href={`/projects/${projectId}/releases/${version.id}`}
-                      >
-                        {version.name}
-                      </Link>
-                    </td>
-                    <td>
-                      <VersionStatusBadge status={version.status} />
-                    </td>
-                    <td className="pa-progress-cell">
-                      <VersionProgressBar version={version} />
-                      <span className="pa-muted">
-                        {version.doneCount}/{version.issueCount}
-                      </span>
-                    </td>
-                    <td>{formatDay(version.startDate)}</td>
-                    <td>
-                      <span className={overdue ? "pa-overdue" : undefined}>
-                        {overdue && (
-                          <AlertTriangle size={13} aria-label="Overdue" />
-                        )}
-                        {formatDay(version.releaseDate)}
-                      </span>
-                    </td>
-                    <td className="pa-description-cell">
-                      {version.description ?? ""}
-                    </td>
-                    {!isViewer && (
-                      <td className="pa-actions-cell">
-                        <DropdownMenu.Root>
-                          <DropdownMenu.Trigger
-                            className="icon-button"
-                            aria-label={`Actions for ${version.name}`}
+              {groups.map((group) => (
+                <Fragment key={group.key}>
+                  {grouping !== "none" && (
+                    <tr className="release-group-row">
+                      <th colSpan={isViewer ? 7 : 8} scope="colgroup">
+                        {group.label}
+                        <span>{group.versions.length}</span>
+                      </th>
+                    </tr>
+                  )}
+                  {group.versions.map((version) => {
+                    const overdue = isVersionOverdue(version);
+                    return (
+                      <tr key={version.id}>
+                        <td>
+                          <Link
+                            className="pa-link"
+                            href={`/projects/${projectId}/releases/${version.id}`}
                           >
-                            <MoreHorizontal size={16} aria-hidden="true" />
-                          </DropdownMenu.Trigger>
-                          <DropdownMenu.Portal>
-                            <DropdownMenu.Content
-                              className="pa-menu"
-                              align="end"
-                              sideOffset={4}
-                            >
-                              <DropdownMenu.Item
-                                className="pa-menu-item"
-                                onSelect={() =>
-                                  setDialog({ type: "edit", version })
-                                }
+                            {version.name}
+                          </Link>
+                        </td>
+                        <td>
+                          <VersionStatusBadge status={version.status} />
+                        </td>
+                        <td className="pa-progress-cell">
+                          <VersionProgressBar version={version} />
+                          <span className="pa-muted">
+                            {version.doneCount}/{version.issueCount}
+                          </span>
+                        </td>
+                        <td>
+                          {version.driverName ? (
+                            <span className="release-driver">
+                              <span className="avatar avatar-small" aria-hidden="true">
+                                {initialsOf(version.driverName)}
+                              </span>
+                              {version.driverName}
+                            </span>
+                          ) : (
+                            <span className="pa-muted">—</span>
+                          )}
+                        </td>
+                        <td>{formatDay(version.startDate)}</td>
+                        <td>
+                          <span className={overdue ? "pa-overdue" : undefined}>
+                            {overdue && (
+                              <AlertTriangle size={13} aria-label="Overdue" />
+                            )}
+                            {formatDay(version.releaseDate)}
+                          </span>
+                        </td>
+                        <td className="pa-description-cell">
+                          {version.description ?? ""}
+                        </td>
+                        {!isViewer && (
+                          <td className="pa-actions-cell">
+                            <DropdownMenu.Root>
+                              <DropdownMenu.Trigger
+                                className="icon-button"
+                                aria-label={`Actions for ${version.name}`}
                               >
-                                Edit
-                              </DropdownMenu.Item>
-                              {version.status === "UNRELEASED" && (
-                                <DropdownMenu.Item
-                                  className="pa-menu-item"
-                                  onSelect={() =>
-                                    setDialog({ type: "release", version })
-                                  }
+                                <MoreHorizontal size={16} aria-hidden="true" />
+                              </DropdownMenu.Trigger>
+                              <DropdownMenu.Portal>
+                                <DropdownMenu.Content
+                                  className="pa-menu"
+                                  align="end"
+                                  sideOffset={4}
                                 >
-                                  Release
-                                </DropdownMenu.Item>
-                              )}
-                              {version.status === "RELEASED" && (
-                                <DropdownMenu.Item
-                                  className="pa-menu-item"
-                                  onSelect={() =>
-                                    patchStatus(version, "UNRELEASED")
-                                  }
-                                >
-                                  Unrelease
-                                </DropdownMenu.Item>
-                              )}
-                              {version.status === "ARCHIVED" ? (
-                                <DropdownMenu.Item
-                                  className="pa-menu-item"
-                                  onSelect={() =>
-                                    patchStatus(
-                                      version,
-                                      version.releasedAt
-                                        ? "RELEASED"
-                                        : "UNRELEASED",
-                                    )
-                                  }
-                                >
-                                  Unarchive
-                                </DropdownMenu.Item>
-                              ) : (
-                                <DropdownMenu.Item
-                                  className="pa-menu-item"
-                                  onSelect={() =>
-                                    patchStatus(version, "ARCHIVED")
-                                  }
-                                >
-                                  Archive
-                                </DropdownMenu.Item>
-                              )}
-                              <DropdownMenu.Separator className="pa-menu-separator" />
-                              <DropdownMenu.Item
-                                className="pa-menu-item pa-menu-danger"
-                                onSelect={() =>
-                                  setDialog({ type: "delete", version })
-                                }
-                              >
-                                Delete
-                              </DropdownMenu.Item>
-                            </DropdownMenu.Content>
-                          </DropdownMenu.Portal>
-                        </DropdownMenu.Root>
-                      </td>
-                    )}
-                  </tr>
-                );
-              })}
+                                  <DropdownMenu.Item
+                                    className="pa-menu-item"
+                                    onSelect={() =>
+                                      setDialog({ type: "edit", version })
+                                    }
+                                  >
+                                    Edit
+                                  </DropdownMenu.Item>
+                                  {version.status === "UNRELEASED" && (
+                                    <DropdownMenu.Item
+                                      className="pa-menu-item"
+                                      onSelect={() =>
+                                        setDialog({ type: "release", version })
+                                      }
+                                    >
+                                      Release
+                                    </DropdownMenu.Item>
+                                  )}
+                                  {version.status === "RELEASED" && (
+                                    <DropdownMenu.Item
+                                      className="pa-menu-item"
+                                      onSelect={() =>
+                                        patchStatus(version, "UNRELEASED")
+                                      }
+                                    >
+                                      Unrelease
+                                    </DropdownMenu.Item>
+                                  )}
+                                  {version.status === "ARCHIVED" ? (
+                                    <DropdownMenu.Item
+                                      className="pa-menu-item"
+                                      onSelect={() =>
+                                        patchStatus(
+                                          version,
+                                          version.releasedAt
+                                            ? "RELEASED"
+                                            : "UNRELEASED",
+                                        )
+                                      }
+                                    >
+                                      Unarchive
+                                    </DropdownMenu.Item>
+                                  ) : (
+                                    <DropdownMenu.Item
+                                      className="pa-menu-item"
+                                      onSelect={() =>
+                                        patchStatus(version, "ARCHIVED")
+                                      }
+                                    >
+                                      Archive
+                                    </DropdownMenu.Item>
+                                  )}
+                                  <DropdownMenu.Separator className="pa-menu-separator" />
+                                  <DropdownMenu.Item
+                                    className="pa-menu-item pa-menu-danger"
+                                    onSelect={() =>
+                                      setDialog({ type: "delete", version })
+                                    }
+                                  >
+                                    Delete
+                                  </DropdownMenu.Item>
+                                </DropdownMenu.Content>
+                              </DropdownMenu.Portal>
+                            </DropdownMenu.Root>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </Fragment>
+              ))}
             </tbody>
           </table>
         </div>
@@ -518,6 +635,7 @@ export default function ProjectReleasesPage() {
           <VersionForm
             key={dialog.type === "edit" ? dialog.version.id : "new"}
             version={dialog.type === "edit" ? dialog.version : undefined}
+            members={members}
             onCancel={closeDialog}
             onSubmit={async (values) => {
               const saved = await apiRequest<ProjectVersion>(

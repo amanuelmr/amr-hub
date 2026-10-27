@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { sendDueFilterSubscriptions } from "../../../../server/filterSubscriptions";
 import { sendDailyDigests } from "../../../../server/notifications";
+import { sendDueReminders, sendWeeklySummaries } from "../../../../server/personalDigests";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -39,11 +40,20 @@ export async function GET(request: NextRequest) {
 
   const now = new Date();
   try {
-    const [subscriptions, digests] = await Promise.all([
-      sendDueFilterSubscriptions(now),
-      sendDailyDigests(now),
-    ]);
-    const summary = { ranAt: now.toISOString(), subscriptions, digests };
+    const subscriptions = await sendDueFilterSubscriptions(now);
+    // The digests run one after another: each records when it last went out
+    // in the same per-person settings row, so in parallel they overwrite
+    // each other's timestamps and send twice.
+    const digests = await sendDailyDigests(now);
+    const dueReminders = await sendDueReminders(now);
+    const weeklySummaries = await sendWeeklySummaries(now);
+    const summary = {
+      ranAt: now.toISOString(),
+      subscriptions,
+      digests,
+      dueReminders,
+      weeklySummaries,
+    };
     console.info("[cron:notifications]", JSON.stringify(summary));
     return NextResponse.json(summary);
   } catch (error) {

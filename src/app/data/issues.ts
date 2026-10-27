@@ -75,6 +75,14 @@ export type IssueLinkSummary = {
   issue: IssueRef;
 };
 
+/** A link from a work item to an outside page. */
+export type IssueWebLink = {
+  id: string;
+  url: string;
+  title: string;
+  createdAt: string;
+};
+
 export type IssueComponentRef = { id: string; name: string };
 export type IssueVersionRef = { id: string; name: string; status: string };
 
@@ -228,6 +236,7 @@ export type Issue = {
   /** Detail-only collections (present on single-issue reads). */
   children?: IssueRef[];
   links?: IssueLinkSummary[];
+  webLinks?: IssueWebLink[];
   watcherIds?: string[];
   voterIds?: string[];
   comments?: IssueComment[];

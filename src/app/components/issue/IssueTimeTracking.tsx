@@ -14,6 +14,7 @@ import {
   timeTrackingSegments,
 } from "./issueDetailLogic";
 import { issueUrl, type IssueDetailController } from "./useIssueDetail";
+import type { RollupTotals } from "../../data/rollup";
 import type { RemainingEstimateMode, Worklog } from "./types";
 
 export function TimeTrackingBar({ issue }: { issue: Issue }) {
@@ -48,6 +49,36 @@ export function TimeTrackingBar({ issue }: { issue: Issue }) {
           issue.originalEstimateMinutes === null
             ? "No estimate"
             : `${formatDuration(issue.remainingEstimateMinutes)} remaining`}
+        </span>
+      </span>
+    </span>
+  );
+}
+
+/** Time on this item and everything beneath it, as one bar. */
+export function RollupTimeBar({ totals }: { totals: RollupTotals }) {
+  const segments = timeTrackingSegments(
+    totals.spentMinutes,
+    totals.remainingMinutes,
+    totals.originalMinutes || null,
+  );
+  return (
+    <span className="issue-time-tracking issue-rollup-time">
+      <span
+        className={`issue-time-bar${segments.overEstimate ? " is-over" : ""}`}
+        role="img"
+        aria-label={`Including items below: ${formatDuration(totals.spentMinutes)} logged, ${formatDuration(
+          totals.remainingMinutes,
+        )} remaining`}
+      >
+        <span className="issue-time-spent" style={{ width: `${segments.spentPercent}%` }} />
+        <span className="issue-time-remaining" style={{ width: `${segments.remainingPercent}%` }} />
+      </span>
+      <span className="issue-time-labels">
+        <span>Σ {formatDuration(totals.spentMinutes)} logged</span>
+        <span>
+          {totals.originalMinutes > 0 && `of ${formatDuration(totals.originalMinutes)} · `}
+          {formatDuration(totals.remainingMinutes)} remaining
         </span>
       </span>
     </span>

@@ -195,6 +195,36 @@ export function renderNotificationDigestEmail(input: {
   return { subject: `Your AMR Hub daily digest: ${heading}`, html, text };
 }
 
+/** A personal digest (due reminders, weekly summary) grouped into sections. */
+export function renderSectionedDigestEmail(input: {
+  subject: string;
+  heading: string;
+  sections: { title: string; items: IssueEmailItem[] }[];
+  ctaLabel: string;
+  ctaUrl: string;
+  preferencesUrl: string;
+}) {
+  const sections = input.sections.filter((section) => section.items.length > 0);
+  const content = `<h1 style="margin:0 0 12px 0;font-family:${FONT_MONO};font-size:16px;font-weight:800;color:${COLOR.ink};">${escapeHtml(input.heading)}</h1>
+                ${sections
+                  .map(
+                    (section) => `<h2 style="margin:18px 0 4px 0;font-family:${FONT_MONO};font-size:11px;font-weight:800;letter-spacing:0.04em;text-transform:uppercase;color:${COLOR.muted};">${escapeHtml(section.title)} (${section.items.length})</h2>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${section.items.map(issueRow).join("")}</table>`,
+                  )
+                  .join("")}
+                ${button(input.ctaLabel, input.ctaUrl)}`;
+  const html = emailFrame(content, preferencesFooter(input.preferencesUrl));
+  const text = `${input.heading}\n\n${sections
+    .map(
+      (section) =>
+        `${section.title.toUpperCase()} (${section.items.length})\n${section.items
+          .map((item) => `${item.issueKey} ${item.issueTitle}\n  ${item.summary}\n  ${item.url}`)
+          .join("\n")}`,
+    )
+    .join("\n\n")}\n\n${input.ctaLabel}: ${input.ctaUrl}\nManage notifications: ${input.preferencesUrl}`;
+  return { subject: input.subject, html, text };
+}
+
 export type FilterEmailIssue = {
   issueKey: string;
   issueTitle: string;

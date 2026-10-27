@@ -409,6 +409,9 @@
 }
 
 .board-cell {
+  /* Keeps hidden labels inside the scrolling column so they cannot stretch
+     the page below the board. */
+  position: relative;
   display: flex;
   min-height: 72px;
   flex-direction: column;
