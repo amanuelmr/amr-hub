@@ -50,7 +50,7 @@
     "recharts": "^2.15.4",
     "resend": "^6.19.0",
     "sanitize-html": "^2.17.6",
-    "zod": "^3.23.8"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^20.19.43",
@@ -69,6 +69,7 @@
   "overrides": {
     "nanoid": "^3.3.8",
     "postcss": "$postcss",
-    "sharp": "^0.35.0"
+    "sharp": "^0.35.0",
+    "zod": "$zod"
   }
 }
