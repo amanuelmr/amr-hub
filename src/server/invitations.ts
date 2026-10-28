@@ -232,13 +232,16 @@ export async function acceptMemberInvitation(input: {
   let userId: string;
   try {
     const passwordHash = await context.password.hash(input.password);
-    const user = await context.internalAdapter.createUser({
-      name: input.name,
-      email: invitation.email,
-      // Claiming the single-use invitation token is itself proof of the invited email.
-      emailVerified: true,
-      role: "MEMBER",
-    });
+    const user = await context.internalAdapter.createUser(
+      {
+        name: input.name,
+        email: invitation.email,
+        // Claiming the single-use invitation token is itself proof of the invited email.
+        emailVerified: true,
+        role: "MEMBER",
+      },
+      { method: "email-password" },
+    );
     userId = user.id;
     await context.internalAdapter.linkAccount({
       accountId: userId,
