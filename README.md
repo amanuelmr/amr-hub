@@ -1,106 +1,147 @@
 # AMR Hub
 
-AMR Hub is a focused issue-triage and delivery workspace for software teams.
-The portfolio demo is designed to be immediately usable: it ships with realistic
-sample work and persists every issue, comment, and activity event through a
-server API backed by PostgreSQL.
+**Project and issue tracking for software teams.** Plan sprints, run boards,
+map out roadmaps and keep everyone on the same page, in one workspace with a
+retro console look.
 
-## Product experience
+![AMR Hub](public/og-retro.png)
 
-- Delivery overview with active work, completion rate, urgency, throughput, and
-  cycle health
-- Searchable and filterable issue workspace
-- Inline workflow status changes
-- Validated issue creation with type, priority, and ownership
-- Issue discussions and append-only activity history
-- Due dates, workspace labels, label filtering, and planning activity
-- Server-backed saved views for reusable search, status, priority, ownership,
-  label, and sort combinations
-- Cycle planning with capacity, Fibonacci effort estimates, scope progress, and
-  at-risk work
-- Responsive desktop and mobile navigation
-- Keyboard shortcut: press `C` outside a form field to create an issue
-- Durable server persistence across browsers and page reloads
-- Public account signup with required organization onboarding
-- Database-backed, revocable sessions with protected pages and APIs
-- Active organization membership and tenant-isolated workspace data
-- Organization-specific issue keys and personal saved-view ownership
-- Account security controls for password changes and per-device session sign-out
-- TOTP authenticator protection with one-time backup codes and trusted devices
-- Offline password recovery codes with global session invalidation
-- Owner-issued, expiring member invitations with one-time bearer links
-- Workspace access management with immediate member and invitation revocation
-- Database-aware readiness endpoint for deployment health checks
-- Automated validation and planning tests with a migration-aware CI pipeline
-- Branded Open Graph and social-sharing preview
-- Public product page grounded in the real triage, cycle, and access workflows
+AMR Hub covers the whole loop: capture work, plan it, move it across a board,
+ship releases and report on how it went. Every workspace is isolated, every
+change is recorded, and the data lives in your own PostgreSQL database.
 
-## Run locally
+## Features
 
-Requires Node.js 20.19 or newer.
+### Plan and track
+
+- **Boards** for Scrum and Kanban, with per column scrolling, column limits,
+  swimlanes, quick filters, card colours, days in column and a stand-up mode
+- **Backlog and sprints** with drag and drop ranking, parallel sprints, sprint
+  goals, workload per assignee and story point estimates
+- **List view** with inline editing, hierarchy, grouping, format rules that
+  highlight matching rows, a chart view and bulk changes
+- **Calendar** with month and week views and an unscheduled panel
+- **Timeline and roadmap** with dependencies, release markers and epics from
+  several projects on one view
+- **Releases** with progress, drivers, grouping and release notes
+- **Hierarchy totals** so epics and stories show story points and time from
+  everything beneath them
+
+### Work items
+
+- Custom workflows with named transitions and a workflow view
+- Custom work types and twelve kinds of custom fields
+- Rich text descriptions and comments with mentions, reactions, tables, code
+  blocks and pasted images
+- Links between work items, links to outside pages, attachments, watchers,
+  votes, time tracking and a full history
+- Print, or export as Word, XML or a CSV file for Excel
+- A create dialog that can be minimized while you browse and trimmed to the
+  fields you use
+
+### Search, filters and dashboards
+
+- A query language with autocomplete, functions such as `currentUser()` and
+  `openSprints()`, and sorting
+- Saved filters shared with the workspace, a project, a team or one person,
+  plus scheduled email subscriptions
+- Exports as CSV, HTML report, XML or Word, and printable lists
+- Dashboards built from gadgets, with sharing, a wallboard and slideshow mode,
+  and per viewer minimize and maximize
+
+### Automation and notifications
+
+- Rules with triggers, conditions, actions, smart values and a run log
+- In app and email notifications per event, with immediate or daily delivery,
+  plain text emails, due date reminders and a weekly summary
+
+### Workspace and security
+
+- Organizations with owners, members and viewers, and invitations by link
+- Project access levels (open, limited, private) and project roles
+- Trash with restore and archiving for projects and work items
+- Passkeys, authenticator app two factor sign in, backup and recovery codes,
+  per device session sign out and account lockout
+- A REST API with personal tokens, webhooks and an audit log
+- Personal settings for homepage, theme, auto-watch and email preferences
+
+## Tech stack
+
+| Area | Tools |
+| --- | --- |
+| App | Next.js 16 (App Router), React 19, TypeScript |
+| Data | PostgreSQL, Prisma |
+| Auth | Better Auth (sessions, organizations, passkeys, two factor) |
+| UI | Radix UI, dnd-kit, Recharts, TipTap, Lucide icons |
+| Validation | Zod |
+| Email | Resend |
+| Tests | Vitest |
+
+## Getting started
+
+You need **Node.js 20.19 or newer** and **Docker** for the local database.
 
 ```bash
+git clone https://github.com/amanuelmr/amr-hub.git
+cd amr-hub
 cp .env.example .env
 npm install
-npm run db:setup
+npm run db:setup   # starts PostgreSQL 16 in Docker and runs migrations
 npm run dev
 ```
 
-The repository includes an isolated PostgreSQL 16 service for local
-development. Open `/` for the public product page or `/signup` to create an
-account, then create the required
-organization workspace with a unique handle and issue key. New organizations
-start empty and cannot access another organization's issues or planning data.
+Open the URL Next.js prints, sign up, and create your workspace. Each
+workspace starts empty and can only see its own data.
 
-Open the local URL printed by Next.js. Production checks:
+In local development, notification emails are written to the server log
+instead of being sent.
 
-```bash
-npm run lint
-npm run test:run
-npm run build
-npm audit --omit=dev
-```
+### Environment variables
 
-## Architecture
+| Variable | Purpose |
+| --- | --- |
+| `DATABASE_URL` | Pooled database connection used by the app |
+| `DIRECT_URL` | Direct connection used for migrations |
+| `NEXT_PUBLIC_APP_URL` | Public URL, used in links and emails (required in production) |
+| `BETTER_AUTH_SECRET` | Session secret, e.g. `openssl rand -base64 32` |
+| `RESEND_API_KEY` | Sends verification, reset and notification emails |
+| `EMAIL_FROM` | Sender address, e.g. `AMR Hub <no-reply@example.com>` |
+| `CRON_SECRET` | Protects the scheduled jobs in production |
 
-- Next.js 16 App Router, React 19, and TypeScript
-- Tailwind/PostCSS build pipeline with a custom operational design system
-- Lucide icons
-- Zod request validation
-- Better Auth with scrypt password hashing and database-backed sessions
-- Better Auth organizations with active membership and owner/member roles
-- Database-backed authentication rate limits and mandatory organization setup
-- Better Auth TOTP challenges with encrypted secrets and account lockout
-- Hashed password recovery codes protected by database-backed rate limits
-- Hashed invitation tokens and transactional member credential provisioning
-- Prisma and PostgreSQL with separate pooled runtime and direct migration
-  connections
-- Organization-scoped labels, cycles, views, invitations, and issue metadata
-- REST endpoints for issue loading, creation, editing, discussion, labels, and
-  saved views
-- Server-owned issue numbering and audit event generation
-- Vitest coverage for API schemas and cycle calculations
-- GitHub Actions checks for dependency security, migrations, lint, tests, and
-  production builds
-- `/api/health` readiness checks for database connectivity
+## Scripts
+
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Start the development server |
+| `npm run build` / `npm start` | Build and run for production |
+| `npm run lint` | Lint the code |
+| `npm run test:run` | Run the test suite once |
+| `npm run db:setup` | Start the local database and apply migrations |
+| `npm run db:migrate` | Apply migrations |
+| `npm run db:studio` | Browse the database |
+| `npm run db:down` | Stop the local database |
 
 ## Deployment
 
-AMR Hub is configured for Vercel or another Node.js host connected to managed
-PostgreSQL. Production setup, migrations, verification, backups, and rollback
-steps are documented in [the deployment runbook](docs/DEPLOYMENT.md).
+AMR Hub runs on Vercel or any Node.js host with a managed PostgreSQL database.
+Three daily scheduled jobs handle notification emails, automation and emptying
+the trash; they are defined in `vercel.json`. Setup, migrations, backups and
+rollback are covered in the [deployment guide](docs/DEPLOYMENT.md).
 
-## Product roadmap
+A health check is available at `/api/health`.
 
-The next production milestones build on the durable server data:
+## Project structure
 
-1. Passkeys and transactional email verification
-2. Attachments, custom fields, and richer planning metadata
-3. Backlog triage, cycle automation, workload forecasting, and dependencies
-4. Notifications, observability, browser accessibility tests, and integrations
+```
+src/app             Pages, layouts and API routes
+src/app/components  Shared UI
+src/app/data        Domain logic shared by the browser and server
+src/server          Server side logic, validation and database access
+prisma              Schema and migrations
+docs                Deployment guide
+```
 
-This scope follows the strongest patterns in established trackers: issues need
-clear ownership, priority, workflow state, and optional planning properties
-before adding heavier automation. See [Linear's issue model](https://linear.app/docs/conceptual-model),
-[Linear triage](https://linear.app/docs/triage), and
-[Jira bug tracking](https://www.atlassian.com/software/jira/features/bug-tracking).
+## Contributing
+
+Issues and pull requests are welcome. Before opening a pull request, make sure
+`npm run lint`, `npm run test:run` and `npm run build` all pass.
