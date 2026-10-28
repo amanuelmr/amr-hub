@@ -1609,3 +1609,13 @@ td.pa-actions-cell {
   font-family: var(--font-mono);
   font-size: 10px;
 }
+
+.project-key-row {
+  display: flex;
+  gap: 8px;
+}
+
+.project-key-row input {
+  min-width: 0;
+  flex: 1;
+}

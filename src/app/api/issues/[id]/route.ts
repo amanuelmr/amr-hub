@@ -5,6 +5,7 @@ import { deleteIssue } from "../../../../server/issueOperations";
 import { IssueActionError } from "../../../../server/issueRelations";
 import {
   getIssue,
+  resolveIssueKey,
   InvalidParentError,
   UnknownAssigneeError,
   UnknownComponentError,
@@ -37,8 +38,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
   const { id } = await context.params;
 
   try {
+    // A key from before a project was renamed loads the item under its new key.
+    const currentId = await resolveIssueKey(id, result.session.workspace.id);
     const issue = await getIssue(
-      id,
+      currentId,
       result.session.workspace.id,
       accessUserFromSession(result.session),
     );

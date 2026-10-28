@@ -39,7 +39,7 @@ export async function loadJqlContext(
       where: viewer
         ? visibleProjectWhere(viewer, organizationId, { includeArchived: true })
         : { organizationId, deletedAt: null },
-      select: { id: true, key: true, name: true },
+      select: { id: true, key: true, name: true, keyAliases: { select: { key: true } } },
     }),
     prisma.cycle.findMany({ where: { organizationId } }),
     listOrganizationMembers(organizationId),
@@ -55,7 +55,12 @@ export async function loadJqlContext(
     now,
     currentUserId: userId,
     currentMemberId: membership?.id ?? null,
-    projectsByKey: projectsByKeyFrom(projects),
+    projectsByKey: projectsByKeyFrom(
+      projects.map(({ keyAliases, ...project }) => ({
+        ...project,
+        previousKeys: keyAliases.map((alias) => alias.key),
+      })),
+    ),
     workflows,
     members,
     customFields,

@@ -192,6 +192,8 @@ export const createProjectSchema = z
   })
   .strict();
 
+export const changeProjectKeySchema = z.object({ key: projectKeySchema }).strict();
+
 export const projectAccessUpdateSchema = z
   .object({ accessLevel: z.enum(["OPEN", "LIMITED", "PRIVATE"]) })
   .strict();

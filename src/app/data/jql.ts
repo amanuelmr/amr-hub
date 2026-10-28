@@ -129,7 +129,13 @@ export type JqlParseResult =
   | { ok: true; query: JqlQuery }
   | { ok: false; error: JqlError };
 
-export type JqlProject = { id: string; key: string; name: string };
+export type JqlProject = {
+  id: string;
+  key: string;
+  name: string;
+  /** Keys the project used before it was renamed; they still resolve. */
+  previousKeys?: string[];
+};
 
 export type JqlContext = {
   now: Date;
@@ -1137,8 +1143,20 @@ function findProject(value: string, ctx: JqlContext) {
     (project) =>
       project.id === value ||
       project.key.toLowerCase() === wanted ||
-      project.name.toLowerCase() === wanted,
+      project.name.toLowerCase() === wanted ||
+      (project.previousKeys ?? []).some((key) => key.toLowerCase() === wanted),
   );
+}
+
+/** Maps a work item key under a project's old key to its current key. */
+export function currentIssueKey(value: string, ctx: Pick<JqlContext, "projectsByKey">) {
+  const match = /^(.*?)-(\d+)$/.exec(value);
+  if (!match) return value;
+  const prefix = match[1].toUpperCase();
+  const project = Object.values(ctx.projectsByKey ?? {}).find((candidate) =>
+    (candidate.previousKeys ?? []).some((key) => key.toUpperCase() === prefix),
+  );
+  return project ? `${project.key}-${match[2]}` : value;
 }
 
 function projectForIssue(issue: Issue, ctx: JqlContext) {
@@ -1287,7 +1305,7 @@ function literalMatches(
       return findProject(value, ctx).some((project) => project.id === issue.projectId) ||
         issue.projectId === value;
     case "key":
-      return issue.id.toLowerCase() === value.toLowerCase();
+      return issue.id.toLowerCase() === currentIssueKey(value, ctx).toLowerCase();
     case "issuetype":
       return enumMatches(
         issue.kind,
@@ -1465,7 +1483,7 @@ function orderedCompare(
   let diff: number | null = null;
   if (field === "key") {
     const a = splitKey(issue.id);
-    const b = splitKey(operand.value);
+    const b = splitKey(currentIssueKey(operand.value, ctx));
     if (a.prefix === b.prefix && !Number.isNaN(a.number) && !Number.isNaN(b.number)) {
       diff = a.number - b.number;
     }

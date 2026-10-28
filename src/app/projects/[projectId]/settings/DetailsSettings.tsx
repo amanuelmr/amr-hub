@@ -11,7 +11,8 @@ import {
   type ProjectBackground,
   type ProjectStatus,
 } from "../../../data/projects";
-import { toDateInput, type ProjectPerson } from "./adminUi";
+import { AdminDialog, errorMessage, toDateInput, type ProjectPerson } from "./adminUi";
+import { apiRequest, useIssues } from "../../../IssueProvider";
 
 export function DetailsSettings({
   project,
@@ -22,7 +23,9 @@ export function DetailsSettings({
   people: ProjectPerson[];
   readOnly: boolean;
 }) {
-  const { updateProject } = useProjects();
+  const { updateProject, refreshProjects } = useProjects();
+  const { refreshIssues } = useIssues();
+  const [isChangingKey, setIsChangingKey] = useState(false);
   const [name, setName] = useState(project.name);
   const [description, setDescription] = useState(project.description ?? "");
   const [color, setColor] = useState(project.color ?? PROJECT_COLORS[0]);
@@ -75,170 +78,279 @@ export function DetailsSettings({
   };
 
   return (
-    <form
-      className="pa-form pa-settings-form"
-      onSubmit={handleSubmit}
-      noValidate
-    >
-      <fieldset disabled={readOnly} className="pa-fieldset">
-        <div className="pa-form-row">
-          <label className="form-field">
-            <span>Name</span>
-            <input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              maxLength={80}
-            />
-          </label>
-          <label className="form-field">
-            <span>Key</span>
-            <input value={project.key} readOnly aria-readonly="true" />
-            <span className="field-meta">Keys can&apos;t be changed.</span>
-          </label>
-        </div>
-        <label className="form-field">
-          <span>Description</span>
-          <textarea
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            rows={3}
-            maxLength={500}
-          />
-        </label>
-        <label className="form-field">
-          <span>URL</span>
-          <input
-            type="url"
-            value={url}
-            onChange={(event) => setUrl(event.target.value)}
-            maxLength={2000}
-            placeholder="https://docs.example.com/project"
-          />
-          <span className="field-meta">
-            A page about the project, such as its docs or repository.
-          </span>
-        </label>
-        <div className="pa-form-row">
-          <label className="form-field">
-            <span>Project lead</span>
-            <select
-              value={leadUserId}
-              onChange={(event) => setLeadUserId(event.target.value)}
-            >
-              <option value="">No lead</option>
-              {people.map((person) => (
-                <option key={person.userId} value={person.userId}>
-                  {person.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="form-field">
-            <span>Status</span>
-            <select
-              value={status}
-              onChange={(event) =>
-                setStatus(event.target.value as ProjectStatus)
-              }
-            >
-              {Object.entries(PROJECT_STATUS_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <div className="pa-form-row">
-          <label className="form-field">
-            <span>Target date</span>
-            <input
-              type="date"
-              value={targetDate}
-              onChange={(event) => setTargetDate(event.target.value)}
-            />
-          </label>
-          <label className="form-field">
-            <span>Board type</span>
-            <select
-              value={boardType}
-              onChange={(event) =>
-                setBoardType(event.target.value as BoardType)
-              }
-            >
-              <option value="SCRUM">Scrum — sprints and a backlog</option>
-              <option value="KANBAN">Kanban — continuous flow</option>
-            </select>
-          </label>
-        </div>
-        <fieldset className="form-field label-field">
-          <legend>Color</legend>
-          <div className="label-options">
-            {PROJECT_COLORS.map((option) => (
-              <label key={option}>
-                <input
-                  type="radio"
-                  name="project-color"
-                  checked={color === option}
-                  onChange={() => setColor(option)}
-                />
-                <span
-                  className="project-color-dot"
-                  style={{ background: option }}
-                />
-              </label>
-            ))}
-          </div>
-        </fieldset>
-        <fieldset className="form-field label-field">
-          <legend>Background</legend>
-          <div className="label-options project-background-options">
-            <label title="None">
+    <>
+      <form
+        className="pa-form pa-settings-form"
+        onSubmit={handleSubmit}
+        noValidate
+      >
+        <fieldset disabled={readOnly} className="pa-fieldset">
+          <div className="pa-form-row">
+            <label className="form-field">
+              <span>Name</span>
               <input
-                type="radio"
-                name="project-background"
-                checked={background === null}
-                onChange={() => setBackground(null)}
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                maxLength={80}
               />
-              <span className="project-background-swatch" data-background="none">
-                <span className="sr-only">None</span>
-              </span>
             </label>
-            {PROJECT_BACKGROUNDS.map((option) => (
-              <label key={option.key} title={option.label}>
+            <div className="form-field">
+              <span>Key</span>
+              <div className="project-key-row">
+                <input value={project.key} readOnly aria-readonly="true" aria-label="Project key" />
+                {!readOnly && (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => setIsChangingKey(true)}
+                  >
+                    Change key
+                  </button>
+                )}
+              </div>
+              <span className="field-meta">
+                {project.previousKeys?.length
+                  ? `Old keys still work: ${project.previousKeys.join(", ")}`
+                  : "Work item keys start with this, like " + project.key + "-1."}
+              </span>
+            </div>
+          </div>
+          <label className="form-field">
+            <span>Description</span>
+            <textarea
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              rows={3}
+              maxLength={500}
+            />
+          </label>
+          <label className="form-field">
+            <span>URL</span>
+            <input
+              type="url"
+              value={url}
+              onChange={(event) => setUrl(event.target.value)}
+              maxLength={2000}
+              placeholder="https://docs.example.com/project"
+            />
+            <span className="field-meta">
+              A page about the project, such as its docs or repository.
+            </span>
+          </label>
+          <div className="pa-form-row">
+            <label className="form-field">
+              <span>Project lead</span>
+              <select
+                value={leadUserId}
+                onChange={(event) => setLeadUserId(event.target.value)}
+              >
+                <option value="">No lead</option>
+                {people.map((person) => (
+                  <option key={person.userId} value={person.userId}>
+                    {person.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="form-field">
+              <span>Status</span>
+              <select
+                value={status}
+                onChange={(event) =>
+                  setStatus(event.target.value as ProjectStatus)
+                }
+              >
+                {Object.entries(PROJECT_STATUS_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="pa-form-row">
+            <label className="form-field">
+              <span>Target date</span>
+              <input
+                type="date"
+                value={targetDate}
+                onChange={(event) => setTargetDate(event.target.value)}
+              />
+            </label>
+            <label className="form-field">
+              <span>Board type</span>
+              <select
+                value={boardType}
+                onChange={(event) =>
+                  setBoardType(event.target.value as BoardType)
+                }
+              >
+                <option value="SCRUM">Scrum — sprints and a backlog</option>
+                <option value="KANBAN">Kanban — continuous flow</option>
+              </select>
+            </label>
+          </div>
+          <fieldset className="form-field label-field">
+            <legend>Color</legend>
+            <div className="label-options">
+              {PROJECT_COLORS.map((option) => (
+                <label key={option}>
+                  <input
+                    type="radio"
+                    name="project-color"
+                    checked={color === option}
+                    onChange={() => setColor(option)}
+                  />
+                  <span
+                    className="project-color-dot"
+                    style={{ background: option }}
+                  />
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <fieldset className="form-field label-field">
+            <legend>Background</legend>
+            <div className="label-options project-background-options">
+              <label title="None">
                 <input
                   type="radio"
                   name="project-background"
-                  checked={background === option.key}
-                  onChange={() => setBackground(option.key)}
+                  checked={background === null}
+                  onChange={() => setBackground(null)}
                 />
-                <span
-                  className="project-background-swatch"
-                  data-background={option.key}
-                >
-                  <span className="sr-only">{option.label}</span>
+                <span className="project-background-swatch" data-background="none">
+                  <span className="sr-only">None</span>
                 </span>
               </label>
-            ))}
-          </div>
-          <span className="field-meta">Shown behind every page of this project.</span>
+              {PROJECT_BACKGROUNDS.map((option) => (
+                <label key={option.key} title={option.label}>
+                  <input
+                    type="radio"
+                    name="project-background"
+                    checked={background === option.key}
+                    onChange={() => setBackground(option.key)}
+                  />
+                  <span
+                    className="project-background-swatch"
+                    data-background={option.key}
+                  >
+                    <span className="sr-only">{option.label}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <span className="field-meta">Shown behind every page of this project.</span>
+          </fieldset>
         </fieldset>
-      </fieldset>
-      {message && (
-        <p
-          className={message.ok ? "pa-success" : "form-submit-error"}
-          role={message.ok ? "status" : "alert"}
-        >
-          {message.text}
+        {message && (
+          <p
+            className={message.ok ? "pa-success" : "form-submit-error"}
+            role={message.ok ? "status" : "alert"}
+          >
+            {message.text}
+          </p>
+        )}
+        {!readOnly && (
+          <div className="pa-dialog-actions">
+            <button className="primary-button" type="submit" disabled={isSaving}>
+              {isSaving ? "Saving..." : "Save details"}
+            </button>
+          </div>
+        )}
+      </form>
+      <AdminDialog
+        open={isChangingKey}
+        onOpenChange={setIsChangingKey}
+        title="Change project key"
+        description="Every work item moves to the new key and keeps its number."
+      >
+        {isChangingKey && (
+          <ChangeKeyForm
+            project={project}
+            onCancel={() => setIsChangingKey(false)}
+            onChanged={async () => {
+              await Promise.all([refreshProjects(), refreshIssues()]);
+              setIsChangingKey(false);
+              setMessage({ ok: true, text: "Project key changed." });
+            }}
+          />
+        )}
+      </AdminDialog>
+    </>
+  );
+}
+
+function ChangeKeyForm({
+  project,
+  onCancel,
+  onChanged,
+}: {
+  project: Project;
+  onCancel: () => void;
+  onChanged: () => Promise<void>;
+}) {
+  const [key, setKey] = useState(project.key);
+  const [error, setError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const next = key.trim().toUpperCase();
+  const isValid = /^[A-Z][A-Z0-9]{1,5}$/.test(next);
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!isValid) {
+      setError("Use 2-6 letters or numbers, starting with a letter.");
+      return;
+    }
+    setIsSaving(true);
+    setError(null);
+    try {
+      await apiRequest(`/api/projects/${encodeURIComponent(project.id)}/key`, {
+        method: "POST",
+        body: JSON.stringify({ key: next }),
+      });
+      await onChanged();
+    } catch (requestError) {
+      setError(errorMessage(requestError, "Project key could not be changed"));
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <form className="pa-form" onSubmit={(event) => void submit(event)} noValidate>
+      <label className="form-field">
+        <span>New key</span>
+        <input
+          value={key}
+          maxLength={6}
+          autoFocus
+          onChange={(event) => setKey(event.target.value.toUpperCase())}
+        />
+      </label>
+      {isValid && next !== project.key && (
+        <p className="pa-muted">
+          {project.key}-1 becomes {next}-1, and so on for all {project.issueCount} work
+          items. Links and filters that use {project.key} keep working, and no other
+          project can take {project.key}.
         </p>
       )}
-      {!readOnly && (
-        <div className="pa-dialog-actions">
-          <button className="primary-button" type="submit" disabled={isSaving}>
-            {isSaving ? "Saving..." : "Save details"}
-          </button>
-        </div>
+      {error && (
+        <p className="form-submit-error" role="alert">
+          {error}
+        </p>
       )}
+      <div className="pa-dialog-actions">
+        <button className="secondary-button" type="button" onClick={onCancel}>
+          Cancel
+        </button>
+        <button
+          className="primary-button"
+          type="submit"
+          disabled={isSaving || !isValid || next === project.key}
+        >
+          {isSaving ? "Changing…" : "Change key"}
+        </button>
+      </div>
     </form>
   );
 }

@@ -5,6 +5,7 @@ import {
   applyRelativeOffset,
   basicFiltersToJql,
   compareIssueKeys,
+  currentIssueKey,
   getJqlSuggestions,
   parseJql,
   parseJqlDateLiteral,
@@ -563,5 +564,30 @@ describe("autocomplete", () => {
       text: "project = AMR AND assignee ",
       caret: 27,
     });
+  });
+});
+
+describe("renamed project keys", () => {
+  const renamed: JqlContext = {
+    ...ctx,
+    projectsByKey: projectsByKeyFrom([
+      { id: "proj-amr", key: "AMR", name: "AMR Hub", previousKeys: ["SHOP", "OLD"] },
+      { id: "proj-ops", key: "OPS", name: "Operations" },
+    ]),
+  };
+
+  it("matches a project by an old key", () => {
+    expect(searchIssuesWithJql(issues, "project = SHOP", renamed)).toMatchObject({ ok: true });
+    const result = searchIssuesWithJql(issues, "project = SHOP ORDER BY key", renamed);
+    expect(result.ok && result.issues.map((issue) => issue.id)).toEqual(["AMR-1", "AMR-2", "AMR-10"]);
+  });
+
+  it("maps an old work item key to its current key", () => {
+    expect(currentIssueKey("SHOP-2", renamed)).toBe("AMR-2");
+    expect(currentIssueKey("old-7", renamed)).toBe("AMR-7");
+    expect(currentIssueKey("OPS-3", renamed)).toBe("OPS-3");
+    expect(currentIssueKey("not a key", renamed)).toBe("not a key");
+    const result = searchIssuesWithJql(issues, "key = SHOP-2", renamed);
+    expect(result.ok && result.issues.map((issue) => issue.id)).toEqual(["AMR-2"]);
   });
 });

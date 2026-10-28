@@ -238,7 +238,8 @@ model Project {
   members             ProjectMember[]
   forms               Form[]
 
-  boards Board[]
+  boards     Board[]
+  keyAliases ProjectKeyAlias[]
 
   @@unique([organizationId, key])
   @@unique([organizationId, name])
@@ -571,6 +572,20 @@ model IssueComponent {
 
   @@id([issueId, componentId])
   @@index([componentId])
+}
+
+/// A key a project used before it was renamed. Old work item keys under it
+/// keep resolving, and no other project in the workspace can take it.
+model ProjectKeyAlias {
+  id             String   @id @default(cuid())
+  organizationId String
+  key            String
+  projectId      String
+  createdAt      DateTime @default(now())
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, key])
+  @@index([projectId])
 }
 
 /// A link from a work item to a page outside the workspace.

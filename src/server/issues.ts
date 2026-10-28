@@ -235,6 +235,26 @@ export function serializeIssueDetail(issue: StoredIssueDetail): Issue {
 }
 
 /**
+ * The current key for a work item key. Keys from before a project was renamed
+ * (WEB-12 after WEB became SHOP) map to the new key; anything else is returned
+ * unchanged.
+ */
+export async function resolveIssueKey(id: string, organizationId: string) {
+  const exists = await prisma.issue.findFirst({
+    where: { id, organizationId },
+    select: { id: true },
+  });
+  if (exists) return id;
+  const match = /^([A-Za-z][A-Za-z0-9]*)-(\d+)$/.exec(id);
+  if (!match) return id;
+  const alias = await prisma.projectKeyAlias.findUnique({
+    where: { organizationId_key: { organizationId, key: match[1].toUpperCase() } },
+    select: { project: { select: { key: true } } },
+  });
+  return alias ? `${alias.project.key}-${match[2]}` : id;
+}
+
+/**
  * One issue by key. Trashed issues read as missing; archived ones stay
  * reachable. With a viewer, issues in projects they cannot see read as
  * missing and links/children into hidden projects are dropped.
