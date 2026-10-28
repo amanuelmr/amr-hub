@@ -28,6 +28,8 @@ model Issue {
   startDate                DateTime?
   rank                     Float            @default(0)
   flagged                  Boolean          @default(false)
+  /// Narrows who can see the item below the project's audience; null for everyone.
+  securityLevel            String?
   resolution               String?
   resolvedAt               DateTime?
   statusChangedAt          DateTime         @default(now())

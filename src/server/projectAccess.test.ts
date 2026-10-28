@@ -9,6 +9,7 @@ const {
   liveIssueWhere,
   resolveProjectPermissions,
   visibleIssueWhere,
+  issueSecurityWhere,
   visibleProjectWhere,
 } = await import("./projectAccess");
 const { canTrashIssue, daysUntilPurge, purgeCutoff, trashExpiresAt } = await import(
@@ -143,8 +144,21 @@ describe("visibleProjectWhere / visibleIssueWhere", () => {
     expect(where.archivedAt).toBeNull();
     expect(where.project).toMatchObject({ deletedAt: null, archivedAt: null });
     expect(Object.keys(where).sort()).toEqual(
-      ["archivedAt", "deletedAt", "organizationId", "project"].sort(),
+      ["AND", "archivedAt", "deletedAt", "organizationId", "project"].sort(),
     );
+  });
+
+  it("hides items above the user's security level", () => {
+    const where = visibleIssueWhere({ id: "u2", role: "member" }, "org");
+    const security = (where.AND as { OR: unknown[] }[])[0].OR;
+    expect(security).toEqual(
+      expect.arrayContaining([
+        { securityLevel: null },
+        { creatorId: "u2" },
+        { assignee: { userId: "u2" } },
+      ]),
+    );
+    expect(issueSecurityWhere({ id: "u1", role: "owner" })).toEqual({});
   });
 
   it("can include archived issues and archived projects", () => {

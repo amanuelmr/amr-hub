@@ -8,6 +8,7 @@ import {
   type ProjectPermissions,
   type ProjectRole,
 } from "../app/data/projects";
+import { canSeeSecuredIssue, type SecurityViewer } from "../app/data/issueSecurity";
 
 export { PROJECT_ACCESS_LEVELS, PROJECT_ROLES };
 export type { ProjectAccessLevel, ProjectPermissions, ProjectRole };
@@ -148,6 +149,52 @@ export function visibleIssueWhere(
     project: visibleProjectWhere(user, organizationId, {
       includeArchived: options.includeArchivedProjects,
     }),
+    ...(user.role === "owner" ? {} : { AND: [issueSecurityWhere(user)] }),
+  };
+}
+
+/**
+ * Items whose security level the user passes (mirrors canSeeSecuredIssue):
+ * unrestricted items, their own items, and levels their project role meets.
+ */
+export function issueSecurityWhere(user: AccessUser): Prisma.IssueWhereInput {
+  if (user.role === "owner") return {};
+  return {
+    OR: [
+      { securityLevel: null },
+      { creatorId: user.id },
+      { assignee: { userId: user.id } },
+      {
+        securityLevel: "MEMBERS",
+        project: { OR: [{ leadUserId: user.id }, { members: { some: { userId: user.id } } }] },
+      },
+      {
+        securityLevel: "ADMINS",
+        project: {
+          OR: [
+            { leadUserId: user.id },
+            { members: { some: { userId: user.id, role: "ADMIN" } } },
+          ],
+        },
+      },
+    ],
+  };
+}
+
+/** The viewer's standing on a project, for issue security decisions. */
+export async function securityViewerFor(
+  projectId: string,
+  user: AccessUser,
+): Promise<SecurityViewer> {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { leadUserId: true, members: { where: { userId: user.id }, select: { role: true } } },
+  });
+  return {
+    userId: user.id,
+    workspaceRole: user.role,
+    projectRole: project?.members[0]?.role ?? null,
+    isLead: project?.leadUserId === user.id,
   };
 }
 
@@ -301,7 +348,14 @@ export async function assertIssuePermission(
 ) {
   const issue = await prisma.issue.findFirst({
     where: { id: issueId, organizationId, deletedAt: null },
-    select: { id: true, projectId: true, creatorId: true, archivedAt: true },
+    select: {
+      id: true,
+      projectId: true,
+      creatorId: true,
+      archivedAt: true,
+      securityLevel: true,
+      assignee: { select: { userId: true } },
+    },
   });
   if (!issue) throw new ProjectAccessError("Issue not found", 404);
   const permissions = await assertProjectPermission(
@@ -311,6 +365,16 @@ export async function assertIssuePermission(
     need,
     "Issue not found",
   );
+  // An item above the viewer's security level reads as missing.
+  if (
+    issue.securityLevel &&
+    !canSeeSecuredIssue(
+      { ...issue, assigneeUserId: issue.assignee?.userId ?? null },
+      await securityViewerFor(issue.projectId, user),
+    )
+  ) {
+    throw new ProjectAccessError("Issue not found", 404);
+  }
   return { issue, permissions };
 }
 

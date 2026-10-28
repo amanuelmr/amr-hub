@@ -57,6 +57,7 @@ const activityVisuals: Record<
   GOAL_CHANGED: { icon: CircleDot, tone: "green" },
   CUSTOM_FIELD_CHANGED: { icon: PencilLine, tone: "blue" },
   ARCHIVE_CHANGED: { icon: PencilLine, tone: "neutral" },
+  SECURITY_CHANGED: { icon: PencilLine, tone: "neutral" },
 };
 
 export function WorkspaceActivity({
