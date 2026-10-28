@@ -275,6 +275,9 @@ function AddPeopleDialog({
   onAdd: (userIds: string[], role: ProjectRole) => Promise<boolean>;
 }) {
   const [members, setMembers] = useState<WorkspaceMember[] | null>(null);
+  const [groups, setGroups] = useState<
+    { id: string; name: string; members: { userId: string }[] }[]
+  >([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [role, setRole] = useState<ProjectRole>("MEMBER");
   const [query, setQuery] = useState("");
@@ -290,8 +293,21 @@ function AddPeopleDialog({
           setError(errorMessage(loadError, "Workspace members could not be loaded"));
         }
       });
+    apiRequest<{ id: string; name: string; members: { userId: string }[] }[]>("/api/groups", {
+      signal: controller.signal,
+    })
+      .then(setGroups)
+      .catch(() => undefined);
     return () => controller.abort();
   }, []);
+
+  // Picking a group selects everyone in it who isn't in the project yet.
+  const addGroup = (groupId: string) => {
+    const group = groups.find((candidate) => candidate.id === groupId);
+    if (!group) return;
+    const ids = group.members.map((member) => member.userId).filter((id) => !existing.has(id));
+    setSelected((current) => [...new Set([...current, ...ids])]);
+  };
 
   const candidates = (members ?? []).filter((member) => {
     if (existing.has(member.userId)) return false;
@@ -332,6 +348,19 @@ function AddPeopleDialog({
             onChange={(event) => setQuery(event.target.value)}
           />
         </label>
+        {groups.length > 0 && (
+          <label className="form-field">
+            <span>Add a group</span>
+            <select value="" onChange={(event) => addGroup(event.target.value)}>
+              <option value="">Choose a group to select its members…</option>
+              {groups.map((group) => (
+                <option key={group.id} value={group.id}>
+                  {group.name} ({group.members.length})
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <div className="pac-picker" role="group" aria-label="Workspace members">
           {members === null ? (
             <p className="pa-muted">Loading members…</p>
