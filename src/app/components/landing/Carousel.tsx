@@ -3,7 +3,7 @@
 import { useRef, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 
-/** A horizontal card row with previous and next buttons, like Jira's. */
+/** A horizontal card row with previous and next buttons. */
 export function Carousel({ label, children }: { label: string; children: ReactNode }) {
   const track = useRef<HTMLDivElement>(null);
   const scroll = (direction: -1 | 1) =>
