@@ -1,4 +1,5 @@
 import prisma from "../../prisma/client";
+import { visibleIssueWhere, visibleProjectWhere, type AccessUser } from "./projectAccess";
 import { KIND_LABELS, PRIORITY_LABELS } from "../app/data/issues";
 import { htmlToPlainText, minutesToHours, toCsv } from "./csvExportCore";
 import { exportFieldValue, parseCustomFieldValues, sortFields } from "../app/data/customFields";
@@ -23,10 +24,14 @@ export class ExportProjectError extends Error {
   }
 }
 
-async function loadScope(organizationId: string, projectId: string | null) {
+async function loadScope(organizationId: string, projectId: string | null, viewer: AccessUser) {
   if (!projectId) return { scope: "all-projects", projectIds: null as string[] | null };
+  // A project the viewer can't see reads as missing.
   const project = await prisma.project.findFirst({
-    where: { id: projectId, organizationId, deletedAt: null },
+    where: {
+      ...visibleProjectWhere(viewer, organizationId, { includeArchived: true }),
+      id: projectId,
+    },
     select: { id: true, key: true },
   });
   if (!project) throw new ExportProjectError();
@@ -37,12 +42,15 @@ async function loadIssues<T extends object>(
   organizationId: string,
   projectIds: string[] | null,
   extraInclude: T,
+  viewer: AccessUser,
 ) {
   return prisma.issue.findMany({
     where: {
-      organizationId,
-      deletedAt: null,
-      project: { deletedAt: null },
+      // Only what the viewer can see: their projects and security levels.
+      ...visibleIssueWhere(viewer, organizationId, {
+        includeArchived: true,
+        includeArchivedProjects: true,
+      }),
       ...(projectIds ? { projectId: { in: projectIds } } : {}),
     },
     include: { ...exportInclude, ...extraInclude },
@@ -88,9 +96,13 @@ export const CSV_EXPORT_HEADERS = [
 ];
 
 /** All standard fields for a project (or the whole workspace) as a CSV document. */
-export async function exportIssuesCsv(organizationId: string, projectId: string | null) {
-  const { scope, projectIds } = await loadScope(organizationId, projectId);
-  const issues = await loadIssues(organizationId, projectIds, {});
+export async function exportIssuesCsv(
+  organizationId: string,
+  projectId: string | null,
+  viewer: AccessUser,
+) {
+  const { scope, projectIds } = await loadScope(organizationId, projectId, viewer);
+  const issues = await loadIssues(organizationId, projectIds, {}, viewer);
   const { statusNames, typeNames } = await nameLookups(organizationId);
   // Jira-style "Custom field (Name)" columns for the fields in scope.
   const [allFields, members] = await Promise.all([
@@ -169,8 +181,12 @@ async function nameLookups(organizationId: string) {
 }
 
 /** Projects with their issues, comments and worklogs as a JSON document. */
-export async function exportIssuesJson(organizationId: string, projectId: string | null) {
-  const { scope, projectIds } = await loadScope(organizationId, projectId);
+export async function exportIssuesJson(
+  organizationId: string,
+  projectId: string | null,
+  viewer: AccessUser,
+) {
+  const { scope, projectIds } = await loadScope(organizationId, projectId, viewer);
   const [organization, projects, issues] = await Promise.all([
     prisma.organization.findUnique({
       where: { id: organizationId },
@@ -178,8 +194,7 @@ export async function exportIssuesJson(organizationId: string, projectId: string
     }),
     prisma.project.findMany({
       where: {
-        organizationId,
-        deletedAt: null,
+        ...visibleProjectWhere(viewer, organizationId, { includeArchived: true }),
         ...(projectIds ? { id: { in: projectIds } } : {}),
       },
       select: {
@@ -217,7 +232,7 @@ export async function exportIssuesJson(organizationId: string, projectId: string
           createdAt: true,
         },
       },
-    }),
+    }, viewer),
   ]);
 
   const document = {
