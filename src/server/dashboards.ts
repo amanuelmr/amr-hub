@@ -170,12 +170,14 @@ async function validateShares(shares: FilterShare[], organizationId: string) {
   const unique = dedupeShares(shares);
   const ids = (type: FilterShare["type"]) =>
     unique.flatMap((share) => (share.type === type && "id" in share ? [share.id] : []));
-  const [projects, teams, members] = await Promise.all([
+  const [projects, groups, teams, members] = await Promise.all([
     prisma.project.count({ where: { id: { in: ids("PROJECT") }, organizationId } }),
+    prisma.userGroup.count({ where: { id: { in: ids("GROUP") }, organizationId } }),
     prisma.team.count({ where: { id: { in: ids("TEAM") }, organizationId } }),
     prisma.member.count({ where: { userId: { in: ids("USER") }, organizationId } }),
   ]);
   if (projects !== ids("PROJECT").length) throw new DashboardInputError("A shared project doesn't exist");
+  if (groups !== ids("GROUP").length) throw new DashboardInputError("A shared group doesn't exist");
   if (teams !== ids("TEAM").length) throw new DashboardInputError("A shared team doesn't exist");
   if (members !== ids("USER").length) {
     throw new DashboardInputError("You can only share with people in this workspace");

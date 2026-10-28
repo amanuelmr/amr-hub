@@ -14,12 +14,14 @@ import {
 
 type Person = { userId: string; name: string; email: string };
 type Team = { id: string; name: string };
+type Group = { id: string; name: string };
 
-/** Names for share targets: projects, teams and people in the workspace. */
+/** Names for share targets: projects, groups, teams and people in the workspace. */
 export function useShareDirectory() {
   const { allProjects } = useProjects();
   const [people, setPeople] = useState<Person[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -28,6 +30,9 @@ export function useShareDirectory() {
       .catch(() => undefined);
     void apiRequest<Team[]>("/api/teams")
       .then((loaded) => !cancelled && setTeams(loaded))
+      .catch(() => undefined);
+    void apiRequest<Group[]>("/api/groups")
+      .then((loaded) => !cancelled && setGroups(loaded))
       .catch(() => undefined);
     return () => {
       cancelled = true;
@@ -40,6 +45,8 @@ export function useShareDirectory() {
         return "My organization";
       case "PROJECT":
         return `Project: ${allProjects.find((project) => project.id === share.id)?.name ?? "Unknown"}`;
+      case "GROUP":
+        return `Group: ${groups.find((group) => group.id === share.id)?.name ?? "Unknown"}`;
       case "TEAM":
         return `Team: ${teams.find((team) => team.id === share.id)?.name ?? "Unknown"}`;
       case "USER":
@@ -47,7 +54,7 @@ export function useShareDirectory() {
     }
   };
 
-  return { projects: allProjects, people, teams, label };
+  return { projects: allProjects, people, teams, groups, label };
 }
 
 export type ShareDirectory = ReturnType<typeof useShareDirectory>;
@@ -81,11 +88,13 @@ export function ShareEditor({
   const targets =
     type === "PROJECT"
       ? directory.projects.map((project) => ({ id: project.id, name: project.name }))
-      : type === "TEAM"
-        ? directory.teams.map((team) => ({ id: team.id, name: team.name }))
-        : type === "USER"
-          ? directory.people.map((person) => ({ id: person.userId, name: person.name }))
-          : [];
+      : type === "GROUP"
+        ? directory.groups.map((group) => ({ id: group.id, name: group.name }))
+        : type === "TEAM"
+          ? directory.teams.map((team) => ({ id: team.id, name: team.name }))
+          : type === "USER"
+            ? directory.people.map((person) => ({ id: person.userId, name: person.name }))
+            : [];
 
   const add = () => {
     if (type === "WORKSPACE") {

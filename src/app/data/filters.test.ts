@@ -13,6 +13,7 @@ const member: FilterAudience = {
   userId: "u2",
   role: "member",
   teamIds: ["t1"],
+  groupIds: ["g1"],
   projectIds: ["p1"],
 };
 
@@ -33,6 +34,8 @@ describe("filter sharing", () => {
     expect(canViewFilter(shared({ type: "PROJECT", id: "p1" }), member)).toBe(true);
     expect(canViewFilter(shared({ type: "PROJECT", id: "p9" }), member)).toBe(false);
     expect(canViewFilter(shared({ type: "TEAM", id: "t1" }), member)).toBe(true);
+    expect(canViewFilter(shared({ type: "GROUP", id: "g1" }), member)).toBe(true);
+    expect(canViewFilter(shared({ type: "GROUP", id: "g2" }), member)).toBe(false);
     expect(canViewFilter(shared({ type: "USER", id: "u2" }), member)).toBe(true);
   });
 

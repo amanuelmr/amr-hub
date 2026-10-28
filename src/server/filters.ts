@@ -45,6 +45,7 @@ const jqlSchema = z
 const shareSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("WORKSPACE") }).strict(),
   z.object({ type: z.literal("PROJECT"), id: z.string().trim().min(1).max(120) }).strict(),
+  z.object({ type: z.literal("GROUP"), id: z.string().trim().min(1).max(120) }).strict(),
   z.object({ type: z.literal("TEAM"), id: z.string().trim().min(1).max(120) }).strict(),
   z.object({ type: z.literal("USER"), id: z.string().trim().min(1).max(120) }).strict(),
 ]);
@@ -86,10 +87,14 @@ export async function filterAudience(
   user: AccessUser,
   organizationId: string,
 ): Promise<FilterAudience> {
-  const [teams, projectIds] = await Promise.all([
+  const [teams, groups, projectIds] = await Promise.all([
     prisma.teamMember.findMany({
       where: { userId: user.id, team: { organizationId } },
       select: { teamId: true },
+    }),
+    prisma.userGroupMember.findMany({
+      where: { userId: user.id, group: { organizationId } },
+      select: { groupId: true },
     }),
     accessibleProjectIds(organizationId, user),
   ]);
@@ -97,6 +102,7 @@ export async function filterAudience(
     userId: user.id,
     role: user.role,
     teamIds: teams.map((team) => team.teamId),
+    groupIds: groups.map((group) => group.groupId),
     projectIds: [...projectIds],
   };
 }
@@ -200,12 +206,14 @@ async function validateShares(shares: FilterShare[], organizationId: string) {
   const unique = dedupeShares(shares);
   const ids = (type: FilterShare["type"]) =>
     unique.flatMap((share) => (share.type === type && "id" in share ? [share.id] : []));
-  const [projects, teams, members] = await Promise.all([
+  const [projects, groups, teams, members] = await Promise.all([
     prisma.project.count({ where: { id: { in: ids("PROJECT") }, organizationId } }),
+    prisma.userGroup.count({ where: { id: { in: ids("GROUP") }, organizationId } }),
     prisma.team.count({ where: { id: { in: ids("TEAM") }, organizationId } }),
     prisma.member.count({ where: { userId: { in: ids("USER") }, organizationId } }),
   ]);
   if (projects !== ids("PROJECT").length) throw new FilterInputError("A shared project doesn't exist");
+  if (groups !== ids("GROUP").length) throw new FilterInputError("A shared group doesn't exist");
   if (teams !== ids("TEAM").length) throw new FilterInputError("A shared team doesn't exist");
   if (members !== ids("USER").length) {
     throw new FilterInputError("You can only share with people in this workspace");

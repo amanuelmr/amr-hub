@@ -51,6 +51,7 @@ export type GadgetConfig = z.infer<typeof gadgetConfigSchema>;
 const shareSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("WORKSPACE") }).strict(),
   z.object({ type: z.literal("PROJECT"), id: z.string().trim().min(1).max(120) }).strict(),
+  z.object({ type: z.literal("GROUP"), id: z.string().trim().min(1).max(120) }).strict(),
   z.object({ type: z.literal("TEAM"), id: z.string().trim().min(1).max(120) }).strict(),
   z.object({ type: z.literal("USER"), id: z.string().trim().min(1).max(120) }).strict(),
 ]);

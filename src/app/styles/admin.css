@@ -898,3 +898,60 @@ td > .admin-pill:first-child {
     width: 100%;
   }
 }
+
+/* ---------- Groups ---------- */
+.admin-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.admin-group-main {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 320px;
+  gap: 4px;
+}
+
+.admin-group-main h2,
+.admin-group-main p {
+  margin: 0;
+}
+
+.admin-group-main h2 {
+  font-size: 15px;
+}
+
+.admin-group-people {
+  color: var(--gray-600);
+  font-size: 12px;
+}
+
+.admin-group-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.admin-group-search {
+  display: flex;
+  max-width: 320px;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 10px;
+  padding: 0 8px;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  color: var(--gray-500);
+}
+
+.admin-group-search input {
+  min-width: 0;
+  flex: 1;
+  height: 32px;
+  border: 0;
+  outline: 0;
+  color: var(--ink);
+  background: transparent;
+}
