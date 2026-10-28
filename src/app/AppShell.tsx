@@ -31,7 +31,9 @@ export function isAuthRoute(pathname: string) {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isLandingRoute = pathname === "/";
+  // The landing page and public guides render without the app shell.
+  const isLandingRoute =
+    pathname === "/" || pathname === "/guides" || pathname.startsWith("/guides/");
   const isOnAuthRoute = isAuthRoute(pathname);
 
   if (isLandingRoute) {

@@ -13,7 +13,12 @@ const publicRoutes = new Set([
 ]);
 
 export function isPublicPath(pathname: string) {
-  return publicRoutes.has(pathname) || pathname.startsWith("/invite/");
+  return (
+    publicRoutes.has(pathname) ||
+    pathname.startsWith("/invite/") ||
+    pathname === "/guides" ||
+    pathname.startsWith("/guides/")
+  );
 }
 
 export function proxy(request: NextRequest) {
