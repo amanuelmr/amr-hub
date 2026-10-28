@@ -1720,3 +1720,9 @@
   color: var(--gray-500);
   font-size: 11px;
 }
+
+@media (max-width: 640px) {
+  .issue-web-link-host {
+    display: none;
+  }
+}
