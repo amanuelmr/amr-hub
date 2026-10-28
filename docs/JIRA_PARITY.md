@@ -14,18 +14,18 @@ Out of scope by decision: Rovo / AI, paid plans, Confluence, Marketplace apps, J
 | Sidebar: For you, Recent, Starred, Projects, Filters, Dashboards, Teams | ✅ 🌐 | Also Roadmap, Goals, People, Overview, Issues |
 | Project header with view tabs and "…" menu | ✅ 🌐 | |
 | Keyboard shortcuts and `?` help | ✅ 🌐 | |
-| Mobile layout | 🟡 | Built, never checked at phone width |
+| Mobile layout | ✅ | Phone layouts reviewed in code and fixed where rows overflowed; not yet looked at on a phone |
 
 ## 2. Projects
 
 | Jira feature | Status | Notes |
 |---|---|---|
-| Create project from Scrum / Kanban template | ✅ 🌐 | |
+| Create project from a template gallery (Scrum, Kanban, bug tracking, project management, task tracking, IT service desk) | ✅ 🌐 | |
 | Projects directory: search, type filter, star | ✅ 🌐 | |
 | Project details (name, key, lead, avatar colour) | ✅ | |
 | Access: Open / Limited / Private and project roles | ✅ 🌐 | |
 | Archive and trash (restore within 60 days) | ✅ 🌐 | |
-| Change project key | ❌ | Jira allows it; ours is fixed |
+| Change project key | ✅ 🌐 | Work items keep their numbers; old keys stay reserved and keep resolving in links and search |
 
 ## 3. Work items (issues)
 
@@ -40,7 +40,7 @@ Out of scope by decision: Rovo / AI, paid plans, Confluence, Marketplace apps, J
 | Time tracking and log work | ✅ 🔌 | |
 | Watch, vote, share, flag | ✅ 🔌 | |
 | Clone, move, split, delete, archive | ✅ 🌐 | |
-| Issue-level security (hide single items) | ❌ | Access is per project only |
+| Issue-level security (hide single items) | ✅ 🔌 | Project members or project admins; reporter and assignee always see it; hidden items drop out of lists, search, links, exports and notifications |
 
 ## 4. Create, bulk, import and export
 
@@ -149,7 +149,7 @@ Out of scope by decision: Rovo / AI, paid plans, Confluence, Marketplace apps, J
 | Members, invitations, roles (owner / member / viewer) | ✅ | |
 | 2FA, passkeys, recovery codes, sessions | ✅ | |
 | Audit log, API tokens, REST API, webhooks | ✅ 🔌 | |
-| User groups (for sharing and permissions) | ❌ | Jira shares filters and dashboards with groups |
+| User groups (for sharing and permissions) | ✅ | Managed by owners; filters and dashboards share with groups, and a group can be added to a project at once |
 | SSO / SAML | ❌ | Atlassian Guard feature, not planned |
 
 ## Cleanup and modification plan
@@ -165,7 +165,7 @@ Work in this order; each step is finished, checked in the browser and committed 
    - Basic mode with Type and "+ More".
 2. ✅ **Dashboard sharing.** Done.
 3. ✅ **Browser pass done.** Fixed the burndown commitment. Not opened yet: form builder, automation rule builder, reactions (need a comment). Was: access, trash, archive, automation builder, board settings, forms, reactions, notifications, calendar, reports, dashboards. Fix what's broken or unlike Jira.
-4. **Mobile pass at phone width** for the main screens.
-5. **Remaining gaps, if wanted:** issue-level security, user groups, changing a project key.
-6. **Sidebar like Jira (future).** For you, Recent and Starred open flyouts, Apps, Spaces with + and "…", recent projects plus "More spaces", Filters, Dashboards, Teams, Goals, and a "Customize sidebar" option to show, hide and reorder items.
-7. **Landing page redesign (future).** See docs/LANDING_PLAN.md.
+4. ✅ **Mobile pass at phone width.** Reviewed in code; format rules, the list chart and web links now fit.
+5. ✅ **Remaining gaps.** Issue-level security, user groups and changing a project key are done.
+6. ✅ **Sidebar.** Recent and Starred open flyouts (Recent grouped by day), recent projects with "View all projects", and "Customize sidebar" to show, hide and reorder items.
+7. ✅ **Landing page redesign.** Done, see docs/LANDING_PLAN.md.
