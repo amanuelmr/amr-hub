@@ -2307,3 +2307,28 @@
   color: var(--gray-500);
   font-weight: 500;
 }
+
+@media (max-width: 640px) {
+  /* Format rules: query on its own line, colour and actions below it. */
+  .list-rule {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .list-rule > .list-rule-label:nth-of-type(2) {
+    display: none;
+  }
+
+  .list-rule select,
+  .list-rule-actions,
+  .list-rule-error {
+    grid-column: 2;
+  }
+
+  .list-chart-header {
+    flex-wrap: wrap;
+  }
+
+  .list-chart-total {
+    margin-left: 0;
+  }
+}

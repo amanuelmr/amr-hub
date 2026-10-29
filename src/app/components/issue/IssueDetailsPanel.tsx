@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Clock3,
   Hash,
+  Lock,
   Repeat2,
   Rocket,
   Target,
@@ -14,6 +15,14 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { apiRequest } from "../../IssueProvider";
+import { useProjects } from "../../ProjectProvider";
+import { authClient } from "../../../lib/auth-client";
+import {
+  ISSUE_SECURITY_LEVELS,
+  belongsToSecurityLevel,
+  type IssueSecurityLevel,
+  type SecurityViewer,
+} from "../../data/issueSecurity";
 import { KindIcon } from "../IssueVisuals";
 import { IssueLabelChip } from "../IssueLabelChip";
 import { IssuePickerPopover } from "./IssuePicker";
@@ -175,6 +184,17 @@ export function IssueDetailsPanel({
   const [isOpen, setIsOpen] = useState(true);
   const [moreOpen, setMoreOpen] = useState(false);
   const workflow = useWorkflow(issue.projectId);
+  const { allProjects } = useProjects();
+  const { data: session } = authClient.useSession();
+  const { data: activeMember } = authClient.useActiveMember();
+  const project = allProjects.find((candidate) => candidate.id === issue.projectId);
+  // Same rule as the server: you can only pick a level you belong to.
+  const securityViewer: SecurityViewer = {
+    userId: session?.user.id ?? "",
+    workspaceRole: activeMember?.role ?? "member",
+    projectRole: project?.myRole ?? null,
+    isLead: Boolean(session?.user.id && project?.leadUserId === session.user.id),
+  };
   const [versions, setVersions] = useState<IssueVersionRef[] | null>(null);
   const [components, setComponents] = useState<IssueComponentRef[] | null>(
     null,
@@ -542,6 +562,37 @@ export function IssueDetailsPanel({
                 {Object.entries(PRIORITY_LABELS).map(([value, label]) => (
                   <option value={value} key={value}>
                     {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </DetailField>
+
+          <DetailField label="Security level">
+            <label className="editable-property">
+              <Lock size={14} aria-hidden="true" />
+              <span className="sr-only">Security level</span>
+              <select
+                value={issue.securityLevel ?? ""}
+                disabled={readOnly}
+                title={
+                  ISSUE_SECURITY_LEVELS.find((level) => level.key === issue.securityLevel)
+                    ?.description ?? "Everyone who can see the project"
+                }
+                onChange={(event) =>
+                  update({
+                    securityLevel: (event.target.value || null) as IssueSecurityLevel | null,
+                  })
+                }
+              >
+                <option value="">None (everyone in the project)</option>
+                {ISSUE_SECURITY_LEVELS.map((level) => (
+                  <option
+                    key={level.key}
+                    value={level.key}
+                    disabled={!belongsToSecurityLevel(level.key, securityViewer)}
+                  >
+                    {level.label}
                   </option>
                 ))}
               </select>

@@ -28,6 +28,8 @@ model Issue {
   startDate                DateTime?
   rank                     Float            @default(0)
   flagged                  Boolean          @default(false)
+  /// Narrows who can see the item below the project's audience; null for everyone.
+  securityLevel            String?
   resolution               String?
   resolvedAt               DateTime?
   statusChangedAt          DateTime         @default(now())
@@ -238,7 +240,8 @@ model Project {
   members             ProjectMember[]
   forms               Form[]
 
-  boards Board[]
+  boards     Board[]
+  keyAliases ProjectKeyAlias[]
 
   @@unique([organizationId, key])
   @@unique([organizationId, name])
@@ -302,6 +305,7 @@ model User {
   projectMemberships     ProjectMember[]
   commentReactions       CommentReaction[]
   teamMemberships        TeamMember[]
+  groupMemberships       UserGroupMember[]
   notificationPreference NotificationPreference?
   filterStars            FilterStar[]
   filterSubscriptions    FilterSubscription[]
@@ -337,6 +341,7 @@ model Organization {
 
   customFields CustomField[]
   teams        Team[]
+  userGroups   UserGroup[]
   goals        Goal[]
   apiTokens    ApiToken[]
   webhooks     Webhook[]
@@ -571,6 +576,20 @@ model IssueComponent {
 
   @@id([issueId, componentId])
   @@index([componentId])
+}
+
+/// A key a project used before it was renamed. Old work item keys under it
+/// keep resolving, and no other project in the workspace can take it.
+model ProjectKeyAlias {
+  id             String   @id @default(cuid())
+  organizationId String
+  key            String
+  projectId      String
+  createdAt      DateTime @default(now())
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, key])
+  @@index([projectId])
 }
 
 /// A link from a work item to a page outside the workspace.
@@ -822,6 +841,31 @@ model Team {
   issues         Issue[]
 
   @@unique([organizationId, name])
+}
+
+/// A named set of people for sharing and project access, managed by owners.
+model UserGroup {
+  id             String            @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members        UserGroupMember[]
+
+  @@unique([organizationId, name])
+}
+
+model UserGroupMember {
+  groupId   String
+  userId    String
+  createdAt DateTime  @default(now())
+  group     UserGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, userId])
+  @@index([userId])
 }
 
 model TeamMember {

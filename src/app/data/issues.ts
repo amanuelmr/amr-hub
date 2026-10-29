@@ -1,3 +1,4 @@
+import type { IssueSecurityLevel } from "./issueSecurity";
 import type { CommentReactionSummary } from "./reactions";
 import type {
   BuiltinKind,
@@ -125,7 +126,8 @@ export type IssueActivityType =
   | "TEAM_CHANGED"
   | "GOAL_CHANGED"
   | "CUSTOM_FIELD_CHANGED"
-  | "ARCHIVE_CHANGED";
+  | "ARCHIVE_CHANGED"
+  | "SECURITY_CHANGED";
 
 export type IssueActivity = {
   id: string;
@@ -219,6 +221,8 @@ export type Issue = {
   startDate: string | null;
   rank: number;
   flagged: boolean;
+  /** Narrows who can see the item below the project's audience. */
+  securityLevel?: IssueSecurityLevel | null;
   /** Set when the work item is archived (hidden from boards and search). */
   archivedAt?: string | null;
   resolution: IssueResolution | null;
@@ -284,6 +288,7 @@ export type IssueUpdates = Partial<
     | "startDate"
     | "rank"
     | "flagged"
+    | "securityLevel"
     | "resolution"
     | "environment"
     | "originalEstimateMinutes"

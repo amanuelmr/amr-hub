@@ -12,20 +12,20 @@ const MENUS: { label: string; items: MenuItem[] }[] = [
   {
     label: "Features",
     items: [
-      { label: "Boards", body: "Scrum and Kanban boards with swimlanes and WIP limits", href: "#product" },
-      { label: "Backlog and sprints", body: "Rank, estimate and plan sprints", href: "#workflow" },
-      { label: "Timeline", body: "Plan epics over time with dependencies", href: "#workflow" },
-      { label: "JQL search and filters", body: "Find anything and share saved filters", href: "#more" },
-      { label: "Automation", body: "When, if and then rules with a run log", href: "#more" },
-      { label: "Dashboards and reports", body: "Burndown, velocity, CFD and gadgets", href: "#more" },
+      { label: "Boards", body: "Scrum and Kanban boards with swimlanes and WIP limits", href: "/#product" },
+      { label: "Backlog and sprints", body: "Rank, estimate and plan sprints", href: "/#workflow" },
+      { label: "Timeline", body: "Plan epics over time with dependencies", href: "/#workflow" },
+      { label: "Search and filters", body: "Find anything and share saved filters", href: "/#more" },
+      { label: "Automation", body: "When, if and then rules with a run log", href: "/#more" },
+      { label: "Dashboards and reports", body: "Burndown, velocity, CFD and gadgets", href: "/#more" },
     ],
   },
   {
     label: "Solutions",
     items: [
-      { label: "Software teams", body: "Sprints, releases and bug tracking", href: "#teams" },
-      { label: "Product managers", body: "Roadmaps, goals and priorities", href: "#teams" },
-      { label: "Support and ops", body: "Kanban flow, forms and SLAs by filter", href: "#teams" },
+      { label: "Software teams", body: "Sprints, releases and bug tracking", href: "/#teams" },
+      { label: "Product managers", body: "Roadmaps, goals and priorities", href: "/#teams" },
+      { label: "Support and ops", body: "Kanban flow, forms and SLAs by filter", href: "/#teams" },
     ],
   },
   {
@@ -48,7 +48,7 @@ function Brand() {
   );
 }
 
-/** Jira-style site header: product menus, search, sign in and the main CTA. */
+/** Site header: product menus, search, sign in and the main call to action. */
 export function LandingNav() {
   const [showBanner, setShowBanner] = useState(true);
 
@@ -78,12 +78,12 @@ export function LandingNav() {
                 </DropdownMenu.Portal>
               </DropdownMenu.Root>
             ))}
-            <a className="lp-nav-trigger" href="#latest">
+            <Link className="lp-nav-trigger" href="/guides">
               Guides
-            </a>
-            <a className="lp-nav-trigger" href="#pricing">
+            </Link>
+            <Link className="lp-nav-trigger" href="/#pricing">
               Pricing
-            </a>
+            </Link>
           </nav>
           <div className="lp-nav-actions">
             <Link className="lp-nav-icon" href="/login" aria-label="Search (log in first)">
@@ -104,9 +104,9 @@ export function LandingNav() {
         <div className="lp-banner" role="region" aria-label="Announcement">
           <p>
             New on the board: a Filter panel, column menus and days in column.{" "}
-            <a href="#latest">
+            <Link href="/#latest">
               See what&apos;s new <ArrowRight size={13} aria-hidden="true" />
-            </a>
+            </Link>
           </p>
           <button type="button" aria-label="Dismiss announcement" onClick={() => setShowBanner(false)}>
             <X size={15} aria-hidden="true" />

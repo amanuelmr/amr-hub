@@ -146,6 +146,7 @@ export const updateIssueSchema = z
     startDate: dueDateSchema.nullable().optional(),
     rank: z.number().finite().optional(),
     flagged: z.boolean().optional(),
+    securityLevel: z.enum(["MEMBERS", "ADMINS"]).nullable().optional(),
     resolution: issueResolutionSchema.nullable().optional(),
     environment: environmentSchema.optional(),
     originalEstimateMinutes: minutesSchema.optional(),

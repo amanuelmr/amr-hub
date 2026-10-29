@@ -16,6 +16,7 @@ import { LandingNav } from "./components/landing/LandingNav";
 import { ProductDemo } from "./components/landing/ProductDemo";
 import { TypingPrompt } from "./components/landing/TypingPrompt";
 import { Carousel } from "./components/landing/Carousel";
+import { GUIDES } from "./guides/guides";
 import { AppWindow, BoardMock, MockAvatar, ReportsMock } from "./components/landing/mocks";
 
 export const metadata: Metadata = {
@@ -23,18 +24,18 @@ export const metadata: Metadata = {
     absolute: "AMR Hub | Plan, track and ship work as a team",
   },
   description:
-    "Free work management for software teams: boards, backlogs and sprints, timelines, JQL search, automation, dashboards and reports.",
+    "Free work management for software teams: boards, backlogs and sprints, timelines, powerful search, automation, dashboards and reports.",
 };
 
-/* Section content. The layout follows Jira's product page; the words are ours. */
+/* Section content for the landing page. */
 
-const WORKS_WITH = ["Jira CSV import", "REST API", "Webhooks", "Email", "Passkeys"];
+const WORKS_WITH = ["CSV import", "REST API", "Webhooks", "Email", "Passkeys"];
 
 const FLOW = [
   {
     icon: Inbox,
     title: "Capture",
-    body: "Collect requests through forms, import from Jira, or create work from anywhere with C.",
+    body: "Collect requests through forms, import from another tracker, or create work from anywhere with C.",
   },
   {
     icon: ClipboardList,
@@ -57,8 +58,8 @@ const MORE = [
   {
     tone: "cyan",
     title: "Search the way you think",
-    body: "JQL with autocomplete, saved filters you can share, and email subscriptions.",
-    link: "Try JQL",
+    body: "A query language with autocomplete, saved filters you can share, and email subscriptions.",
+    link: "Try search",
     visual: "jql",
   },
   {
@@ -113,9 +114,13 @@ const TEAMS = [
 const LATEST = [
   { tone: "cyan", tag: "Release", title: "A Filter panel, column menus and days in column on the board", cta: "Try it" },
   { tone: "ink", tag: "Release", title: "Share filters and dashboards with viewers and editors", cta: "Try it" },
-  { tone: "orange", tag: "Guide", title: "Move from Jira in three steps with a CSV export", cta: "Read the guide" },
-  { tone: "lime", tag: "Guide", title: "JQL cheat sheet: ten queries every team uses", cta: "Read the guide" },
-  { tone: "pink", tag: "Guide", title: "Five automation rules to set up on day one", cta: "Read the guide" },
+  ...GUIDES.map((guide) => ({
+    tone: guide.tone,
+    tag: "Guide",
+    title: guide.title,
+    cta: "Read the guide",
+    href: `/guides/${guide.slug}`,
+  })),
 ];
 
 const SUITE = [
@@ -221,7 +226,7 @@ export default function LandingPage() {
             <ul className="lp-proof-list">
               <li>Scrum</li>
               <li>Kanban</li>
-              <li>JQL</li>
+              <li>Query language</li>
               <li>Timeline</li>
               <li>Automation</li>
               <li>Dashboards</li>
@@ -360,7 +365,7 @@ export default function LandingPage() {
                   <div className="lp-latest-body">
                     <span className="lp-latest-tag">{item.tag}</span>
                     <h3>{item.title}</h3>
-                    <Link href="/signup">
+                    <Link href={"href" in item ? item.href : "/signup"}>
                       {item.cta} <ArrowRight size={14} aria-hidden="true" />
                     </Link>
                   </div>
@@ -446,7 +451,7 @@ export default function LandingPage() {
           <nav className="lp-footer-col" aria-label="Resources">
             <strong>Resources</strong>
             <a href="#latest">What&apos;s new</a>
-            <a href="#latest">Guides</a>
+            <Link href="/guides">Guides</Link>
             <a href="#pricing">Pricing</a>
           </nav>
           <nav className="lp-footer-col" aria-label="Account">

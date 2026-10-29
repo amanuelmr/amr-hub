@@ -13,7 +13,12 @@ import {
   type IssueEmailItem,
 } from "./emailTemplates";
 import { loadServerEnvironment } from "./env";
-import { projectAudienceUserIds, visibleProjectWhere } from "./projectAccess";
+import {
+  projectAudienceUserIds,
+  securityViewerFor,
+  visibleProjectWhere,
+} from "./projectAccess";
+import { canSeeSecuredIssue } from "../app/data/issueSecurity";
 import {
   getNotificationSettings,
   getNotificationSettingsFor,
@@ -133,6 +138,38 @@ export function planRecipients(
  * A row is stored whenever either channel is on: the inbox hides types with
  * in-app off, and the daily digest reads email-enabled types from the rows.
  */
+async function filterBySecurityLevel(
+  userIds: string[],
+  issueId: string,
+  organizationId: string,
+) {
+  const issue = await prisma.issue.findFirst({
+    where: { id: issueId, organizationId },
+    select: {
+      projectId: true,
+      securityLevel: true,
+      creatorId: true,
+      assignee: { select: { userId: true } },
+    },
+  });
+  if (!issue?.securityLevel) return userIds;
+  const roles = await prisma.member.findMany({
+    where: { organizationId, userId: { in: userIds } },
+    select: { userId: true, role: true },
+  });
+  const workspaceRole = new Map(roles.map((member) => [member.userId, member.role]));
+  const visible: string[] = [];
+  for (const userId of userIds) {
+    const viewer = await securityViewerFor(issue.projectId, {
+      id: userId,
+      role: workspaceRole.get(userId) ?? "member",
+    });
+    const item = { ...issue, assigneeUserId: issue.assignee?.userId ?? null };
+    if (canSeeSecuredIssue(item, viewer)) visible.push(userId);
+  }
+  return visible;
+}
+
 export async function notifyRecipients(
   recipientUserIds: (string | null | undefined)[],
   input: NotifyInput,
@@ -156,6 +193,10 @@ export async function notifyRecipients(
         input.organizationId,
       );
       if (audience) memberIds = memberIds.filter((id) => audience.has(id));
+    }
+    // Items with a security level only notify people who can still see them.
+    if (input.issueId) {
+      memberIds = await filterBySecurityLevel(memberIds, input.issueId, input.organizationId);
     }
     if (memberIds.length === 0) return;
 

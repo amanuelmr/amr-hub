@@ -59,7 +59,7 @@ async function serializeProject(
   user?: AccessUser,
 ): Promise<Project> {
   const userId = user?.id;
-  const [issueCount, doneIssueCount, activeCycle, lead, star, membership] =
+  const [issueCount, doneIssueCount, activeCycle, lead, star, membership, aliases] =
     await Promise.all([
       prisma.issue.count({ where: { projectId: project.id, ...liveIssues } }),
       prisma.issue.count({
@@ -88,6 +88,11 @@ async function serializeProject(
             select: { role: true },
           })
         : null,
+      prisma.projectKeyAlias.findMany({
+        where: { projectId: project.id },
+        select: { key: true },
+        orderBy: { createdAt: "asc" },
+      }),
     ]);
   const myRole = membership && isProjectRole(membership.role) ? membership.role : null;
 
@@ -109,6 +114,7 @@ async function serializeProject(
     boardConfig: parseBoardConfig(project.boardConfig),
     background: isProjectBackground(project.background) ? project.background : null,
     url: project.url ?? null,
+    previousKeys: aliases.map((alias) => alias.key),
     leadName: lead?.name ?? null,
     starred: Boolean(star),
     accessLevel: project.accessLevel as ProjectAccessLevel,
@@ -423,6 +429,60 @@ async function ensureAnotherAdmin(projectId: string, leavingUserId: string) {
   }
 }
 
+/**
+ * Renames a project's key. Every work item keeps its number under the new key
+ * (WEB-12 becomes SHOP-12); links follow through ON UPDATE CASCADE. The old key
+ * stays reserved as an alias so old links and queries keep resolving.
+ */
+export async function changeProjectKey(
+  projectId: string,
+  newKey: string,
+  organizationId: string,
+  user: AccessUser,
+) {
+  const project = await prisma.project.findFirst({
+    where: { id: projectId, organizationId, deletedAt: null },
+    select: { id: true, key: true },
+  });
+  if (!project) return null;
+  if (project.key === newKey) return getProject(projectId, organizationId, user);
+
+  const [taken, alias] = await Promise.all([
+    prisma.project.findFirst({ where: { organizationId, key: newKey }, select: { id: true } }),
+    prisma.projectKeyAlias.findUnique({
+      where: { organizationId_key: { organizationId, key: newKey } },
+      select: { projectId: true },
+    }),
+  ]);
+  // A project may take back one of its own old keys, but never another's.
+  if (taken || (alias && alias.projectId !== projectId)) throw new DuplicateProjectKeyError();
+
+  await prisma.$transaction(async (tx) => {
+    if (alias) {
+      await tx.projectKeyAlias.delete({
+        where: { organizationId_key: { organizationId, key: newKey } },
+      });
+    }
+    await tx.projectKeyAlias.create({
+      data: { organizationId, key: project.key, projectId },
+    });
+    await tx.project.update({ where: { id: projectId }, data: { key: newKey } });
+    // Tables that hold work item keys without a foreign key are updated first,
+    // while the old keys still match.
+    await tx.$executeRaw`
+      UPDATE "IssueView" AS v SET "issueId" = ${newKey} || '-' || i."sequence"
+      FROM "Issue" AS i WHERE v."issueId" = i."id" AND i."projectId" = ${projectId}`;
+    await tx.$executeRaw`
+      UPDATE "AutomationRunLog" AS l SET "issueId" = ${newKey} || '-' || i."sequence"
+      FROM "Issue" AS i WHERE l."issueId" = i."id" AND i."projectId" = ${projectId}`;
+    await tx.$executeRaw`
+      UPDATE "Issue" SET "id" = ${newKey} || '-' || "sequence"
+      WHERE "projectId" = ${projectId}`;
+  });
+
+  return getProject(projectId, organizationId, user);
+}
+
 export class DuplicateProjectKeyError extends Error {
   constructor() {
     super("A project with this key already exists");
@@ -442,6 +502,12 @@ async function createProjectUnhooked(
   actor: WorkspaceActor,
 ) {
   const template = findProjectTemplate(input.template);
+  // A key another project used before its rename stays reserved.
+  const reserved = await prisma.projectKeyAlias.findUnique({
+    where: { organizationId_key: { organizationId: actor.organizationId, key: input.key } },
+    select: { id: true },
+  });
+  if (reserved) throw new DuplicateProjectKeyError();
   try {
     const project = await prisma.$transaction(async (transaction) => {
       const created = await transaction.project.create({

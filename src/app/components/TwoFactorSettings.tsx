@@ -91,7 +91,8 @@ export default function TwoFactorSettings({
 
     setIsWorking(false);
 
-    if (result.error || !result.data) {
+    // Only authenticator app enrollment is set up here, which returns a QR URI.
+    if (result.error || !result.data || !("totpURI" in result.data)) {
       setStatus("The password is incorrect or enrollment could not start.");
       return;
     }

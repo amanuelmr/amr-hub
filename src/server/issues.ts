@@ -46,11 +46,20 @@ import { resolveCustomFieldValues, type CustomFieldChange } from "./customFields
 import {
   accessibleProjectIds,
   assertActorPermission,
+  issueSecurityWhere,
+  ProjectAccessError,
   projectAudienceUserIds,
   projectPermission,
+  securityViewerFor,
   visibleIssueWhere,
   type AccessUser,
 } from "./projectAccess";
+import {
+  ISSUE_SECURITY_LEVELS,
+  belongsToSecurityLevel,
+  canSeeSecuredIssue,
+  isIssueSecurityLevel,
+} from "../app/data/issueSecurity";
 
 /** The access user behind an actor, or null for system actors (automation). */
 export function actorAccessUser(actor: WorkspaceActor): AccessUser | null {
@@ -235,6 +244,26 @@ export function serializeIssueDetail(issue: StoredIssueDetail): Issue {
 }
 
 /**
+ * The current key for a work item key. Keys from before a project was renamed
+ * (WEB-12 after WEB became SHOP) map to the new key; anything else is returned
+ * unchanged.
+ */
+export async function resolveIssueKey(id: string, organizationId: string) {
+  const exists = await prisma.issue.findFirst({
+    where: { id, organizationId },
+    select: { id: true },
+  });
+  if (exists) return id;
+  const match = /^([A-Za-z][A-Za-z0-9]*)-(\d+)$/.exec(id);
+  if (!match) return id;
+  const alias = await prisma.projectKeyAlias.findUnique({
+    where: { organizationId_key: { organizationId, key: match[1].toUpperCase() } },
+    select: { project: { select: { key: true } } },
+  });
+  return alias ? `${alias.project.key}-${match[2]}` : id;
+}
+
+/**
  * One issue by key. Trashed issues read as missing; archived ones stay
  * reachable. With a viewer, issues in projects they cannot see read as
  * missing and links/children into hidden projects are dropped.
@@ -253,17 +282,42 @@ export async function getIssue(
 
   const permissions = await projectPermission(issue.projectId, viewer, organizationId);
   if (!permissions.canView) return null;
+  // Items above the viewer's security level read as missing.
+  if (
+    issue.securityLevel &&
+    !canSeeSecuredIssue(
+      { ...issue, assigneeUserId: issue.assignee?.userId ?? null },
+      await securityViewerFor(issue.projectId, viewer),
+    )
+  ) {
+    return null;
+  }
   const visible = new Set(await accessibleProjectIds(organizationId, viewer));
+  // Related items the viewer can't see drop out, by project or security level.
+  const relatedIds = [
+    ...(issue.parent ? [issue.parent.id] : []),
+    ...issue.children.map((child) => child.id),
+    ...issue.outgoingLinks.map((link) => link.target.id),
+    ...issue.incomingLinks.map((link) => link.source.id),
+  ];
+  const secured = relatedIds.length
+    ? new Set(
+        (
+          await prisma.issue.findMany({
+            where: { id: { in: relatedIds }, organizationId, AND: [issueSecurityWhere(viewer)] },
+            select: { id: true },
+          })
+        ).map((related) => related.id),
+      )
+    : new Set<string>();
+  const canSee = (related: { id: string; projectId: string }) =>
+    visible.has(related.projectId) && secured.has(related.id);
   return serializeIssueDetail({
     ...issue,
-    parent: issue.parent && visible.has(issue.parent.projectId) ? issue.parent : null,
-    children: issue.children.filter((child) => visible.has(child.projectId)),
-    outgoingLinks: issue.outgoingLinks.filter((link) =>
-      visible.has(link.target.projectId),
-    ),
-    incomingLinks: issue.incomingLinks.filter((link) =>
-      visible.has(link.source.projectId),
-    ),
+    parent: issue.parent && canSee(issue.parent) ? issue.parent : null,
+    children: issue.children.filter(canSee),
+    outgoingLinks: issue.outgoingLinks.filter((link) => canSee(link.target)),
+    incomingLinks: issue.incomingLinks.filter((link) => canSee(link.source)),
   });
 }
 
@@ -310,6 +364,7 @@ export function serializeIssue(issue: StoredIssue): Issue {
     startDate: issue.startDate?.toISOString() ?? null,
     rank: issue.rank,
     flagged: issue.flagged,
+    securityLevel: isIssueSecurityLevel(issue.securityLevel) ? issue.securityLevel : null,
     archivedAt: issue.archivedAt?.toISOString() ?? null,
     resolution: issue.resolution as IssueResolution | null,
     resolvedAt: issue.resolvedAt?.toISOString() ?? null,
@@ -1109,6 +1164,21 @@ function buildActivity(
     }
   }
 
+  if (
+    updates.securityLevel !== undefined &&
+    (updates.securityLevel ?? null) !== (current.securityLevel ?? null)
+  ) {
+    const level = ISSUE_SECURITY_LEVELS.find((option) => option.key === updates.securityLevel);
+    events.push({
+      type: "SECURITY_CHANGED",
+      description: level
+        ? `restricted the issue to ${level.label.toLowerCase()}`
+        : "removed the security level",
+      actor: actor.name,
+      user: { connect: { id: actor.id } },
+    });
+  }
+
   if (updates.flagged !== undefined && updates.flagged !== current.flagged) {
     events.push({
       type: "FLAG_CHANGED",
@@ -1241,6 +1311,18 @@ async function updateIssueUnhooked(
   });
   if (!existing) return null;
   await assertActorCan(actor, existing.projectId, "edit");
+  // People can only restrict an item to a level they belong to themselves.
+  const accessUser = actorAccessUser(actor);
+  if (
+    updates.securityLevel !== undefined &&
+    accessUser &&
+    !belongsToSecurityLevel(
+      updates.securityLevel ?? null,
+      await securityViewerFor(existing.projectId, accessUser),
+    )
+  ) {
+    throw new ProjectAccessError("You can only choose a security level you belong to", 403);
+  }
   // Validated up front; merged onto the row's current values in the transaction.
   let customFieldPatch: Record<string, CustomFieldChange> | null = null;
   if (updates.customFields && Object.keys(updates.customFields).length > 0) {

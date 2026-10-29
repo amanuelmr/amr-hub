@@ -1051,6 +1051,22 @@ function IssueDetailLoader({
 }) {
   const controller = useIssueDetail(issueId);
   const { state } = controller;
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const loadedId = state.status === "ready" ? state.issue.id : null;
+
+  // An old key (from before the project was renamed) loads the item under its
+  // new key; show the current key in the address bar.
+  useEffect(() => {
+    if (!loadedId || loadedId.toUpperCase() === issueId.toUpperCase()) return;
+    router.replace(
+      variant === "page"
+        ? fullPageHref(loadedId)
+        : selectedIssueHref(pathname, searchParams, loadedId),
+      { scroll: false },
+    );
+  }, [loadedId, issueId, variant, router, pathname, searchParams]);
 
   if (state.status === "loading") {
     if (variant === "page") return <WorkspaceLoading label="issue" />;

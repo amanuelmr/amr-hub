@@ -11,6 +11,7 @@ import {
   ScrollText,
   Trash2,
   Upload,
+  UsersRound,
   Webhook,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -19,6 +20,7 @@ import { useAdminRole } from "./adminClient";
 const NAV = [
   { href: "/admin", label: "General", icon: Building2, ownerOnly: false },
   { href: "/admin/fields", label: "Custom fields", icon: ListPlus, ownerOnly: false },
+  { href: "/admin/groups", label: "Groups", icon: UsersRound, ownerOnly: true },
   { href: "/admin/audit-log", label: "Audit log", icon: ScrollText, ownerOnly: true },
   { href: "/admin/api-tokens", label: "API tokens", icon: KeyRound, ownerOnly: false },
   { href: "/admin/api-docs", label: "REST API", icon: BookOpen, ownerOnly: false },

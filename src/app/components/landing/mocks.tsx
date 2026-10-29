@@ -305,7 +305,7 @@ export function ListMock() {
   return (
     <div className="lp-list">
       <div className="lp-jql">
-        <span className="lp-jql-tag">JQL</span>
+        <span className="lp-jql-tag">Query</span>
         <code>project = WEB AND status != Done ORDER BY priority DESC</code>
       </div>
       <div className="lp-table">

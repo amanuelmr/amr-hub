@@ -3,10 +3,11 @@
  * default filters every user gets. Pure and shared by the API and the UI.
  */
 
-/** A filter audience. Teams play the role of Jira's groups. */
+/** Who a filter or dashboard is shared with. */
 export type FilterShare =
   | { type: "WORKSPACE" }
   | { type: "PROJECT"; id: string }
+  | { type: "GROUP"; id: string }
   | { type: "TEAM"; id: string }
   | { type: "USER"; id: string };
 
@@ -15,6 +16,7 @@ export type FilterShareType = FilterShare["type"];
 export const SHARE_TYPE_LABELS: Record<FilterShareType, string> = {
   WORKSPACE: "My organization",
   PROJECT: "Project",
+  GROUP: "Group",
   TEAM: "Team",
   USER: "User",
 };
@@ -25,6 +27,8 @@ export type FilterAudience = {
   /** Workspace role: owner, member or viewer. */
   role: string;
   teamIds: string[];
+  /** User groups the viewer belongs to. */
+  groupIds: string[];
   /** Projects the viewer can see. */
   projectIds: string[];
 };
@@ -46,7 +50,7 @@ export function parseShares(raw: string | null | undefined): FilterShare[] {
       const { type, id } = item as { type?: unknown; id?: unknown };
       if (type === "WORKSPACE") shares.push({ type });
       else if (
-        (type === "PROJECT" || type === "TEAM" || type === "USER") &&
+        (type === "PROJECT" || type === "GROUP" || type === "TEAM" || type === "USER") &&
         typeof id === "string" &&
         id
       ) {
@@ -79,6 +83,8 @@ export function shareMatches(share: FilterShare, audience: FilterAudience) {
       return true;
     case "PROJECT":
       return audience.projectIds.includes(share.id);
+    case "GROUP":
+      return audience.groupIds.includes(share.id);
     case "TEAM":
       return audience.teamIds.includes(share.id);
     case "USER":

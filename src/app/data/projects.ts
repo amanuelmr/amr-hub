@@ -197,6 +197,8 @@ export type Project = {
   background?: ProjectBackground | null;
   /** An outside page for the project (docs, repo, site). */
   url?: string | null;
+  /** Keys the project used before it was renamed; they still resolve. */
+  previousKeys?: string[];
   leadName?: string | null;
   /** Whether the current user starred the project. */
   starred?: boolean;

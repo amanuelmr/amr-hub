@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { accessErrorResponse } from "../../../../server/projectAccess";
+import {
+  accessErrorResponse,
+  accessUserFromSession,
+} from "../../../../server/projectAccess";
 import { recordAudit } from "../../../../server/audit";
 import { exportFileName } from "../../../../server/csvExportCore";
 import {
@@ -20,10 +23,11 @@ export async function GET(request: NextRequest) {
   const projectId = params.get("projectId") || null;
 
   try {
+    const viewer = accessUserFromSession(session);
     const exported =
       format === "json"
-        ? await exportIssuesJson(session.workspace.id, projectId)
-        : await exportIssuesCsv(session.workspace.id, projectId);
+        ? await exportIssuesJson(session.workspace.id, projectId, viewer)
+        : await exportIssuesCsv(session.workspace.id, projectId, viewer);
     await recordAudit({
       organizationId: session.workspace.id,
       actor: { id: session.user.id, name: session.user.name },
