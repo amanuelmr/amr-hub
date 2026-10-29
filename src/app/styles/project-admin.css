@@ -1384,6 +1384,12 @@ td.pa-actions-cell {
   .pa-settings-nav {
     display: flex;
     overflow-x: auto;
+    /* Scrolls sideways on narrow screens without a visible scrollbar. */
+    scrollbar-width: none;
+  }
+
+  .pa-settings-nav::-webkit-scrollbar {
+    display: none;
   }
 
   .pa-settings-tab {
