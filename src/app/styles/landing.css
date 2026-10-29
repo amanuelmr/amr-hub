@@ -2455,7 +2455,9 @@
   overflow-x: auto;
   border: 2px solid var(--console-line);
   border-radius: 4px;
-  background: var(--console-paper, #fffdf4);
+  /* Follows the page theme so the query stays readable in light and dark. */
+  color: inherit;
+  background: color-mix(in srgb, currentColor 7%, transparent);
   font-family: var(--font-mono);
   font-size: 13px;
   white-space: pre;
