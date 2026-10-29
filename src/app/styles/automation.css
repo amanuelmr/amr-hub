@@ -459,7 +459,8 @@
 .au-trigger-option.selected {
   border: 2px solid var(--console-line);
   padding: 7px 9px;
-  background: var(--blue-50);
+  /* A tint keeps the label readable in dark mode, where a light blue hid it. */
+  background: color-mix(in srgb, var(--console-cyan) 18%, transparent);
 }
 
 .au-trigger-option:has(input:focus-visible) {

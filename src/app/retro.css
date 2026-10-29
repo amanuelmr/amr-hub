@@ -77,6 +77,18 @@
     --console-line: #080a12;
     --console-shadow: 4px 4px 0 #080a12;
     --console-shadow-small: 2px 2px 0 #080a12;
+    /* Status tints: dark backgrounds and brighter text so coloured
+       badges, notices and selections stay readable in dark mode. */
+    --green-50: #1b2a12;
+    --green-600: #a9dc49;
+    --green-700: #c8f169;
+    --blue-50: #102a2e;
+    --blue-600: #5fd4dd;
+    --amber-50: #2f2310;
+    --amber-600: #f0a35c;
+    --red-50: #34151d;
+    --red-600: #ff7d9b;
+    --red-700: #ff9db4;
   }
 }
 
@@ -95,6 +107,18 @@
   --console-line: #080a12;
   --console-shadow: 4px 4px 0 #080a12;
   --console-shadow-small: 2px 2px 0 #080a12;
+  /* Status tints: dark backgrounds and brighter text so coloured
+     badges, notices and selections stay readable in dark mode. */
+  --green-50: #1b2a12;
+  --green-600: #a9dc49;
+  --green-700: #c8f169;
+  --blue-50: #102a2e;
+  --blue-600: #5fd4dd;
+  --amber-50: #2f2310;
+  --amber-600: #f0a35c;
+  --red-50: #34151d;
+  --red-600: #ff7d9b;
+  --red-700: #ff9db4;
 }
 
 ::selection {
